@@ -70,7 +70,7 @@ adminRoutes.get('/', async (c) => {
   }));
 
   // Fetch user avatar from DB
-  const dbUser = await c.env.LIVE_DB.prepare(
+  const dbUser = await c.env.AUTH_DB.prepare(
     'SELECT avatar_url FROM users WHERE id = ?',
   )
     .bind(parseInt(user.sub, 10))
@@ -95,7 +95,7 @@ adminRoutes.get('/pages/new', async (c) => {
   const [parentPages, tags, dbUser] = await Promise.all([
     c.env.DRAFT_DB.prepare('SELECT id, name, slug FROM pages ORDER BY name ASC').all<Page>(),
     c.env.LIVE_DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
-    c.env.LIVE_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+    c.env.AUTH_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
   ]);
@@ -131,7 +131,7 @@ adminRoutes.post('/pages', async (c) => {
     const [parentPages, tags, dbUser] = await Promise.all([
       c.env.DRAFT_DB.prepare('SELECT id, name, slug FROM pages ORDER BY name ASC').all<Page>(),
       c.env.LIVE_DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
-      c.env.LIVE_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+      c.env.AUTH_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
         .bind(parseInt(user.sub, 10))
         .first<{ avatar_url: string | null }>(),
     ]);
@@ -209,7 +209,7 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
     c.env.DRAFT_DB.prepare('SELECT * FROM pages WHERE id = ?').bind(pageId).first<Page>(),
     c.env.DRAFT_DB.prepare('SELECT id, name, slug FROM pages ORDER BY name ASC').all<Page>(),
     c.env.LIVE_DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
-    c.env.LIVE_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+    c.env.AUTH_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
   ]);
@@ -272,7 +272,7 @@ adminRoutes.post('/pages/:id', async (c) => {
             .first<PageVersion>()
         : Promise.resolve(null),
       c.env.DRAFT_DB.prepare('SELECT tag_id FROM page_tags WHERE page_id = ?').bind(pageId).all<{ tag_id: number }>(),
-      c.env.LIVE_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+      c.env.AUTH_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
         .bind(parseInt(user.sub, 10))
         .first<{ avatar_url: string | null }>(),
     ]);
@@ -352,12 +352,6 @@ adminRoutes.post('/pages/:id/publish', async (c) => {
     .first<Page>();
   if (!page) return c.notFound();
 
-  const version = page.current_page_version_id
-    ? await c.env.DRAFT_DB.prepare('SELECT * FROM page_versions WHERE id = ?')
-        .bind(page.current_page_version_id)
-        .first<PageVersion>()
-    : null;
-
   // Upsert page into LIVE DB (match on uuid)
   await c.env.LIVE_DB.prepare(
     `INSERT INTO pages (uuid, name, slug, weight, start, end, page_type, original, page_id)
@@ -374,40 +368,6 @@ adminRoutes.post('/pages/:id/publish', async (c) => {
   )
     .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, page.original, page.page_id)
     .run();
-
-  // Fetch the LIVE page id (may differ from draft)
-  const livePageRow = await c.env.LIVE_DB.prepare(
-    'SELECT id, current_page_version_id FROM pages WHERE uuid = ?',
-  )
-    .bind(page.uuid)
-    .first<{ id: number; current_page_version_id: number | null }>();
-
-  if (livePageRow && version) {
-    // Upsert the current page version into LIVE DB
-    await c.env.LIVE_DB.prepare(
-      `INSERT INTO page_versions (uuid, page_id, content, meta)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(uuid) DO UPDATE SET
-         content = excluded.content,
-         meta = excluded.meta`,
-    )
-      .bind(version.uuid, livePageRow.id, version.content, version.meta)
-      .run();
-
-    const liveVersion = await c.env.LIVE_DB.prepare(
-      'SELECT id FROM page_versions WHERE uuid = ?',
-    )
-      .bind(version.uuid)
-      .first<{ id: number }>();
-
-    if (liveVersion) {
-      await c.env.LIVE_DB.prepare(
-        'UPDATE pages SET current_page_version_id = ? WHERE id = ?',
-      )
-        .bind(liveVersion.id, livePageRow.id)
-        .run();
-    }
-  }
 
   return c.redirect('/admin?flash=Page+published+successfully');
 });
@@ -506,7 +466,7 @@ adminRoutes.get('/trash', async (c) => {
 
   const [trashedPages, dbUser] = await Promise.all([
     c.env.TRASH_DB.prepare('SELECT * FROM pages ORDER BY updated_at DESC').all<Page>(),
-    c.env.LIVE_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+    c.env.AUTH_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
   ]);
@@ -684,7 +644,7 @@ adminRoutes.get('/tags', async (c) => {
   const user = c.get('user');
   const [tags, dbUser] = await Promise.all([
     c.env.LIVE_DB.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
-    c.env.LIVE_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+    c.env.AUTH_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
   ]);

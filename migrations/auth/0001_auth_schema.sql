@@ -1,5 +1,5 @@
 -- ============================================================
--- Auth schema – applied to LIVE database only
+-- Auth schema – applied to AUTH database only
 -- ============================================================
 
 -- Users – populated on first OAuth login
