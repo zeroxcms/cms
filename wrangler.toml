@@ -1,0 +1,26 @@
+name = "worker-cms"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "LIVE_DB"
+database_name = "cms-live"
+database_id = "00000000-0000-0000-0000-000000000001"
+migrations_dir = "migrations/live"
+
+[[d1_databases]]
+binding = "DRAFT_DB"
+database_name = "cms-draft"
+database_id = "00000000-0000-0000-0000-000000000002"
+migrations_dir = "migrations/draft"
+
+[vars]
+# OAuth 2.1 provider: "github" or "google"
+OAUTH_PROVIDER = "github"
+OAUTH_CLIENT_ID = "your-oauth-client-id"
+OAUTH_REDIRECT_URI = "http://localhost:8787/auth/callback"
+SITE_TITLE = "Worker CMS"
+
+# Secrets – set via: wrangler secret put JWT_SECRET
+# wrangler secret put OAUTH_CLIENT_SECRET
