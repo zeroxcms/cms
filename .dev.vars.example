@@ -1,0 +1,5 @@
+# Local development secrets – copy this to .dev.vars and fill in real values
+# .dev.vars is gitignored and never committed
+
+JWT_SECRET=replace-with-a-random-32-byte-hex-string
+OAUTH_CLIENT_SECRET=your-oauth-app-client-secret
