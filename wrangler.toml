@@ -15,6 +15,12 @@ database_name = "cms-draft"
 database_id = "00000000-0000-0000-0000-000000000002"
 migrations_dir = "migrations/draft"
 
+[[d1_databases]]
+binding = "TRASH_DB"
+database_name = "cms-trash"
+database_id = "00000000-0000-0000-0000-000000000003"
+migrations_dir = "migrations/trash"
+
 [vars]
 # OAuth 2.1 provider: "github" or "google"
 OAUTH_PROVIDER = "github"

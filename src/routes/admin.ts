@@ -8,7 +8,10 @@
 //   POST /admin/pages/:id               – update page
 //   POST /admin/pages/:id/publish       – publish draft → live
 //   POST /admin/pages/:id/unpublish     – unpublish from live
-//   POST /admin/pages/:id/delete        – delete from draft
+//   POST /admin/pages/:id/delete        – soft-delete to trash (unpublishes too)
+//   GET  /admin/trash                   – list trashed pages
+//   POST /admin/trash/:id/restore       – restore page from trash → draft
+//   POST /admin/trash/:id/delete        – permanently delete from trash
 //   GET  /admin/tags                    – tag list (stub, extensible)
 // ============================================================
 
@@ -426,12 +429,253 @@ adminRoutes.post('/pages/:id/unpublish', async (c) => {
   return c.redirect('/admin?flash=Page+unpublished');
 });
 
-// ── Delete page (from DRAFT only) ─────────────────────────────────────────────
+// ── Delete page → move to TRASH (soft-delete) ────────────────────────────────
 
 adminRoutes.post('/pages/:id/delete', async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
+
+  const page = await c.env.DRAFT_DB.prepare('SELECT * FROM pages WHERE id = ?')
+    .bind(pageId)
+    .first<Page>();
+  if (!page) return c.notFound();
+
+  // Copy page into TRASH_DB (preserve uuid so we can restore)
+  await c.env.TRASH_DB.prepare(
+    `INSERT INTO pages (uuid, name, slug, weight, start, end, page_type, current_page_version_id, original, page_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(uuid) DO UPDATE SET
+       name = excluded.name,
+       slug = excluded.slug,
+       weight = excluded.weight,
+       start = excluded.start,
+       end = excluded.end,
+       page_type = excluded.page_type,
+       original = excluded.original,
+       page_id = excluded.page_id`,
+  )
+    .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, page.current_page_version_id, page.original, page.page_id)
+    .run();
+
+  // Fetch the TRASH page id
+  const trashPage = await c.env.TRASH_DB.prepare('SELECT id FROM pages WHERE uuid = ?')
+    .bind(page.uuid)
+    .first<{ id: number }>();
+
+  if (trashPage) {
+    // Copy page_versions into TRASH_DB
+    const versions = await c.env.DRAFT_DB.prepare('SELECT * FROM page_versions WHERE page_id = ?')
+      .bind(pageId)
+      .all<PageVersion>();
+    for (const v of versions.results) {
+      await c.env.TRASH_DB.prepare(
+        `INSERT INTO page_versions (uuid, page_id, content, meta)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(uuid) DO UPDATE SET content = excluded.content, meta = excluded.meta`,
+      )
+        .bind(v.uuid, trashPage.id, v.content, v.meta)
+        .run();
+    }
+
+    // Copy page_tags into TRASH_DB
+    const pageTags = await c.env.DRAFT_DB.prepare('SELECT * FROM page_tags WHERE page_id = ?')
+      .bind(pageId)
+      .all<PageTag>();
+    for (const pt of pageTags.results) {
+      await c.env.TRASH_DB.prepare(
+        `INSERT OR IGNORE INTO page_tags (uuid, page_id, tag_id, weight) VALUES (?, ?, ?, ?)`,
+      )
+        .bind(pt.uuid, trashPage.id, pt.tag_id, pt.weight)
+        .run();
+    }
+  }
+
+  // Unpublish from LIVE (remove by uuid)
+  await c.env.LIVE_DB.prepare('DELETE FROM pages WHERE uuid = ?').bind(page.uuid).run();
+
+  // Delete from DRAFT
   await c.env.DRAFT_DB.prepare('DELETE FROM pages WHERE id = ?').bind(pageId).run();
-  return c.redirect('/admin?flash=Page+deleted');
+
+  return c.redirect('/admin?flash=Page+moved+to+trash');
+});
+
+// ── Trash list ────────────────────────────────────────────────────────────────
+
+adminRoutes.get('/trash', async (c) => {
+  const user = c.get('user');
+  const flash = c.req.query('flash') ?? '';
+
+  const [trashedPages, dbUser] = await Promise.all([
+    c.env.TRASH_DB.prepare('SELECT * FROM pages ORDER BY updated_at DESC').all<Page>(),
+    c.env.LIVE_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+      .bind(parseInt(user.sub, 10))
+      .first<{ avatar_url: string | null }>(),
+  ]);
+
+  const { layout } = await import('../templates/layout');
+  const { escHtml } = await import('../templates/layout');
+
+  const flashBanner = flash
+    ? `<div id="flash" class="mb-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">${escHtml(flash)}</div>`
+    : '';
+
+  const tableRows = trashedPages.results.length
+    ? trashedPages.results
+        .map(
+          (p) => `
+        <tr class="hover:bg-gray-50 transition-colors">
+          <td class="px-6 py-4">
+            <div class="font-medium text-gray-900">${escHtml(p.name)}</div>
+            <div class="text-sm text-gray-500 font-mono">/${escHtml(p.slug)}</div>
+          </td>
+          <td class="px-6 py-4 text-sm text-gray-500">${escHtml(p.page_type ?? '—')}</td>
+          <td class="px-6 py-4 text-sm text-gray-400">${escHtml(p.updated_at)}</td>
+          <td class="px-6 py-4">
+            <div class="flex items-center gap-2">
+              <form method="POST" action="/admin/trash/${p.id}/restore" class="inline">
+                <button type="submit"
+                        class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">Restore</button>
+              </form>
+              <form method="POST" action="/admin/trash/${p.id}/delete" class="inline"
+                    onsubmit="return confirm('Permanently delete this page? This cannot be undone.')">
+                <button type="submit"
+                        class="text-red-500 hover:text-red-700 text-sm font-medium">Delete Forever</button>
+              </form>
+            </div>
+          </td>
+        </tr>`,
+        )
+        .join('')
+    : `<tr>
+        <td colspan="4" class="px-6 py-12 text-center text-gray-400">Trash is empty.</td>
+       </tr>`;
+
+  const body = `
+    <div class="px-8 py-8">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h2 class="text-2xl font-bold text-gray-900">Trash</h2>
+          <p class="text-sm text-gray-500 mt-1">${trashedPages.results.length} page${trashedPages.results.length !== 1 ? 's' : ''} in trash</p>
+        </div>
+        <a href="/admin" class="text-sm text-indigo-600 hover:underline">← Back to Pages</a>
+      </div>
+
+      ${flashBanner}
+
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <table class="w-full text-left">
+          <thead class="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Page</th>
+              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Deleted</th>
+              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            ${tableRows}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      const flash = document.getElementById('flash');
+      if (flash) setTimeout(() => flash.remove(), 4000);
+    </script>`;
+
+  return c.html(
+    layout({
+      title: 'Trash',
+      siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
+      body,
+      admin: true,
+      userName: user.name,
+      userRole: user.role,
+      userAvatar: dbUser?.avatar_url ?? '',
+    }),
+  );
+});
+
+// ── Restore page from trash → draft ──────────────────────────────────────────
+
+adminRoutes.post('/trash/:id/restore', async (c) => {
+  const trashId = parseInt(c.req.param('id'), 10);
+
+  const trashPage = await c.env.TRASH_DB.prepare('SELECT * FROM pages WHERE id = ?')
+    .bind(trashId)
+    .first<Page>();
+  if (!trashPage) return c.notFound();
+
+  // Upsert page back into DRAFT_DB (match on uuid)
+  await c.env.DRAFT_DB.prepare(
+    `INSERT INTO pages (uuid, name, slug, weight, start, end, page_type, original, page_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(uuid) DO UPDATE SET
+       name = excluded.name,
+       slug = excluded.slug,
+       weight = excluded.weight,
+       start = excluded.start,
+       end = excluded.end,
+       page_type = excluded.page_type,
+       original = excluded.original,
+       page_id = excluded.page_id`,
+  )
+    .bind(trashPage.uuid, trashPage.name, trashPage.slug, trashPage.weight, trashPage.start, trashPage.end, trashPage.page_type, trashPage.original, trashPage.page_id)
+    .run();
+
+  const draftPage = await c.env.DRAFT_DB.prepare('SELECT id FROM pages WHERE uuid = ?')
+    .bind(trashPage.uuid)
+    .first<{ id: number }>();
+
+  if (draftPage) {
+    // Restore page_versions to DRAFT
+    const trashVersions = await c.env.TRASH_DB.prepare('SELECT * FROM page_versions WHERE page_id = ?')
+      .bind(trashId)
+      .all<PageVersion>();
+    let lastVersionId: number | null = null;
+    for (const v of trashVersions.results) {
+      const result = await c.env.DRAFT_DB.prepare(
+        `INSERT INTO page_versions (uuid, page_id, content, meta)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(uuid) DO UPDATE SET content = excluded.content, meta = excluded.meta`,
+      )
+        .bind(v.uuid, draftPage.id, v.content, v.meta)
+        .run();
+      lastVersionId = result.meta.last_row_id as number;
+    }
+
+    // Restore page_tags to DRAFT
+    const trashTags = await c.env.TRASH_DB.prepare('SELECT * FROM page_tags WHERE page_id = ?')
+      .bind(trashId)
+      .all<PageTag>();
+    for (const pt of trashTags.results) {
+      await c.env.DRAFT_DB.prepare(
+        `INSERT OR IGNORE INTO page_tags (uuid, page_id, tag_id, weight) VALUES (?, ?, ?, ?)`,
+      )
+        .bind(pt.uuid, draftPage.id, pt.tag_id, pt.weight)
+        .run();
+    }
+
+    // Restore current_page_version_id pointer if we have versions
+    if (lastVersionId !== null) {
+      await c.env.DRAFT_DB.prepare('UPDATE pages SET current_page_version_id = ? WHERE id = ?')
+        .bind(lastVersionId, draftPage.id)
+        .run();
+    }
+  }
+
+  // Remove from TRASH
+  await c.env.TRASH_DB.prepare('DELETE FROM pages WHERE id = ?').bind(trashId).run();
+
+  return c.redirect('/admin/trash?flash=Page+restored+to+draft');
+});
+
+// ── Permanently delete from trash ─────────────────────────────────────────────
+
+adminRoutes.post('/trash/:id/delete', async (c) => {
+  const trashId = parseInt(c.req.param('id'), 10);
+  await c.env.TRASH_DB.prepare('DELETE FROM pages WHERE id = ?').bind(trashId).run();
+  return c.redirect('/admin/trash?flash=Page+permanently+deleted');
 });
 
 // ── Tags list (stub) ──────────────────────────────────────────────────────────

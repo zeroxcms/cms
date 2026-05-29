@@ -69,9 +69,9 @@ export function dashboardPage(opts: {
                      </form>`
               }
               <form method="POST" action="/admin/pages/${p.id}/delete" class="inline"
-                    onsubmit="return confirm('Delete this page permanently?')">
+                    onsubmit="return confirm('Move this page to trash?')">
                 <button type="submit"
-                        class="text-red-500 hover:text-red-700 text-sm font-medium">Delete</button>
+                        class="text-red-500 hover:text-red-700 text-sm font-medium">Trash</button>
               </form>
             </div>
           </td>
