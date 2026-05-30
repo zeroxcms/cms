@@ -10,11 +10,11 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "hono": "^4.4.0"
+    "hono": "^4.12.23"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20240620.0",
-    "typescript": "^5.4.5",
-    "wrangler": "^3.60.0"
+    "@cloudflare/workers-types": "^4.20260530.1",
+    "typescript": "^6.0.3",
+    "wrangler": "^4.95.0"
   }
 }
