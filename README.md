@@ -25,6 +25,7 @@ npm install
 ```bash
 npx wrangler d1 create cms-live
 npx wrangler d1 create cms-draft
+npx wrangler d1 create cms-trash
 ```
 
 Copy the `database_id` values printed by each command into `wrangler.toml`.
@@ -37,6 +38,9 @@ npx wrangler d1 migrations apply cms-live
 
 # DRAFT DB (content tables only)
 npx wrangler d1 migrations apply cms-draft
+
+# TRASH DB (content tables only)
+npx wrangler d1 migrations apply cms-trash
 ```
 
 ### 4. Configure secrets

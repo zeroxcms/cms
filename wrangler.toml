@@ -24,7 +24,7 @@ migrations_dir = "migrations/trash"
 [[d1_databases]]
 binding = "AUTH_DB"
 database_name = "cms-auth"
-database_id = "00000000-0000-0000-0000-000000000004"
+database_id = "76b3ab78-7ed6-4faa-ab5a-6263b30ec984"
 migrations_dir = "migrations/auth"
 
 [vars]
