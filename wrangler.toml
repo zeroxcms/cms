@@ -30,7 +30,7 @@ migrations_dir = "migrations/auth"
 [vars]
 # OAuth 2.1 provider: "github" | "google" | "eventuai"
 OAUTH_PROVIDER = "eventuai"
-OAUTH_CLIENT_ID = "cms-eventuai"
+OAUTH_CLIENT_ID = "RnFAoAkXz1JLwaKx"
 OAUTH_REDIRECT_URI = "https://cms.eventuai.com/auth/callback"
 SITE_TITLE = "Worker CMS"
 
