@@ -28,10 +28,10 @@ database_id = "76b3ab78-7ed6-4faa-ab5a-6263b30ec984"
 migrations_dir = "migrations/auth"
 
 [vars]
-# OAuth 2.1 provider: "github" or "google"
-OAUTH_PROVIDER = "github"
-OAUTH_CLIENT_ID = "your-oauth-client-id"
-OAUTH_REDIRECT_URI = "http://localhost:8787/auth/callback"
+# OAuth 2.1 provider: "github" | "google" | "eventuai"
+OAUTH_PROVIDER = "eventuai"
+OAUTH_CLIENT_ID = "cms-eventuai"
+OAUTH_REDIRECT_URI = "https://cms.eventuai.com/auth/callback"
 SITE_TITLE = "Worker CMS"
 
 # Secrets – set via: wrangler secret put JWT_SECRET

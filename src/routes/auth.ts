@@ -39,6 +39,12 @@ const PROVIDERS: Record<string, OAuthProvider> = {
     userUrl: 'https://www.googleapis.com/oauth2/v3/userinfo',
     scope: 'openid email profile',
   },
+  eventuai: {
+    authUrl: 'https://id.eventuai.com/oauth/authorize',
+    tokenUrl: 'https://id.eventuai.com/oauth/token',
+    userUrl: 'https://id.eventuai.com/oauth/userinfo',
+    scope: 'openid profile email roles',
+  },
 };
 
 interface NormalizedUser {
@@ -46,9 +52,27 @@ interface NormalizedUser {
   email: string;
   name: string;
   avatarUrl: string;
+  role?: UserRole;
+}
+
+function mapRoleFromOAuth(roles: string[]): UserRole {
+  if (roles.includes('admin')) return 'admin';
+  if (roles.includes('editor')) return 'editor';
+  if (roles.includes('moderator')) return 'moderator';
+  return 'viewer';
 }
 
 function normalizeUser(provider: string, data: Record<string, unknown>): NormalizedUser {
+  if (provider === 'eventuai') {
+    const roles = Array.isArray(data['roles']) ? (data['roles'] as string[]) : [];
+    return {
+      oauthId: `eventuai:${data['sub']}`,
+      email: String(data['email'] ?? ''),
+      name: String(data['preferred_username'] ?? data['sub'] ?? ''),
+      avatarUrl: '',
+      role: mapRoleFromOAuth(roles),
+    };
+  }
   if (provider === 'google') {
     return {
       oauthId: `google:${data['sub']}`,
@@ -204,17 +228,31 @@ authRoutes.get('/callback', async (c) => {
   const rawUser = await userRes.json<Record<string, unknown>>();
   const normalized = normalizeUser(providerName, rawUser);
 
-  // Upsert user in AUTH DB
-  await c.env.AUTH_DB.prepare(
-    `INSERT INTO users (oauth_id, email, name, avatar_url)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(oauth_id) DO UPDATE SET
-       email = excluded.email,
-       name = excluded.name,
-       avatar_url = excluded.avatar_url`,
-  )
-    .bind(normalized.oauthId, normalized.email, normalized.name, normalized.avatarUrl)
-    .run();
+  // Upsert user in AUTH DB; sync role when the identity provider supplies one
+  if (normalized.role) {
+    await c.env.AUTH_DB.prepare(
+      `INSERT INTO users (oauth_id, email, name, avatar_url, role)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(oauth_id) DO UPDATE SET
+         email = excluded.email,
+         name = excluded.name,
+         avatar_url = excluded.avatar_url,
+         role = excluded.role`,
+    )
+      .bind(normalized.oauthId, normalized.email, normalized.name, normalized.avatarUrl, normalized.role)
+      .run();
+  } else {
+    await c.env.AUTH_DB.prepare(
+      `INSERT INTO users (oauth_id, email, name, avatar_url)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(oauth_id) DO UPDATE SET
+         email = excluded.email,
+         name = excluded.name,
+         avatar_url = excluded.avatar_url`,
+    )
+      .bind(normalized.oauthId, normalized.email, normalized.name, normalized.avatarUrl)
+      .run();
+  }
 
   const dbUser = await c.env.AUTH_DB.prepare(
     'SELECT id, email, name, role FROM users WHERE oauth_id = ?',
