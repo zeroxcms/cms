@@ -21,10 +21,19 @@ function base64urlEncode(data: ArrayBuffer | Uint8Array | string): string {
   return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 }
 
-function base64urlDecode(str: string): string {
+function base64urlDecodeBytes(str: string): Uint8Array {
   const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
   const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
-  return atob(padded);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function base64urlDecode(str: string): string {
+  return new TextDecoder().decode(base64urlDecodeBytes(str));
 }
 
 async function importHmacKey(secret: string): Promise<CryptoKey> {
@@ -75,11 +84,11 @@ export async function verifyJWT(
     const [headerEncoded, payloadEncoded, signatureEncoded] = parts;
     const signingInput = `${headerEncoded}.${payloadEncoded}`;
 
+    const header = JSON.parse(base64urlDecode(headerEncoded)) as { alg?: unknown; typ?: unknown };
+    if (header.alg !== 'HS256' || header.typ !== 'JWT') return null;
+
     const key = await importHmacKey(secret);
-    const signatureBytes = Uint8Array.from(
-      atob(signatureEncoded.replace(/-/g, '+').replace(/_/g, '/')),
-      (c) => c.charCodeAt(0),
-    );
+    const signatureBytes = base64urlDecodeBytes(signatureEncoded);
 
     const valid = await crypto.subtle.verify(
       'HMAC',
@@ -90,6 +99,8 @@ export async function verifyJWT(
     if (!valid) return null;
 
     const payload = JSON.parse(base64urlDecode(payloadEncoded)) as JWTPayload;
+    if (typeof payload.exp !== 'number' || typeof payload.iat !== 'number') return null;
+    if (payload.type !== 'access' && payload.type !== 'refresh') return null;
 
     // Reject expired tokens
     if (payload.exp < Math.floor(Date.now() / 1000)) return null;

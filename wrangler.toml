@@ -28,11 +28,18 @@ database_id = "76b3ab78-7ed6-4faa-ab5a-6263b30ec984"
 migrations_dir = "migrations/auth"
 
 [vars]
-# OAuth 2.1 provider: "github" | "google" | "eventuai"
-OAUTH_PROVIDER = "eventuai"
-OAUTH_CLIENT_ID = "RnFAoAkXz1JLwaKx"
+# Comma-separated list of enabled OAuth providers: "github", "google", "eventuai"
+ENABLED_PROVIDERS = "eventuai"
+# Per-provider OAuth client IDs – add the ones you use
+EVENTUAI_CLIENT_ID = "RnFAoAkXz1JLwaKx"
+# GITHUB_CLIENT_ID = ""
+# GOOGLE_CLIENT_ID = ""
+# Shared redirect URI – registered with every enabled provider
 OAUTH_REDIRECT_URI = "https://cms.eventuai.com/auth/callback"
+CANONICAL_ORIGIN = "https://cms.eventuai.com"
 SITE_TITLE = "Worker CMS"
 
 # Secrets – set via: wrangler secret put JWT_SECRET
-# wrangler secret put OAUTH_CLIENT_SECRET
+# wrangler secret put EVENTUAI_CLIENT_SECRET
+# wrangler secret put GITHUB_CLIENT_SECRET
+# wrangler secret put GOOGLE_CLIENT_SECRET

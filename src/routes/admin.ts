@@ -19,7 +19,7 @@ import { Hono } from 'hono';
 import { authMiddleware, editorGuard } from '../middleware/auth';
 import { dashboardPage } from '../templates/dashboard';
 import { editorPage } from '../templates/editor';
-import type { Env, Variables, Page, PageVersion, Tag } from '../types';
+import type { Env, Variables, Page, PageVersion, PageTag, Tag } from '../types';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -168,7 +168,12 @@ adminRoutes.post('/pages', async (c) => {
     .bind(name, slug, weightVal, startVal, endVal, pageTypeVal, originalVal, pageIdVal ? parseInt(pageIdVal, 10) : null)
     .run();
 
-  const pageId = pageResult.meta.last_row_id as number;
+  // The schema uses a custom DEFAULT id expression (not INTEGER PRIMARY KEY),
+  // so last_row_id is the internal rowid — we must SELECT the actual id back.
+  const pageRow = await c.env.DRAFT_DB.prepare('SELECT id FROM pages WHERE rowid = ?')
+    .bind(pageResult.meta.last_row_id)
+    .first<{ id: number }>();
+  const pageId = pageRow!.id;
 
   // Insert page version
   const versionResult = await c.env.DRAFT_DB.prepare(
@@ -177,7 +182,10 @@ adminRoutes.post('/pages', async (c) => {
     .bind(pageId, content || null, meta)
     .run();
 
-  const versionId = versionResult.meta.last_row_id as number;
+  const versionRow = await c.env.DRAFT_DB.prepare('SELECT id FROM page_versions WHERE rowid = ?')
+    .bind(versionResult.meta.last_row_id)
+    .first<{ id: number }>();
+  const versionId = versionRow!.id;
 
   // Link current version
   await c.env.DRAFT_DB.prepare(
@@ -317,7 +325,10 @@ adminRoutes.post('/pages/:id', async (c) => {
     .bind(pageId, content || null, meta)
     .run();
 
-  const newVersionId = versionResult.meta.last_row_id as number;
+  const newVersionRow = await c.env.DRAFT_DB.prepare('SELECT id FROM page_versions WHERE rowid = ?')
+    .bind(versionResult.meta.last_row_id)
+    .first<{ id: number }>();
+  const newVersionId = newVersionRow!.id;
 
   await c.env.DRAFT_DB.prepare(
     'UPDATE pages SET current_page_version_id = ? WHERE id = ?',
@@ -649,12 +660,14 @@ adminRoutes.get('/tags', async (c) => {
       .first<{ avatar_url: string | null }>(),
   ]);
 
+  const { layout, escHtml } = await import('../templates/layout');
+
   const rows = tags.results
     .map(
       (t) =>
         `<tr class="hover:bg-gray-50">
-           <td class="px-6 py-3 text-sm font-medium text-gray-900">${t.name}</td>
-           <td class="px-6 py-3 text-sm font-mono text-gray-500">${t.slug}</td>
+           <td class="px-6 py-3 text-sm font-medium text-gray-900">${escHtml(t.name)}</td>
+           <td class="px-6 py-3 text-sm font-mono text-gray-500">${escHtml(t.slug)}</td>
          </tr>`,
     )
     .join('');
@@ -677,7 +690,6 @@ adminRoutes.get('/tags', async (c) => {
       </div>
     </div>`;
 
-  const { layout } = await import('../templates/layout');
   return c.html(
     layout({
       title: 'Tags',

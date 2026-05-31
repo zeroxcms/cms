@@ -124,8 +124,8 @@ export const authMiddleware = createMiddleware<{
   }
 
   if (!user) {
-    deleteCookie(c, 'access_token');
-    deleteCookie(c, 'refresh_token');
+    deleteCookie(c, 'access_token', { path: '/' });
+    deleteCookie(c, 'refresh_token', { path: '/' });
     return c.redirect('/auth/login');
   }
 

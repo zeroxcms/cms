@@ -81,13 +81,22 @@ export interface Env {
   AUTH_DB: D1Database;
   /** HMAC-SHA256 secret for signing JWTs – set via `wrangler secret put JWT_SECRET` */
   JWT_SECRET: string;
-  /** OAuth 2.1 provider: "github" or "google" */
-  OAUTH_PROVIDER: string;
-  OAUTH_CLIENT_ID: string;
-  /** Set via `wrangler secret put OAUTH_CLIENT_SECRET` */
-  OAUTH_CLIENT_SECRET: string;
-  /** Full redirect URI registered with OAuth provider */
+  /**
+   * Comma-separated list of enabled OAuth providers, e.g. "github,google,eventuai".
+   * Only providers listed here will show as login options.
+   */
+  ENABLED_PROVIDERS: string;
+  /** Per-provider OAuth client IDs (set in wrangler.toml [vars]) */
+  GITHUB_CLIENT_ID?: string;
+  GOOGLE_CLIENT_ID?: string;
+  EVENTUAI_CLIENT_ID?: string;
+  /** Per-provider OAuth client secrets (set via `wrangler secret put`) */
+  GITHUB_CLIENT_SECRET?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  EVENTUAI_CLIENT_SECRET?: string;
+  /** Shared OAuth redirect URI registered with all providers */
   OAUTH_REDIRECT_URI: string;
+  CANONICAL_ORIGIN?: string;
   SITE_TITLE: string;
 }
 

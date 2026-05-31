@@ -3,7 +3,7 @@ Content management system on Workers
 
 ## Features
 
-- **OAuth 2.1** login via GitHub or Google with PKCE (Proof Key for Code Exchange)
+- **OAuth 2.1** login via Eventuai, GitHub, or Google with PKCE (Proof Key for Code Exchange)
 - **Dual JWT** security – short-lived access tokens (15 min) + rotatable refresh tokens (7 days) stored as httpOnly cookies; refresh tokens are hashed and stored in D1 for revocation
 - **Role-based access** – only `admin`, `editor`, and `moderator` roles can access the CMS; other users are redirected to the login page
 - **LIVE / DRAFT databases** – content is authored in the DRAFT D1 database, published to the LIVE D1 database with a single click, and un-published by deleting the LIVE record
@@ -48,26 +48,65 @@ npx wrangler d1 migrations apply cms-trash
 ```bash
 # Random 32-byte secret for signing JWTs – e.g. openssl rand -hex 32
 npx wrangler secret put JWT_SECRET
-
-# OAuth application client secret
-npx wrangler secret put OAUTH_CLIENT_SECRET
 ```
+
+Then add a secret for each provider you enable (see step 5).
 
 Create a `.dev.vars` file for local development (see `.dev.vars.example`).
 
-### 5. Configure OAuth
+### 5. Enable OAuth providers
+
+Set `ENABLED_PROVIDERS` in `wrangler.toml` to a comma-separated list of the
+providers you want to offer on the login page:
+
+```toml
+ENABLED_PROVIDERS = "eventuai,github,google"
+```
+
+Users will see one sign-in button per listed provider, in that order.
+Add the Client ID and secret for every provider you enable.
+
+#### Eventuai (self-hosted OAuth worker)
+
+1. Register the CMS as a client on your OAuth worker — see the OAuth worker README for the `POST /admin/setup-clients` call.
+2. Copy the generated `clientId` into `wrangler.toml`:
+   ```toml
+   EVENTUAI_CLIENT_ID = "<client-id>"
+   ```
+3. Store the matching secret:
+   ```bash
+   npx wrangler secret put EVENTUAI_CLIENT_SECRET
+   ```
 
 #### GitHub
-1. Go to **Settings → Developer settings → OAuth Apps → New OAuth App**
-2. Set **Authorization callback URL** to `http://localhost:8787/auth/callback` (dev) or your production URL
-3. Copy the **Client ID** into `wrangler.toml` (`OAUTH_CLIENT_ID`)
-4. Generate a **Client Secret** and store it: `npx wrangler secret put OAUTH_CLIENT_SECRET`
+
+1. Go to **GitHub → Settings → Developer settings → OAuth Apps → New OAuth App**.
+2. Set **Authorization callback URL** to your `OAUTH_REDIRECT_URI` (e.g. `https://cms.example.com/auth/callback`).
+3. Copy the **Client ID** into `wrangler.toml`:
+   ```toml
+   GITHUB_CLIENT_ID = "<client-id>"
+   ```
+4. Generate a **Client Secret** and store it:
+   ```bash
+   npx wrangler secret put GITHUB_CLIENT_SECRET
+   ```
 
 #### Google
-1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
-2. Create an **OAuth 2.0 Client ID** (Web application)
-3. Add the redirect URI and copy Client ID / Secret
-4. Set `OAUTH_PROVIDER = "google"` in `wrangler.toml`
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services → Credentials**.
+2. Click **Create Credentials → OAuth 2.0 Client ID** (type: *Web application*).
+3. Add your `OAUTH_REDIRECT_URI` as an authorised redirect URI.
+4. Copy the **Client ID** into `wrangler.toml`:
+   ```toml
+   GOOGLE_CLIENT_ID = "<client-id>"
+   ```
+5. Store the **Client Secret**:
+   ```bash
+   npx wrangler secret put GOOGLE_CLIENT_SECRET
+   ```
+
+> **Note:** GitHub and Google users have their role defaulted from the database.
+> Promote accounts to `admin` / `editor` with the SQL command in step 6.
 
 ### 6. Set the first user's role
 
@@ -105,7 +144,7 @@ npm run deploy
 | `page_tags` | Many-to-many page ↔ tag relationships |
 | `tags` | Tag reference table |
 
-### Auth tables (LIVE only)
+### Auth tables (AUTH_DB only)
 
 | Table | Purpose |
 |-------|---------|

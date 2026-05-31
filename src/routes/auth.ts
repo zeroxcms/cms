@@ -11,6 +11,7 @@ import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { signJWT, verifyJWT, hashToken, generateTokenId } from '../utils/jwt';
 import { generateCodeVerifier, generateCodeChallenge, generateState } from '../utils/pkce';
+import { rejectCrossSiteRequest } from '../utils/security';
 import { loginPage } from '../templates/login';
 import type { Env, Variables, JWTPayload, UserRole } from '../types';
 
@@ -55,6 +56,37 @@ interface NormalizedUser {
   role?: UserRole;
 }
 
+interface OAuthStatePayload extends JWTPayload {
+  state?: string;
+  code_verifier?: string;
+  provider?: string;
+}
+
+/** Returns the enabled providers in declaration order. */
+function getEnabledProviders(env: Env): string[] {
+  return (env.ENABLED_PROVIDERS ?? '')
+    .split(',')
+    .map((p) => p.trim().toLowerCase())
+    .filter((p) => p in PROVIDERS);
+}
+
+/** Returns the client ID and secret for the given provider. */
+function getProviderCredentials(
+  env: Env,
+  provider: string,
+): { clientId: string; clientSecret: string } | null {
+  if (provider === 'github' && env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) {
+    return { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET };
+  }
+  if (provider === 'google' && env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
+    return { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET };
+  }
+  if (provider === 'eventuai' && env.EVENTUAI_CLIENT_ID && env.EVENTUAI_CLIENT_SECRET) {
+    return { clientId: env.EVENTUAI_CLIENT_ID, clientSecret: env.EVENTUAI_CLIENT_SECRET };
+  }
+  return null;
+}
+
 function mapRoleFromOAuth(roles: string[]): UserRole {
   if (roles.includes('admin')) return 'admin';
   if (roles.includes('editor')) return 'editor';
@@ -62,28 +94,41 @@ function mapRoleFromOAuth(roles: string[]): UserRole {
   return 'viewer';
 }
 
-function normalizeUser(provider: string, data: Record<string, unknown>): NormalizedUser {
+function normalizeUser(provider: string, data: Record<string, unknown>): NormalizedUser | null {
   if (provider === 'eventuai') {
-    const roles = Array.isArray(data['roles']) ? (data['roles'] as string[]) : [];
+    const sub = typeof data['sub'] === 'string' ? data['sub'] : '';
+    const email = typeof data['email'] === 'string' ? data['email'] : '';
+    if (!sub || !email) return null;
+
+    const roles = Array.isArray(data['roles'])
+      ? data['roles'].filter((role): role is string => typeof role === 'string')
+      : [];
     return {
-      oauthId: `eventuai:${data['sub']}`,
-      email: String(data['email'] ?? ''),
-      name: String(data['preferred_username'] ?? data['sub'] ?? ''),
+      oauthId: `eventuai:${sub}`,
+      email,
+      name: String(data['preferred_username'] ?? sub),
       avatarUrl: '',
       role: mapRoleFromOAuth(roles),
     };
   }
   if (provider === 'google') {
+    const sub = typeof data['sub'] === 'string' ? data['sub'] : '';
+    const email = typeof data['email'] === 'string' ? data['email'] : '';
+    if (!sub || !email) return null;
+
     return {
-      oauthId: `google:${data['sub']}`,
-      email: String(data['email'] ?? ''),
+      oauthId: `google:${sub}`,
+      email,
       name: String(data['name'] ?? ''),
       avatarUrl: String(data['picture'] ?? ''),
     };
   }
+  const id = data['id'];
+  if (typeof id !== 'string' && typeof id !== 'number') return null;
+
   // GitHub (default)
   return {
-    oauthId: `github:${data['id']}`,
+    oauthId: `github:${id}`,
     email: String(data['email'] ?? `${data['login']}@github.noreply`),
     name: String(data['name'] ?? data['login'] ?? ''),
     avatarUrl: String(data['avatar_url'] ?? ''),
@@ -96,31 +141,42 @@ export const authRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // GET /auth/login – show the login page (HTML)
 authRoutes.get('/login', (c) => {
-  const providerName = c.env.OAUTH_PROVIDER ?? 'github';
+  const providers = getEnabledProviders(c.env);
   const error = c.req.query('error');
   return c.html(
     loginPage({
       siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
-      provider: providerName,
+      providers: providers.length > 0 ? providers : ['github'],
       error,
     }),
   );
 });
 
-// GET /auth/start – initiate OAuth 2.1 flow with PKCE
+// GET /auth/start?provider=<name> – initiate OAuth 2.1 flow with PKCE
 authRoutes.get('/start', async (c) => {
-  const providerName = c.env.OAUTH_PROVIDER ?? 'github';
-  const provider = PROVIDERS[providerName];
-  if (!provider) {
+  const enabledProviders = getEnabledProviders(c.env);
+  // Accept the provider from the query string; fall back to the first enabled one.
+  const requested = c.req.query('provider')?.toLowerCase() ?? '';
+  const providerName = enabledProviders.includes(requested)
+    ? requested
+    : enabledProviders[0] ?? 'github';
+
+  const providerConfig = PROVIDERS[providerName];
+  if (!providerConfig) {
     return c.text(`Unsupported OAuth provider: ${providerName}`, 500);
+  }
+
+  const credentials = getProviderCredentials(c.env, providerName);
+  if (!credentials) {
+    return c.text(`OAuth credentials not configured for provider: ${providerName}`, 500);
   }
 
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = await generateCodeChallenge(codeVerifier);
   const state = generateState();
 
-  // Store PKCE state in a signed short-lived JWT cookie so we have no
-  // server-side storage dependency during the redirect round-trip.
+  // Store PKCE state (including the chosen provider) in a signed short-lived
+  // JWT cookie so we have no server-side storage dependency.
   const statePayload = {
     sub: 'pkce',
     email: '',
@@ -129,6 +185,7 @@ authRoutes.get('/start', async (c) => {
     type: 'access' as const,
     state,
     code_verifier: codeVerifier,
+    provider: providerName,
     exp: Math.floor(Date.now() / 1000) + 600, // 10 minutes
   };
   const stateCookie = await signJWT(statePayload, c.env.JWT_SECRET);
@@ -141,16 +198,16 @@ authRoutes.get('/start', async (c) => {
   });
 
   const params = new URLSearchParams({
-    client_id: c.env.OAUTH_CLIENT_ID,
+    client_id: credentials.clientId,
     redirect_uri: c.env.OAUTH_REDIRECT_URI,
     response_type: 'code',
-    scope: provider.scope,
+    scope: providerConfig.scope,
     state,
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
   });
 
-  return c.redirect(`${provider.authUrl}?${params.toString()}`);
+  return c.redirect(`${providerConfig.authUrl}?${params.toString()}`);
 });
 
 // GET /auth/callback – handle the provider redirect
@@ -171,31 +228,39 @@ authRoutes.get('/callback', async (c) => {
     return c.redirect('/auth/login?error=missing_state');
   }
 
-  const statePayload = await verifyJWT(stateCookie, c.env.JWT_SECRET);
+  const statePayload = await verifyJWT(stateCookie, c.env.JWT_SECRET) as OAuthStatePayload | null;
   if (!statePayload) {
     return c.redirect('/auth/login?error=invalid_state');
   }
 
-  const storedState = (statePayload as unknown as Record<string, string>)['state'];
-  const codeVerifier = (statePayload as unknown as Record<string, string>)['code_verifier'];
+  const storedState = statePayload.state;
+  const codeVerifier = statePayload.code_verifier;
 
-  if (storedState !== state) {
+  if (!storedState || !codeVerifier || storedState !== state) {
     return c.redirect('/auth/login?error=state_mismatch');
   }
 
-  const providerName = c.env.OAUTH_PROVIDER ?? 'github';
-  const provider = PROVIDERS[providerName];
+  const providerName = statePayload.provider ?? '';
+  const providerConfig = PROVIDERS[providerName];
+  if (!providerConfig) {
+    return c.redirect('/auth/login?error=unsupported_provider');
+  }
+
+  const credentials = getProviderCredentials(c.env, providerName);
+  if (!credentials) {
+    return c.redirect('/auth/login?error=provider_not_configured');
+  }
 
   // Exchange code for provider access token
-  const tokenRes = await fetch(provider.tokenUrl, {
+  const tokenRes = await fetch(providerConfig.tokenUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       Accept: 'application/json',
     },
     body: new URLSearchParams({
-      client_id: c.env.OAUTH_CLIENT_ID,
-      client_secret: c.env.OAUTH_CLIENT_SECRET,
+      client_id: credentials.clientId,
+      client_secret: credentials.clientSecret,
       code,
       redirect_uri: c.env.OAUTH_REDIRECT_URI,
       grant_type: 'authorization_code',
@@ -214,7 +279,7 @@ authRoutes.get('/callback', async (c) => {
   }
 
   // Fetch user info from provider
-  const userRes = await fetch(provider.userUrl, {
+  const userRes = await fetch(providerConfig.userUrl, {
     headers: {
       Authorization: 'Bearer ' + providerAccessToken,
       Accept: 'application/json',
@@ -227,6 +292,9 @@ authRoutes.get('/callback', async (c) => {
 
   const rawUser = await userRes.json<Record<string, unknown>>();
   const normalized = normalizeUser(providerName, rawUser);
+  if (!normalized) {
+    return c.redirect('/auth/login?error=invalid_userinfo');
+  }
 
   // Upsert user in AUTH DB; sync role when the identity provider supplies one
   if (normalized.role) {
@@ -322,6 +390,9 @@ authRoutes.get('/callback', async (c) => {
 
 // GET /auth/logout – revoke session and clear cookies
 authRoutes.get('/logout', async (c) => {
+  const crossSite = rejectCrossSiteRequest(c.req.raw);
+  if (crossSite) return crossSite;
+
   const refreshToken = getCookie(c, 'refresh_token');
   if (refreshToken) {
     const payload = await verifyJWT(refreshToken, c.env.JWT_SECRET);
