@@ -20,13 +20,14 @@ import type { Env, Variables } from './types';
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 app.use('*', async (c, next) => {
+  const canonicalOrigin = c.env.CANONICAL_ORIGIN ?? 'https://cms.eventuai.com';
   const canonicalResponse = canonicalHostResponse(
     c.req.raw,
-    c.env.CANONICAL_ORIGIN ?? 'https://cms.eventuai.com',
+    canonicalOrigin,
   );
   if (canonicalResponse) return withSecurityHeaders(canonicalResponse);
 
-  const crossOriginMutation = rejectCrossOriginMutation(c.req.raw);
+  const crossOriginMutation = rejectCrossOriginMutation(c.req.raw, [canonicalOrigin]);
   if (crossOriginMutation) return withSecurityHeaders(crossOriginMutation);
 
   await next();

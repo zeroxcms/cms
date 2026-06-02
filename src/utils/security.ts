@@ -42,13 +42,17 @@ export function canonicalHostResponse(request: Request, canonicalOrigin: string)
   return new Response('Not Found', { status: 404 });
 }
 
-export function rejectCrossOriginMutation(request: Request): Response | null {
+export function rejectCrossOriginMutation(request: Request, allowedOrigins: string[] = []): Response | null {
   if (SAFE_METHODS.has(request.method.toUpperCase())) return null;
 
   const url = new URL(request.url);
+  const validOrigins = new Set([url.origin, ...allowedOrigins]);
   const origin = request.headers.get('Origin');
-  if (origin && origin !== url.origin) {
-    return new Response('Forbidden', { status: 403 });
+  if (origin) {
+    if (!validOrigins.has(origin)) {
+      return new Response('Forbidden', { status: 403 });
+    }
+    return null;
   }
 
   if (request.headers.get('Sec-Fetch-Site') === 'cross-site') {
@@ -58,7 +62,17 @@ export function rejectCrossOriginMutation(request: Request): Response | null {
   return null;
 }
 
-export function rejectCrossSiteRequest(request: Request): Response | null {
+export function rejectCrossSiteRequest(request: Request, allowedOrigins: string[] = []): Response | null {
+  const url = new URL(request.url);
+  const validOrigins = new Set([url.origin, ...allowedOrigins]);
+  const origin = request.headers.get('Origin');
+  if (origin) {
+    if (!validOrigins.has(origin)) {
+      return new Response('Forbidden', { status: 403 });
+    }
+    return null;
+  }
+
   if (request.headers.get('Sec-Fetch-Site') === 'cross-site') {
     return new Response('Forbidden', { status: 403 });
   }
