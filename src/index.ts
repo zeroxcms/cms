@@ -41,6 +41,20 @@ app.route('/auth', authRoutes);
 // ── Admin UI (protected) ──────────────────────────────────────────────────────
 app.route('/admin', adminRoutes);
 
+// ── Media files from optional R2 binding ──────────────────────────────────────
+app.get('/media/*', async (c) => {
+  if (!c.env.MEDIA_BUCKET) return c.notFound();
+  const key = c.req.path.replace(/^\/media\//, '');
+  const object = await c.env.MEDIA_BUCKET.get(key);
+  if (!object) return c.notFound();
+
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('Cache-Control', 'public, max-age=31536000');
+  headers.set('ETag', object.httpEtag);
+  return new Response(object.body, { headers });
+});
+
 // ── Login shortcut ────────────────────────────────────────────────────────────
 app.get('/login', (c) => c.redirect('/auth/login'));
 

@@ -4,6 +4,174 @@
 
 import { layout, escHtml } from './layout';
 import type { Page, PageVersion, Tag } from '../types';
+import type { BlueprintProps, Original, OriginalItem } from '../utils/original';
+import type { CmsConfig } from '../cms-config';
+
+function renderStructuredEditor(opts: {
+  config: CmsConfig;
+  language: string;
+  original: Original;
+  blueprintProps: BlueprintProps;
+  blockProps: Record<string, BlueprintProps>;
+  blockNames: string[];
+  versions: PageVersion[];
+}): string {
+  const { config, language, original, blueprintProps, blockProps, blockNames } = opts;
+  const languageOptions = config.languages
+    .map((lang) => `<option value="${escHtml(lang)}" ${lang === language ? 'selected' : ''}>${escHtml(lang)}</option>`)
+    .join('');
+  const blockOptions = blockNames
+    .map((name) => `<option value="${escHtml(name)}">${escHtml(name)}</option>`)
+    .join('');
+
+  return `
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-5">
+      <div class="flex items-center justify-between gap-4">
+        <p class="text-sm font-semibold text-gray-700">Structured Content</p>
+        <label class="flex items-center gap-2 text-xs text-gray-500">
+          Language
+          <select name="_language" class="px-2 py-1 border border-gray-300 rounded-lg text-xs">
+            ${languageOptions}
+          </select>
+        </label>
+      </div>
+      ${renderOriginalFields('', original, blueprintProps, language, config.defaultLanguage)}
+      <div class="border-t border-gray-100 pt-5 space-y-4">
+        <div class="flex items-center justify-between gap-4">
+          <p class="text-sm font-semibold text-gray-700">Blocks</p>
+          ${
+            blockOptions
+              ? `<div class="flex items-center gap-2">
+                   <select name="block-select" class="px-2 py-1 border border-gray-300 rounded-lg text-xs">${blockOptions}</select>
+                   <button type="submit" name="action" value="block-add"
+                           class="px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-semibold">Add Block</button>
+                 </div>`
+              : ''
+          }
+        </div>
+        ${
+          original.blocks.length
+            ? original.blocks
+                .map((block, index) => {
+                  const type = block.attributes._type || 'default';
+                  return `<div class="rounded-lg border border-gray-200 p-4 space-y-4">
+                            <div class="flex items-center justify-between gap-3">
+                              <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">${escHtml(type)}</p>
+                              <button type="submit" name="action" value="block-delete:${index}"
+                                      class="text-xs font-semibold text-red-600 hover:text-red-700">Delete Block</button>
+                            </div>
+                            <input type="hidden" name="#${index}@_type" value="${escHtml(type)}">
+                            <input type="hidden" name="#${index}@_id" value="${escHtml(block.attributes._id ?? '')}">
+                            ${renderOriginalFields(`#${index}`, block, blockProps[type] ?? blockProps.default, language, config.defaultLanguage)}
+                          </div>`;
+                })
+                .join('')
+            : '<p class="text-sm text-gray-400">No blocks yet.</p>'
+        }
+      </div>
+    </div>`;
+}
+
+function renderOriginalFields(
+  prefix: string,
+  original: Original | OriginalItem,
+  props: BlueprintProps,
+  language: string,
+  defaultLanguage: string,
+): string {
+  const attributeFields = props.attributes
+    .map((field) =>
+      renderInput(`${prefix}@${field.name}`, field.name, original.attributes[field.name] ?? '', field.type),
+    )
+    .join('');
+  const pointerFields = props.pointers
+    .map((field) =>
+      renderInput(`${prefix}*${field.name}`, `${field.name} reference`, original.pointers[field.name] ?? '', field.type),
+    )
+    .join('');
+  const valueFields = props.fields
+    .map((field) =>
+      renderInput(
+        `${prefix}.${field.name}|${language}`,
+        field.name,
+        original.values[language]?.[field.name] ?? original.values[defaultLanguage]?.[field.name] ?? '',
+        field.type,
+      ),
+    )
+    .join('');
+  const itemFields = props.items
+    .map((item) => renderItemGroup(prefix, item, original.items[item.name] ?? [], language, defaultLanguage))
+    .join('');
+
+  return `
+    <div class="grid grid-cols-2 gap-5">
+      ${attributeFields}
+      ${pointerFields}
+      ${valueFields}
+    </div>
+    ${itemFields}`;
+}
+
+function renderItemGroup(
+  prefix: string,
+  props: NonNullable<BlueprintProps['items'][number]>,
+  items: OriginalItem[],
+  language: string,
+  defaultLanguage: string,
+): string {
+  const rows = items.length ? items : [];
+  const blockMatch = prefix.match(/^#(\d+)/);
+  const addAction = blockMatch ? `block-item-add:${blockMatch[1]}|${props.name}` : `item-add:${props.name}`;
+  return `
+    <div class="rounded-lg border border-gray-100 bg-gray-50 p-4 space-y-4">
+      <div class="flex items-center justify-between">
+        <p class="text-sm font-semibold text-gray-700">${escHtml(props.name)}</p>
+        <button type="submit" name="action" value="${escHtml(addAction)}"
+                class="px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-xs font-semibold text-gray-700">Add Item</button>
+      </div>
+      ${
+        rows.length
+          ? rows
+              .map((item, index) => {
+                const itemPrefix = `${prefix}.${props.name}[${index}]`;
+                const nestedProps: BlueprintProps = {
+                  attributes: props.attributes,
+                  pointers: props.pointers,
+                  fields: props.fields,
+                  items: props.items ?? [],
+                };
+                const deleteAction = blockMatch
+                  ? `block-item-delete:${blockMatch[1]}|${props.name}|${index}`
+                  : `item-delete:${props.name}|${index}`;
+                return `<div class="rounded-lg bg-white border border-gray-200 p-4 space-y-3">
+                          <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-400">Item ${index + 1}</span>
+                            <button type="submit" name="action" value="${escHtml(deleteAction)}"
+                                    class="text-xs font-semibold text-red-600 hover:text-red-700">Delete</button>
+                          </div>
+                          ${renderOriginalFields(itemPrefix, item, nestedProps, language, defaultLanguage)}
+                        </div>`;
+              })
+              .join('')
+          : '<p class="text-sm text-gray-400">No items yet.</p>'
+      }
+    </div>`;
+}
+
+function renderInput(name: string, label: string, value: string, type: string): string {
+  const isLong = type.includes('textarea') || label === 'body' || label === 'description';
+  const input = isLong
+    ? `<textarea name="${escHtml(name)}" rows="4"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y">${escHtml(value)}</textarea>`
+    : `<input type="${type === 'date' ? 'date' : 'text'}" name="${escHtml(name)}"
+              value="${escHtml(value)}"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">`;
+
+  return `<label class="${isLong ? 'col-span-2' : ''} block">
+            <span class="block text-sm font-medium text-gray-700 mb-1">${escHtml(label)}</span>
+            ${input}
+          </label>`;
+}
 
 export function editorPage(opts: {
   siteTitle: string;
@@ -17,6 +185,16 @@ export function editorPage(opts: {
   selectedTagIds: number[];
   errors?: string[];
   action: string;
+  defaultPageType?: string;
+  structured?: {
+    config: CmsConfig;
+    language: string;
+    original: Original;
+    blueprintProps: BlueprintProps;
+    blockProps: Record<string, BlueprintProps>;
+    blockNames: string[];
+    versions: PageVersion[];
+  };
 }): string {
   const {
     siteTitle,
@@ -30,6 +208,8 @@ export function editorPage(opts: {
     selectedTagIds,
     errors = [],
     action,
+    defaultPageType = '',
+    structured,
   } = opts;
 
   const isEdit = !!page;
@@ -63,6 +243,28 @@ export function editorPage(opts: {
          </label>`,
     )
     .join('');
+
+  const structuredBlock = structured
+    ? renderStructuredEditor(structured)
+    : '';
+  const versionHrefBase = page ? `/admin/pages/${page.id}/edit` : action;
+
+  const versionBlock = structured?.versions.length
+    ? `<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <p class="text-sm font-semibold text-gray-700 mb-3">Versions</p>
+        <div class="flex flex-wrap gap-2">
+          ${structured.versions
+            .map((v) => {
+              const label = `${v.created_at}${v.action ? ` · ${v.action}` : ''}`;
+              return `<a href="${escHtml(versionHrefBase)}?version=${v.id}"
+                         class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-xs text-gray-700 hover:bg-gray-50">${escHtml(label)}</a>
+                      <button type="submit" name="action" value="revert:${v.id}"
+                              class="px-3 py-1.5 rounded-lg border border-yellow-300 bg-yellow-50 text-xs text-yellow-800 hover:bg-yellow-100">Revert</button>`;
+            })
+            .join('')}
+        </div>
+       </div>`
+    : '';
 
   const body = `
     <div class="px-8 py-8 max-w-4xl">
@@ -108,7 +310,7 @@ export function editorPage(opts: {
             <div>
               <label for="page_type" class="block text-sm font-medium text-gray-700 mb-1">Page Type</label>
               <input type="text" id="page_type" name="page_type"
-                     value="${escHtml(page?.page_type ?? '')}"
+                     value="${escHtml(page?.page_type ?? defaultPageType)}"
                      placeholder="e.g. blog, product, landing"
                      class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
             </div>
@@ -144,14 +346,14 @@ export function editorPage(opts: {
             </div>
 
             <div class="col-span-2">
-              <label for="original" class="block text-sm font-medium text-gray-700 mb-1">Original / Translation Source</label>
-              <input type="text" id="original" name="original"
-                     value="${escHtml(page?.original ?? '')}"
-                     placeholder="UUID or slug of the original language version"
-                     class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+              <label for="original_json" class="block text-sm font-medium text-gray-700 mb-1">Original JSON</label>
+              <textarea id="original_json" name="original_json" rows="4"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y">${escHtml(page?.original ?? '')}</textarea>
             </div>
           </div>
         </div>
+
+        ${structuredBlock}
 
         <!-- Content editor -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -206,12 +408,20 @@ export function editorPage(opts: {
             : ''
         }
 
+        ${versionBlock}
+
         <!-- Actions -->
         <div class="flex items-center gap-3 pt-2">
           <button type="submit"
                   class="px-6 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
             ${isEdit ? 'Save Changes' : 'Create Page'}
           </button>
+          ${
+            isEdit
+              ? `<button type="submit" name="action" value="publish"
+                         class="px-6 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-sm">Publish</button>`
+              : ''
+          }
           <a href="/admin" class="px-6 py-2 bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors">
             Cancel
           </a>

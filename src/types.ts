@@ -54,6 +54,8 @@ export interface PageVersion {
   page_id: number;
   content: string | null;
   meta: string | null;
+  original: string | null;
+  action: string | null;
 }
 
 export interface PageTag {
@@ -69,8 +71,33 @@ export interface PageTag {
 export interface Tag {
   id: number;
   uuid: string;
+  created_at: string;
+  updated_at: string;
   name: string;
   slug: string;
+  tag_type_id: number | null;
+  parent_tag: number | null;
+  original: string | null;
+}
+
+export interface TagType {
+  id: number;
+  uuid: string;
+  created_at: string;
+  updated_at: string;
+  name: string;
+  slug: string;
+}
+
+export interface MediaFile {
+  id: number;
+  uuid: string;
+  created_at: string;
+  key: string;
+  url: string;
+  filename: string;
+  content_type: string | null;
+  size: number;
 }
 
 // ============================================================
@@ -78,6 +105,7 @@ export interface Tag {
 // ============================================================
 export interface Env {
   DB: D1Database;
+  MEDIA_BUCKET?: R2Bucket;
   /** HMAC-SHA256 secret for signing JWTs – set via `wrangler secret put JWT_SECRET` */
   JWT_SECRET: string;
   /**

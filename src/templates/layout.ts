@@ -44,6 +44,14 @@ export function layout(opts: LayoutOptions): string {
           </svg>
           Tags
         </a>
+        <a href="/admin/tag-types"
+           class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 6h16M4 12h10M4 18h7"/>
+          </svg>
+          Tag Types
+        </a>
         <a href="/admin/trash"
            class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

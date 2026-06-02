@@ -12,16 +12,34 @@
 //   GET  /admin/trash                   – list trashed pages
 //   POST /admin/trash/:id/restore       – restore page from trash → draft
 //   POST /admin/trash/:id/delete        – permanently delete from trash
-//   GET  /admin/tags                    – tag list (stub, extensible)
+//   GET  /admin/tags                    – tag list and editor
 // ============================================================
 
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { authMiddleware, editorGuard } from '../middleware/auth';
 import { dashboardPage } from '../templates/dashboard';
 import { editorPage } from '../templates/editor';
-import type { Env, Variables, Page, PageVersion, PageTag, Tag } from '../types';
+import { layout, escHtml } from '../templates/layout';
+import { cmsConfig } from '../cms-config';
+import {
+  blockToOriginal,
+  blueprintToOriginal,
+  defaultOriginalItem,
+  getBlueprintProps,
+  mergeOriginals,
+  normalizeOriginal,
+  originalToPrint,
+  postToOriginal,
+  safeParseOriginal,
+  stringifyOriginal,
+} from '../utils/original';
+import type { Env, Variables, Page, PageVersion, PageTag, Tag, TagType } from '../types';
+import type { Original, OriginalItem } from '../utils/original';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+type AdminContext = Context<{ Bindings: Env; Variables: Variables }>;
 
 // Apply auth to all admin routes
 adminRoutes.use('*', authMiddleware);
@@ -44,6 +62,217 @@ function nullableStr(v: FormValue): string | null {
 function num(v: FormValue, fallback = 5): number {
   const n = parseInt(str(v), 10);
   return isNaN(n) ? fallback : n;
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function languageFromRequest(c: { req: { query: (name: string) => string | undefined } }, form?: FormData): string {
+  const requested = str(form?.get('_language')) || c.req.query('language') || cmsConfig.defaultLanguage;
+  return cmsConfig.languages.includes(requested) ? requested : cmsConfig.defaultLanguage;
+}
+
+function blueprintPropsFor(pageType: string) {
+  return getBlueprintProps(cmsConfig.blueprint[pageType] ?? cmsConfig.blueprint.default);
+}
+
+function blockPropsByName(): Record<string, ReturnType<typeof getBlueprintProps>> {
+  const props: Record<string, ReturnType<typeof getBlueprintProps>> = {};
+  for (const [name, blueprint] of Object.entries(cmsConfig.blocks)) {
+    props[name] = getBlueprintProps(blueprint);
+  }
+  return props;
+}
+
+function originalForPage(pageType: string, stored: string | null | undefined): Original {
+  return mergeOriginals(
+    blueprintToOriginal(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
+    safeParseOriginal(stored),
+  );
+}
+
+function originalFromForm(pageType: string, existing: Original, form: FormData, language: string): Original {
+  const jsonOriginal = safeParseOriginal(str(form.get('original_json')));
+  const postedOriginal = postToOriginal(form, language);
+  return mergeOriginals(
+    mergeOriginals(blueprintToOriginal(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage), existing),
+    mergeOriginals(jsonOriginal, postedOriginal),
+  );
+}
+
+function applyStructuredAction(original: Original, pageType: string, action: string, form: FormData): Original {
+  const next = normalizeOriginal(original);
+  const [actionType, actionParam = ''] = action.split(':');
+  const actionParams = actionParam.split('|');
+  const count = Math.max(1, num(form.get(`count:${actionParam}`), 1));
+
+  if (actionType === 'block-add') {
+    const blockName = str(form.get('block-select'));
+    if (!blockName || !cmsConfig.blocks[blockName]) return next;
+    const block = blockToOriginal(blockName, cmsConfig.blocks, cmsConfig.defaultLanguage);
+    block.attributes._weight = String(next.blocks.reduce((max, item) => Math.max(max, num(item.attributes._weight, 0)), -1) + 1);
+    next.blocks.push(block);
+    return next;
+  }
+
+  if (actionType === 'block-delete') {
+    next.blocks.splice(parseInt(actionParam, 10), 1);
+    return next;
+  }
+
+  if (actionType === 'item-add') {
+    addDefaultItem(next.items, pageType, actionParam, count);
+    return next;
+  }
+
+  if (actionType === 'item-delete') {
+    const [itemName, itemIndex] = actionParams;
+    next.items[itemName]?.splice(parseInt(itemIndex, 10), 1);
+    return next;
+  }
+
+  if (actionType === 'block-item-add') {
+    const [blockIndex, itemName] = actionParams;
+    const block = next.blocks[parseInt(blockIndex, 10)];
+    if (block) addDefaultBlockItem(block, itemName, count);
+    return next;
+  }
+
+  if (actionType === 'block-item-delete') {
+    const [blockIndex, itemName, itemIndex] = actionParams;
+    const block = next.blocks[parseInt(blockIndex, 10)];
+    block?.items[itemName]?.splice(parseInt(itemIndex, 10), 1);
+    return next;
+  }
+
+  return next;
+}
+
+function addDefaultItem(items: Record<string, OriginalItem[]>, pageType: string, itemName: string, count: number): void {
+  if (!itemName) return;
+  const defaults = blueprintToOriginal(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
+  const defaultItem = defaults.items[itemName]?.[0] ?? defaultOriginalItem();
+  items[itemName] ||= [];
+  for (let index = 0; index < count; index++) {
+    const item = cloneItem(defaultItem);
+    item.attributes._weight = String(items[itemName].reduce((max, entry) => Math.max(max, num(entry.attributes._weight, 0)), -1) + 1);
+    items[itemName].push(item);
+  }
+}
+
+function addDefaultBlockItem(block: Original, itemName: string, count: number): void {
+  if (!itemName) return;
+  const blockType = block.attributes._type || 'default';
+  const defaults = blockToOriginal(blockType, cmsConfig.blocks, cmsConfig.defaultLanguage);
+  const defaultItem = defaults.items[itemName]?.[0] ?? defaultOriginalItem();
+  block.items[itemName] ||= [];
+  for (let index = 0; index < count; index++) {
+    const item = cloneItem(defaultItem);
+    item.attributes._weight = String(block.items[itemName].reduce((max, entry) => Math.max(max, num(entry.attributes._weight, 0)), -1) + 1);
+    block.items[itemName].push(item);
+  }
+}
+
+function cloneItem(item: OriginalItem): OriginalItem {
+  return JSON.parse(JSON.stringify(item)) as OriginalItem;
+}
+
+async function getCurrentVersion(db: D1Database, page: Page): Promise<PageVersion | null> {
+  if (!page.current_page_version_id) return null;
+  return db.prepare('SELECT * FROM draft_page_versions WHERE id = ?')
+    .bind(page.current_page_version_id)
+    .first<PageVersion>();
+}
+
+async function saveDraftVersion(
+  db: D1Database,
+  pageId: number,
+  content: string | null,
+  meta: string | null,
+  original: string | null,
+  action: string | null,
+): Promise<number> {
+  const result = await db.prepare(
+    `INSERT INTO draft_page_versions (page_id, content, meta, original, action) VALUES (?, ?, ?, ?, ?)`,
+  )
+    .bind(pageId, content, meta, original, action)
+    .run();
+  const row = await db.prepare('SELECT id FROM draft_page_versions WHERE rowid = ?')
+    .bind(result.meta.last_row_id)
+    .first<{ id: number }>();
+  return row!.id;
+}
+
+async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
+  const page = await db.prepare('SELECT * FROM draft_pages WHERE id = ?')
+    .bind(pageId)
+    .first<Page>();
+  if (!page) return false;
+
+  const version = await getCurrentVersion(db, page);
+  await db.prepare(
+    `INSERT INTO live_pages (uuid, name, slug, weight, start, end, page_type, current_page_version_id, original, page_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(uuid) DO UPDATE SET
+       name = excluded.name,
+       slug = excluded.slug,
+       weight = excluded.weight,
+       start = excluded.start,
+       end = excluded.end,
+       page_type = excluded.page_type,
+       original = excluded.original,
+       page_id = excluded.page_id`,
+  )
+    .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, null, page.original, page.page_id)
+    .run();
+
+  const livePage = await db.prepare('SELECT id FROM live_pages WHERE uuid = ?')
+    .bind(page.uuid)
+    .first<{ id: number }>();
+  if (!livePage) return true;
+
+  await Promise.all([
+    db.prepare('DELETE FROM live_page_versions WHERE page_id = ?').bind(livePage.id).run(),
+    db.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run(),
+  ]);
+
+  let liveVersionId: number | null = null;
+  if (version) {
+    const versionResult = await db.prepare(
+      `INSERT INTO live_page_versions (uuid, page_id, content, meta, original, action)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(version.uuid, livePage.id, version.content, version.meta, version.original, 'publish')
+      .run();
+    const liveVersion = await db.prepare('SELECT id FROM live_page_versions WHERE rowid = ?')
+      .bind(versionResult.meta.last_row_id)
+      .first<{ id: number }>();
+    liveVersionId = liveVersion?.id ?? null;
+  }
+
+  if (liveVersionId !== null) {
+    await db.prepare('UPDATE live_pages SET current_page_version_id = ? WHERE id = ?')
+      .bind(liveVersionId, livePage.id)
+      .run();
+  }
+
+  const pageTags = await db.prepare('SELECT * FROM draft_page_tags WHERE page_id = ?')
+    .bind(pageId)
+    .all<PageTag>();
+  for (const pageTag of pageTags.results) {
+    await db.prepare(
+      'INSERT INTO live_page_tags (uuid, page_id, tag_id, weight) VALUES (?, ?, ?, ?)',
+    )
+      .bind(pageTag.uuid, livePage.id, pageTag.tag_id, pageTag.weight)
+      .run();
+  }
+
+  return true;
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -88,10 +317,180 @@ adminRoutes.get('/', async (c) => {
   );
 });
 
+// ── Page type workflows ──────────────────────────────────────────────────────
+
+adminRoutes.get('/pages/list/:pageType', async (c) => {
+  const user = c.get('user');
+  const pageType = c.req.param('pageType');
+  const flash = c.req.query('flash') ?? '';
+  const search = c.req.query('search')?.trim() ?? '';
+
+  const draftPages = search
+    ? await c.env.DB.prepare(
+        'SELECT * FROM draft_pages WHERE page_type = ? AND name LIKE ? ORDER BY weight ASC, name ASC',
+      )
+        .bind(pageType, `%${search}%`)
+        .all<Page>()
+    : await c.env.DB.prepare(
+        'SELECT * FROM draft_pages WHERE page_type = ? ORDER BY weight ASC, name ASC',
+      )
+        .bind(pageType)
+        .all<Page>();
+  const livePages = await c.env.DB.prepare('SELECT uuid, original, slug, weight FROM live_pages').all<{
+    uuid: string;
+    original: string | null;
+    slug: string;
+    weight: number;
+  }>();
+  const liveMap = new Map(livePages.results.map((page) => [page.uuid, page]));
+  const dbUser = await c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+    .bind(parseInt(user.sub, 10))
+    .first<{ avatar_url: string | null }>();
+
+  return c.html(
+    dashboardPage({
+      siteTitle: `${c.env.SITE_TITLE ?? 'Worker CMS'} · ${pageType}`,
+      userName: user.name,
+      userRole: user.role,
+      userAvatar: dbUser?.avatar_url ?? '',
+      pages: draftPages.results.map((page) => ({
+        ...page,
+        isPublished: liveMap.has(page.uuid),
+        contentPreview: liveMap.get(page.uuid)?.original === page.original ? 'synced' : 'changed',
+      })),
+      flash: flash || undefined,
+    }),
+  );
+});
+
+adminRoutes.get('/pages/search/:pageType', async (c) => {
+  const pageType = c.req.param('pageType');
+  const search = c.req.query('search') ?? '';
+  return c.redirect(`/admin/pages/list/${encodeURIComponent(pageType)}?search=${encodeURIComponent(search)}`);
+});
+
+adminRoutes.get('/pages/create_by_type/:pageType', async (c) => {
+  const pageType = c.req.param('pageType');
+  return c.redirect(`/admin/pages/new?page_type=${encodeURIComponent(pageType)}`);
+});
+
+adminRoutes.post('/pages/new_post/:pageType', async (c) => {
+  const pageType = c.req.param('pageType');
+  const form = await c.req.formData();
+  const language = languageFromRequest(c, form);
+  const name = str(form.get('name')) || `Untitled ${pageType.replace(/[_-]/g, ' ')}`;
+  const slug = str(form.get('slug')) || slugify(name);
+  const original = stringifyOriginal(
+    originalFromForm(
+      pageType,
+      blueprintToOriginal(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
+      form,
+      language,
+    ),
+  );
+
+  const result = await c.env.DB.prepare(
+    `INSERT INTO draft_pages (name, slug, weight, page_type, original)
+     VALUES (?, ?, ?, ?, ?)`,
+  )
+    .bind(name, slug, num(form.get('weight')), pageType, original)
+    .run();
+  const page = await c.env.DB.prepare('SELECT id FROM draft_pages WHERE rowid = ?')
+    .bind(result.meta.last_row_id)
+    .first<{ id: number }>();
+  if (!page) return c.notFound();
+
+  const versionId = await saveDraftVersion(c.env.DB, page.id, str(form.get('content')) || null, nullableStr(form.get('meta')), original, 'create');
+  await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
+    .bind(versionId, page.id)
+    .run();
+
+  return c.redirect(`/admin/pages/${page.id}/edit`);
+});
+
+adminRoutes.get('/pages/import/:pageType', async (c) => {
+  const user = c.get('user');
+  const pageType = c.req.param('pageType');
+  const dbUser = await c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+    .bind(parseInt(user.sub, 10))
+    .first<{ avatar_url: string | null }>();
+  const body = `
+    <div class="px-8 py-8 max-w-3xl">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-2xl font-bold text-gray-900">Import ${escHtml(pageType)}</h2>
+        <a href="/admin/pages/list/${escHtml(pageType)}" class="text-sm text-indigo-600 hover:underline">Back</a>
+      </div>
+      <form method="POST" class="space-y-4">
+        <textarea name="items" rows="18"
+                  placeholder='[{"name":"Example","slug":"example","values":{"en":{"name":"Example"}}}]'
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"></textarea>
+        <button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg">Import</button>
+      </form>
+    </div>`;
+  return c.html(layout({
+    title: 'Import',
+    siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
+    body,
+    admin: true,
+    userName: user.name,
+    userRole: user.role,
+    userAvatar: dbUser?.avatar_url ?? '',
+  }));
+});
+
+adminRoutes.post('/pages/import/:pageType', async (c) => {
+  const pageType = c.req.param('pageType');
+  const form = await c.req.formData();
+  const raw = str(form.get('items'));
+  const items = JSON.parse(raw) as Array<{
+    name?: string;
+    slug?: string;
+    weight?: number;
+    original?: unknown;
+    values?: Record<string, Record<string, string>>;
+    attributes?: Record<string, string>;
+    pointers?: Record<string, string>;
+    items?: Record<string, OriginalItem[]>;
+    blocks?: Original[];
+  }>;
+
+  let imported = 0;
+  for (const item of items) {
+    const name = item.name ?? item.values?.[cmsConfig.defaultLanguage]?.name ?? 'Untitled';
+    const slug = item.slug ?? slugify(name);
+    const original = normalizeOriginal({
+      ...blueprintToOriginal(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
+      ...(typeof item.original === 'object' && item.original ? item.original : {}),
+      attributes: {
+        ...(item.attributes ?? {}),
+        _type: pageType,
+      },
+      values: item.values,
+      pointers: item.pointers,
+      items: item.items,
+      blocks: item.blocks,
+    });
+
+    await c.env.DB.prepare(
+      `INSERT INTO draft_pages (name, slug, weight, page_type, original)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(uuid) DO UPDATE SET name = excluded.name`,
+    )
+      .bind(name, slug, item.weight ?? 5, pageType, stringifyOriginal(original))
+      .run();
+    imported++;
+  }
+
+  return c.redirect(`/admin/pages/list/${encodeURIComponent(pageType)}?flash=${imported}+item(s)+imported`);
+});
+
 // ── New page form ─────────────────────────────────────────────────────────────
 
 adminRoutes.get('/pages/new', async (c) => {
   const user = c.get('user');
+  const pageType = c.req.query('page_type') || 'default';
+  const language = languageFromRequest(c);
+  const original = blueprintToOriginal(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
   const [parentPages, tags, dbUser] = await Promise.all([
     c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
     c.env.DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
@@ -107,10 +506,20 @@ adminRoutes.get('/pages/new', async (c) => {
       userRole: user.role,
       userAvatar: dbUser?.avatar_url ?? '',
       parentPages: parentPages.results,
-      tags: tags.results,
-      selectedTagIds: [],
-      action: '/admin/pages',
-    }),
+        tags: tags.results,
+        selectedTagIds: [],
+        action: '/admin/pages',
+        defaultPageType: pageType,
+        structured: {
+          config: cmsConfig,
+          language,
+          original,
+          blueprintProps: blueprintPropsFor(pageType),
+          blockProps: blockPropsByName(),
+          blockNames: cmsConfig.blockLists[pageType] ?? cmsConfig.blockLists.default,
+          versions: [],
+        },
+      }),
   );
 });
 
@@ -119,6 +528,7 @@ adminRoutes.get('/pages/new', async (c) => {
 adminRoutes.post('/pages', async (c) => {
   const user = c.get('user');
   const form = await c.req.formData();
+  const language = languageFromRequest(c, form);
 
   const name = str(form.get('name'));
   const slug = str(form.get('slug'));
@@ -146,19 +556,41 @@ adminRoutes.post('/pages', async (c) => {
         selectedTagIds: [],
         errors,
         action: '/admin/pages',
+        defaultPageType: nullableStr(form.get('page_type')) ?? 'default',
+        structured: {
+          config: cmsConfig,
+          language,
+          original: originalFromForm(
+            nullableStr(form.get('page_type')) ?? 'default',
+            blueprintToOriginal(nullableStr(form.get('page_type')) ?? 'default', cmsConfig.blueprint, cmsConfig.defaultLanguage),
+            form,
+            language,
+          ),
+          blueprintProps: blueprintPropsFor(nullableStr(form.get('page_type')) ?? 'default'),
+          blockProps: blockPropsByName(),
+          blockNames: cmsConfig.blockLists[nullableStr(form.get('page_type')) ?? 'default'] ?? cmsConfig.blockLists.default,
+          versions: [],
+        },
       }),
       422,
     );
   }
 
-  const pageTypeVal = nullableStr(form.get('page_type'));
+  const pageTypeVal = nullableStr(form.get('page_type')) ?? 'default';
   const startVal = nullableStr(form.get('start'));
   const endVal = nullableStr(form.get('end'));
   const pageIdVal = nullableStr(form.get('page_id'));
-  const originalVal = nullableStr(form.get('original'));
   const weightVal = num(form.get('weight'));
   const content = str(form.get('content'));
   const meta = nullableStr(form.get('meta'));
+  const originalVal = stringifyOriginal(
+    originalFromForm(
+      pageTypeVal,
+      blueprintToOriginal(pageTypeVal, cmsConfig.blueprint, cmsConfig.defaultLanguage),
+      form,
+      language,
+    ),
+  );
 
   // Insert page
   const pageResult = await c.env.DB.prepare(
@@ -176,16 +608,7 @@ adminRoutes.post('/pages', async (c) => {
   const pageId = pageRow!.id;
 
   // Insert page version
-  const versionResult = await c.env.DB.prepare(
-    `INSERT INTO draft_page_versions (page_id, content, meta) VALUES (?, ?, ?)`,
-  )
-    .bind(pageId, content || null, meta)
-    .run();
-
-  const versionRow = await c.env.DB.prepare('SELECT id FROM draft_page_versions WHERE rowid = ?')
-    .bind(versionResult.meta.last_row_id)
-    .first<{ id: number }>();
-  const versionId = versionRow!.id;
+  const versionId = await saveDraftVersion(c.env.DB, pageId, content || null, meta, originalVal, 'create');
 
   // Link current version
   await c.env.DB.prepare(
@@ -212,6 +635,8 @@ adminRoutes.post('/pages', async (c) => {
 adminRoutes.get('/pages/:id/edit', async (c) => {
   const user = c.get('user');
   const pageId = parseInt(c.req.param('id'), 10);
+  const language = languageFromRequest(c);
+  const requestedVersionId = parseInt(c.req.query('version') ?? '', 10);
 
   const [page, parentPages, tags, dbUser] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(pageId).first<Page>(),
@@ -224,16 +649,26 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
 
   if (!page) return c.notFound();
 
-  const [version, pageTags] = await Promise.all([
-    page.current_page_version_id
+  const [version, versions, pageTags] = await Promise.all([
+    Number.isFinite(requestedVersionId)
+      ? c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE page_id = ? AND id = ?')
+          .bind(pageId, requestedVersionId)
+          .first<PageVersion>()
+      : page.current_page_version_id
       ? c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE id = ?')
           .bind(page.current_page_version_id)
           .first<PageVersion>()
       : Promise.resolve(null),
+    c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
+      .bind(pageId)
+      .all<PageVersion>(),
     c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?')
       .bind(pageId)
       .all<{ tag_id: number }>(),
   ]);
+  const pageType = page.page_type ?? 'default';
+  const original = originalForPage(pageType, version?.original ?? page.original);
+  const displayPage = { ...page, original: stringifyOriginal(original) };
 
   return c.html(
     editorPage({
@@ -241,12 +676,21 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
       userName: user.name,
       userRole: user.role,
       userAvatar: dbUser?.avatar_url ?? '',
-      page,
+      page: displayPage,
       version: version ?? undefined,
       parentPages: parentPages.results,
       tags: tags.results,
       selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
       action: `/admin/pages/${pageId}`,
+      structured: {
+        config: cmsConfig,
+        language,
+        original,
+        blueprintProps: blueprintPropsFor(pageType),
+        blockProps: blockPropsByName(),
+        blockNames: cmsConfig.blockLists[pageType] ?? cmsConfig.blockLists.default,
+        versions: versions.results,
+      },
     }),
   );
 });
@@ -257,6 +701,8 @@ adminRoutes.post('/pages/:id', async (c) => {
   const user = c.get('user');
   const pageId = parseInt(c.req.param('id'), 10);
   const form = await c.req.formData();
+  const language = languageFromRequest(c, form);
+  const action = str(form.get('action'));
 
   const name = str(form.get('name'));
   const slug = str(form.get('slug'));
@@ -270,8 +716,20 @@ adminRoutes.post('/pages/:id', async (c) => {
     .first<Page>();
   if (!page) return c.notFound();
 
+  if (action.startsWith('revert:')) {
+    const versionId = parseInt(action.split(':')[1], 10);
+    const version = await c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE page_id = ? AND id = ?')
+      .bind(pageId, versionId)
+      .first<PageVersion>();
+    if (!version) return c.notFound();
+    await c.env.DB.prepare('UPDATE draft_pages SET original = ?, current_page_version_id = ? WHERE id = ?')
+      .bind(version.original ?? page.original, version.id, pageId)
+      .run();
+    return c.redirect(`/admin/pages/${pageId}/edit?flash=Version+restored`);
+  }
+
   if (errors.length) {
-    const [parentPages, tags, version, pageTags, dbUser] = await Promise.all([
+    const [parentPages, tags, version, versions, pageTags, dbUser] = await Promise.all([
       c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
       c.env.DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
       page.current_page_version_id
@@ -279,11 +737,16 @@ adminRoutes.post('/pages/:id', async (c) => {
             .bind(page.current_page_version_id)
             .first<PageVersion>()
         : Promise.resolve(null),
+      c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
+        .bind(pageId)
+        .all<PageVersion>(),
       c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?').bind(pageId).all<{ tag_id: number }>(),
       c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
         .bind(parseInt(user.sub, 10))
         .first<{ avatar_url: string | null }>(),
     ]);
+    const pageType = nullableStr(form.get('page_type')) ?? page.page_type ?? 'default';
+    const original = originalFromForm(pageType, originalForPage(pageType, page.original), form, language);
     return c.html(
       editorPage({
         siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
@@ -297,19 +760,34 @@ adminRoutes.post('/pages/:id', async (c) => {
         selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
         errors,
         action: `/admin/pages/${pageId}`,
+        structured: {
+          config: cmsConfig,
+          language,
+          original,
+          blueprintProps: blueprintPropsFor(pageType),
+          blockProps: blockPropsByName(),
+          blockNames: cmsConfig.blockLists[pageType] ?? cmsConfig.blockLists.default,
+          versions: versions.results,
+        },
       }),
       422,
     );
   }
 
-  const pageTypeVal = nullableStr(form.get('page_type'));
+  const pageTypeVal = nullableStr(form.get('page_type')) ?? page.page_type ?? 'default';
   const startVal = nullableStr(form.get('start'));
   const endVal = nullableStr(form.get('end'));
   const pageIdVal = nullableStr(form.get('page_id'));
-  const originalVal = nullableStr(form.get('original'));
   const weightVal = num(form.get('weight'));
   const content = str(form.get('content'));
   const meta = nullableStr(form.get('meta'));
+  const original = applyStructuredAction(
+    originalFromForm(pageTypeVal, originalForPage(pageTypeVal, page.original), form, language),
+    pageTypeVal,
+    action,
+    form,
+  );
+  const originalVal = stringifyOriginal(original);
 
   // Update page metadata
   await c.env.DB.prepare(
@@ -318,17 +796,14 @@ adminRoutes.post('/pages/:id', async (c) => {
     .bind(name, slug, weightVal, startVal, endVal, pageTypeVal, originalVal, pageIdVal ? parseInt(pageIdVal, 10) : null, pageId)
     .run();
 
-  // Create new page version
-  const versionResult = await c.env.DB.prepare(
-    `INSERT INTO draft_page_versions (page_id, content, meta) VALUES (?, ?, ?)`,
-  )
-    .bind(pageId, content || null, meta)
-    .run();
-
-  const newVersionRow = await c.env.DB.prepare('SELECT id FROM draft_page_versions WHERE rowid = ?')
-    .bind(versionResult.meta.last_row_id)
-    .first<{ id: number }>();
-  const newVersionId = newVersionRow!.id;
+  const newVersionId = await saveDraftVersion(
+    c.env.DB,
+    pageId,
+    content || null,
+    meta,
+    originalVal,
+    action || 'update',
+  );
 
   await c.env.DB.prepare(
     'UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?',
@@ -350,6 +825,11 @@ adminRoutes.post('/pages/:id', async (c) => {
       .run();
   }
 
+  if (action === 'publish') {
+    await publishPage(c.env.DB, pageId);
+    return c.redirect('/admin?flash=Page+published+successfully');
+  }
+
   return c.redirect('/admin?flash=Page+updated+successfully');
 });
 
@@ -357,28 +837,8 @@ adminRoutes.post('/pages/:id', async (c) => {
 
 adminRoutes.post('/pages/:id/publish', async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
-
-  const page = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
-    .bind(pageId)
-    .first<Page>();
-  if (!page) return c.notFound();
-
-  // Upsert page into live content table (match on uuid)
-  await c.env.DB.prepare(
-    `INSERT INTO live_pages (uuid, name, slug, weight, start, end, page_type, original, page_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(uuid) DO UPDATE SET
-       name = excluded.name,
-       slug = excluded.slug,
-       weight = excluded.weight,
-       start = excluded.start,
-       end = excluded.end,
-       page_type = excluded.page_type,
-       original = excluded.original,
-       page_id = excluded.page_id`,
-  )
-    .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, page.original, page.page_id)
-    .run();
+  const published = await publishPage(c.env.DB, pageId);
+  if (!published) return c.notFound();
 
   return c.redirect('/admin?flash=Page+published+successfully');
 });
@@ -392,6 +852,16 @@ adminRoutes.post('/pages/:id/unpublish', async (c) => {
     .bind(pageId)
     .first<{ uuid: string }>();
   if (!page) return c.notFound();
+
+  const livePage = await c.env.DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
+    .bind(page.uuid)
+    .first<{ id: number }>();
+  if (livePage) {
+    await Promise.all([
+      c.env.DB.prepare('DELETE FROM live_page_versions WHERE page_id = ?').bind(livePage.id).run(),
+      c.env.DB.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run(),
+    ]);
+  }
 
   await c.env.DB.prepare('DELETE FROM live_pages WHERE uuid = ?')
     .bind(page.uuid)
@@ -458,6 +928,16 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
         .bind(pt.uuid, trashPage.id, pt.tag_id, pt.weight)
         .run();
     }
+  }
+
+  const livePage = await c.env.DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
+    .bind(page.uuid)
+    .first<{ id: number }>();
+  if (livePage) {
+    await Promise.all([
+      c.env.DB.prepare('DELETE FROM live_page_versions WHERE page_id = ?').bind(livePage.id).run(),
+      c.env.DB.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run(),
+    ]);
   }
 
   // Unpublish from live (remove by uuid)
@@ -653,42 +1133,144 @@ adminRoutes.post('/trash/:id/delete', async (c) => {
   return c.redirect('/admin/trash?flash=Page+permanently+deleted');
 });
 
-// ── Tags list (stub) ──────────────────────────────────────────────────────────
+// ── Admin JSON API ───────────────────────────────────────────────────────────
 
-adminRoutes.get('/tags', async (c) => {
+adminRoutes.get('/api/pages/:type', async (c) => {
+  const pageType = c.req.param('type');
+  const pages = await c.env.DB.prepare('SELECT id, name FROM draft_pages WHERE page_type = ? ORDER BY name ASC')
+    .bind(pageType)
+    .all<{ id: number; name: string }>();
+  return c.json(pages.results.map((page) => ({ page: page.id, name: page.name })));
+});
+
+adminRoutes.get('/api/tags/:type', async (c) => {
+  const type = c.req.param('type');
+  const tagType = await c.env.DB.prepare('SELECT * FROM tag_types WHERE name = ? OR slug = ?')
+    .bind(type, type)
+    .first<TagType>();
+  if (!tagType) return c.json([]);
+  const tags = await c.env.DB.prepare('SELECT * FROM tags WHERE tag_type_id = ? ORDER BY name ASC')
+    .bind(tagType.id)
+    .all<Tag>();
+  return c.json(tags.results.map((tag) => ({
+    value: tag.id,
+    label: safeParseOriginal(tag.original).values[cmsConfig.defaultLanguage]?.name || tag.name,
+  })));
+});
+
+adminRoutes.post('/api/page/:pageId/tag/:tagId', async (c) => {
+  const pageId = parseInt(c.req.param('pageId'), 10);
+  const tagId = parseInt(c.req.param('tagId'), 10);
+  const existing = await c.env.DB.prepare(
+    'SELECT id FROM draft_page_tags WHERE page_id = ? AND tag_id = ?',
+  )
+    .bind(pageId, tagId)
+    .first<{ id: number }>();
+  if (existing) {
+    return c.json({ type: 'ADD_PAGE_TAG', payload: { success: false, message: 'tag exist', id: existing.id } });
+  }
+  const result = await c.env.DB.prepare('INSERT INTO draft_page_tags (page_id, tag_id) VALUES (?, ?)')
+    .bind(pageId, tagId)
+    .run();
+  const pageTag = await c.env.DB.prepare('SELECT id FROM draft_page_tags WHERE rowid = ?')
+    .bind(result.meta.last_row_id)
+    .first<{ id: number }>();
+  await c.env.DB.prepare('UPDATE draft_pages SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(pageId).run();
+  return c.json({ type: 'ADD_PAGE_TAG', payload: { success: true, id: pageTag?.id } });
+});
+
+adminRoutes.delete('/api/page/remove/page_tag/:id', async (c) => deletePageTagApi(c));
+adminRoutes.delete('/api/page_tag/:id', async (c) => deletePageTagApi(c));
+
+async function deletePageTagApi(c: AdminContext) {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  const pageTag = await c.env.DB.prepare('SELECT page_id FROM draft_page_tags WHERE id = ?')
+    .bind(id)
+    .first<{ page_id: number }>();
+  await c.env.DB.prepare('DELETE FROM draft_page_tags WHERE id = ?').bind(id).run();
+  if (pageTag) {
+    await c.env.DB.prepare('UPDATE draft_pages SET updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .bind(pageTag.page_id)
+      .run();
+  }
+  return c.json({ type: 'DELETE_PAGE_TAG', payload: { success: true, id } });
+}
+
+// ── Upload ───────────────────────────────────────────────────────────────────
+
+adminRoutes.post('/upload', async (c) => {
+  if (!c.env.MEDIA_BUCKET) {
+    return c.json({ success: false, error: 'MEDIA_BUCKET binding is not configured' }, 501);
+  }
+
+  const form = await c.req.formData();
+  const uploadDirectory = slugify(str(form.get('dir')) || 'upload');
+  const now = new Date();
+  const datePath = `${now.getUTCFullYear()}/${now.getUTCMonth() + 1}/${now.getUTCDate()}`;
+  const files: string[] = [];
+
+  for (const [, value] of form.entries()) {
+    if (typeof value === 'string') continue;
+    const file = value as File;
+    if (!file.name) continue;
+    const safeName = file.name.replace(/[^a-z0-9-_.]/gi, '');
+    const key = `${uploadDirectory}/${datePath}/${crypto.randomUUID()}-${safeName}`;
+    await c.env.MEDIA_BUCKET.put(key, file.stream(), {
+      httpMetadata: { contentType: file.type || undefined },
+    });
+    const url = `/media/${key}`;
+    await c.env.DB.prepare(
+      'INSERT INTO media_files (key, url, filename, content_type, size) VALUES (?, ?, ?, ?, ?)',
+    )
+      .bind(key, url, file.name, file.type || null, file.size)
+      .run();
+    files.push(url);
+  }
+
+  return c.json({ success: true, files });
+});
+
+// ── Tag types ─────────────────────────────────────────────────────────────────
+
+adminRoutes.get('/tag-types', async (c) => {
   const user = c.get('user');
-  const [tags, dbUser] = await Promise.all([
-    c.env.DB.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
+  const [tagTypes, dbUser] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM tag_types ORDER BY name ASC').all<TagType>(),
     c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
   ]);
 
-  const { layout, escHtml } = await import('../templates/layout');
-
-  const rows = tags.results
+  const rows = tagTypes.results
     .map(
       (t) =>
         `<tr class="hover:bg-gray-50">
            <td class="px-6 py-3 text-sm font-medium text-gray-900">${escHtml(t.name)}</td>
            <td class="px-6 py-3 text-sm font-mono text-gray-500">${escHtml(t.slug)}</td>
+           <td class="px-6 py-3 text-right">
+             <a href="/admin/tag-types/${t.id}/edit" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
+           </td>
          </tr>`,
     )
     .join('');
 
   const body = `
     <div class="px-8 py-8">
-      <h2 class="text-2xl font-bold text-gray-900 mb-6">Tags</h2>
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-2xl font-bold text-gray-900">Tag Types</h2>
+        <a href="/admin/tag-types/new" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg">New Tag Type</a>
+      </div>
       <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <table class="w-full text-left">
           <thead class="bg-gray-50 border-b border-gray-200">
             <tr>
               <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
               <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Slug</th>
+              <th class="px-6 py-3"></th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
-            ${rows || '<tr><td colspan="2" class="px-6 py-10 text-center text-gray-400">No tags yet.</td></tr>'}
+            ${rows || '<tr><td colspan="3" class="px-6 py-10 text-center text-gray-400">No tag types yet.</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -706,3 +1288,286 @@ adminRoutes.get('/tags', async (c) => {
     }),
   );
 });
+
+adminRoutes.get('/tag-types/new', async (c) => tagTypeForm(c));
+
+adminRoutes.post('/tag-types', async (c) => {
+  const form = await c.req.formData();
+  const name = str(form.get('name'));
+  const slug = str(form.get('slug')) || slugify(name);
+  if (!name || !slug) return c.redirect('/admin/tag-types/new?error=missing');
+  await c.env.DB.prepare('INSERT INTO tag_types (name, slug) VALUES (?, ?)')
+    .bind(name, slug)
+    .run();
+  return c.redirect('/admin/tag-types');
+});
+
+adminRoutes.get('/tag-types/:id/edit', async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  const tagType = await c.env.DB.prepare('SELECT * FROM tag_types WHERE id = ?')
+    .bind(id)
+    .first<TagType>();
+  if (!tagType) return c.notFound();
+  return tagTypeForm(c, tagType);
+});
+
+adminRoutes.post('/tag-types/:id', async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  const form = await c.req.formData();
+  const name = str(form.get('name'));
+  const slug = str(form.get('slug')) || slugify(name);
+  await c.env.DB.prepare('UPDATE tag_types SET name = ?, slug = ? WHERE id = ?')
+    .bind(name, slug, id)
+    .run();
+  return c.redirect('/admin/tag-types');
+});
+
+adminRoutes.post('/tag-types/:id/delete', async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  await c.env.DB.prepare('UPDATE tags SET tag_type_id = NULL WHERE tag_type_id = ?').bind(id).run();
+  await c.env.DB.prepare('DELETE FROM tag_types WHERE id = ?').bind(id).run();
+  return c.redirect('/admin/tag-types');
+});
+
+// ── Tags ─────────────────────────────────────────────────────────────────────
+
+adminRoutes.get('/tags', async (c) => {
+  const user = c.get('user');
+  const filterTagType = parseInt(c.req.query('filter_tag_type') ?? '0', 10);
+  const [tagTypes, tags, dbUser] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM tag_types ORDER BY name ASC').all<TagType>(),
+    filterTagType
+      ? c.env.DB.prepare('SELECT * FROM tags WHERE tag_type_id = ? ORDER BY name ASC').bind(filterTagType).all<Tag>()
+      : c.env.DB.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
+    c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+      .bind(parseInt(user.sub, 10))
+      .first<{ avatar_url: string | null }>(),
+  ]);
+  const tagTypeMap = new Map(tagTypes.results.map((type) => [type.id, type.name]));
+  const filterOptions = tagTypes.results
+    .map((type) => `<option value="${type.id}" ${filterTagType === type.id ? 'selected' : ''}>${escHtml(type.name)}</option>`)
+    .join('');
+  const rows = tags.results
+    .map((tag) => `
+      <tr class="hover:bg-gray-50">
+        <td class="px-6 py-3 text-sm font-medium text-gray-900">${escHtml(tag.name)}</td>
+        <td class="px-6 py-3 text-sm font-mono text-gray-500">${escHtml(tag.slug)}</td>
+        <td class="px-6 py-3 text-sm text-gray-500">${escHtml(tag.tag_type_id ? tagTypeMap.get(tag.tag_type_id) ?? '' : '')}</td>
+        <td class="px-6 py-3 text-right">
+          <a href="/admin/tags/${tag.id}/edit" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
+        </td>
+      </tr>`)
+    .join('');
+  const body = `
+    <div class="px-8 py-8">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-2xl font-bold text-gray-900">Tags</h2>
+        <div class="flex items-center gap-2">
+          <a href="/admin/tag-types" class="px-4 py-2 bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300">Tag Types</a>
+          <a href="/admin/tags/new" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg">New Tag</a>
+        </div>
+      </div>
+      <form method="GET" class="mb-4 flex items-center gap-2">
+        <select name="filter_tag_type" class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+          <option value="0">All tag types</option>
+          ${filterOptions}
+        </select>
+        <button type="submit" class="px-3 py-2 border border-gray-300 rounded-lg text-sm font-semibold">Filter</button>
+      </form>
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <table class="w-full text-left">
+          <thead class="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Slug</th>
+              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+              <th class="px-6 py-3"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            ${rows || '<tr><td colspan="4" class="px-6 py-10 text-center text-gray-400">No tags yet.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  return c.html(layout({
+    title: 'Tags',
+    siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
+    body,
+    admin: true,
+    userName: user.name,
+    userRole: user.role,
+    userAvatar: dbUser?.avatar_url ?? '',
+  }));
+});
+
+adminRoutes.get('/tags/new', async (c) => tagForm(c));
+
+adminRoutes.post('/tags', async (c) => {
+  const form = await c.req.formData();
+  const language = languageFromRequest(c, form);
+  const name = str(form.get('name'));
+  const slug = str(form.get('slug')) || slugify(name);
+  const original = postToOriginal(form, language);
+  original.values[cmsConfig.defaultLanguage] ||= {};
+  original.values[cmsConfig.defaultLanguage].name ||= name;
+  await c.env.DB.prepare(
+    'INSERT INTO tags (name, slug, tag_type_id, parent_tag, original) VALUES (?, ?, ?, ?, ?)',
+  )
+    .bind(name, slug, nullableStr(form.get('tag_type_id')) ? num(form.get('tag_type_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyOriginal(original))
+    .run();
+  return c.redirect('/admin/tags');
+});
+
+adminRoutes.get('/tags/:id/edit', async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  const tag = await c.env.DB.prepare('SELECT * FROM tags WHERE id = ?').bind(id).first<Tag>();
+  if (!tag) return c.notFound();
+  return tagForm(c, tag);
+});
+
+adminRoutes.post('/tags/:id', async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  const form = await c.req.formData();
+  const language = languageFromRequest(c, form);
+  const name = str(form.get('name'));
+  const slug = str(form.get('slug')) || slugify(name);
+  const existing = await c.env.DB.prepare('SELECT * FROM tags WHERE id = ?').bind(id).first<Tag>();
+  if (!existing) return c.notFound();
+  const original = mergeOriginals(safeParseOriginal(existing.original), postToOriginal(form, language));
+  original.values[cmsConfig.defaultLanguage] ||= {};
+  original.values[cmsConfig.defaultLanguage].name ||= name;
+  await c.env.DB.prepare(
+    'UPDATE tags SET name = ?, slug = ?, tag_type_id = ?, parent_tag = ?, original = ? WHERE id = ?',
+  )
+    .bind(name, slug, nullableStr(form.get('tag_type_id')) ? num(form.get('tag_type_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyOriginal(original), id)
+    .run();
+  return c.redirect('/admin/tags');
+});
+
+adminRoutes.post('/tags/:id/delete', async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  await Promise.all([
+    c.env.DB.prepare('DELETE FROM draft_page_tags WHERE tag_id = ?').bind(id).run(),
+    c.env.DB.prepare('DELETE FROM live_page_tags WHERE tag_id = ?').bind(id).run(),
+    c.env.DB.prepare('DELETE FROM trash_page_tags WHERE tag_id = ?').bind(id).run(),
+    c.env.DB.prepare('UPDATE tags SET parent_tag = NULL WHERE parent_tag = ?').bind(id).run(),
+  ]);
+  await c.env.DB.prepare('DELETE FROM tags WHERE id = ?').bind(id).run();
+  return c.redirect('/admin/tags');
+});
+
+async function tagTypeForm(c: AdminContext, tagType?: TagType) {
+  const user = c.get('user');
+  const dbUser = await c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+    .bind(parseInt(user.sub, 10))
+    .first<{ avatar_url: string | null }>();
+  const action = tagType ? `/admin/tag-types/${tagType.id}` : '/admin/tag-types';
+  const deleteButton = tagType
+    ? `<form method="POST" action="/admin/tag-types/${tagType.id}/delete">
+         <button type="submit" class="px-4 py-2 text-sm font-semibold text-red-600">Delete</button>
+       </form>`
+    : '';
+  const body = `
+    <div class="px-8 py-8 max-w-xl">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">${tagType ? 'Edit' : 'New'} Tag Type</h2>
+      <form method="POST" action="${action}" class="space-y-4">
+        <label class="block">
+          <span class="block text-sm font-medium text-gray-700 mb-1">Name</span>
+          <input name="name" required value="${escHtml(tagType?.name ?? '')}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+        </label>
+        <label class="block">
+          <span class="block text-sm font-medium text-gray-700 mb-1">Slug</span>
+          <input name="slug" value="${escHtml(tagType?.slug ?? '')}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+        </label>
+        <div class="flex items-center gap-3">
+          <button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg">Save</button>
+          <a href="/admin/tag-types" class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-semibold">Cancel</a>
+        </div>
+      </form>
+      ${deleteButton}
+    </div>`;
+  return c.html(layout({
+    title: tagType ? 'Edit Tag Type' : 'New Tag Type',
+    siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
+    body,
+    admin: true,
+    userName: user.name,
+    userRole: user.role,
+    userAvatar: dbUser?.avatar_url ?? '',
+  }));
+}
+
+async function tagForm(c: AdminContext, tag?: Tag) {
+  const user = c.get('user');
+  const language = languageFromRequest(c);
+  const [tagTypes, tags, dbUser] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM tag_types ORDER BY name ASC').all<TagType>(),
+    c.env.DB.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
+    c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+      .bind(parseInt(user.sub, 10))
+      .first<{ avatar_url: string | null }>(),
+  ]);
+  const original = safeParseOriginal(tag?.original);
+  const printed = originalToPrint(original, language, cmsConfig.defaultLanguage);
+  const tagTypeOptions = tagTypes.results
+    .map((type) => `<option value="${type.id}" ${tag?.tag_type_id === type.id ? 'selected' : ''}>${escHtml(type.name)}</option>`)
+    .join('');
+  const parentOptions = tags.results
+    .filter((candidate) => candidate.id !== tag?.id)
+    .map((candidate) => `<option value="${candidate.id}" ${tag?.parent_tag === candidate.id ? 'selected' : ''}>${escHtml(candidate.name)}</option>`)
+    .join('');
+  const action = tag ? `/admin/tags/${tag.id}` : '/admin/tags';
+  const deleteButton = tag
+    ? `<form method="POST" action="/admin/tags/${tag.id}/delete">
+         <button type="submit" class="px-4 py-2 text-sm font-semibold text-red-600">Delete</button>
+       </form>`
+    : '';
+  const body = `
+    <div class="px-8 py-8 max-w-xl">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">${tag ? 'Edit' : 'New'} Tag</h2>
+      <form method="POST" action="${action}" class="space-y-4">
+        <input type="hidden" name="_language" value="${escHtml(language)}">
+        <label class="block">
+          <span class="block text-sm font-medium text-gray-700 mb-1">Name</span>
+          <input name="name" required value="${escHtml(tag?.name ?? '')}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+        </label>
+        <label class="block">
+          <span class="block text-sm font-medium text-gray-700 mb-1">Translated Name</span>
+          <input name=".name|${escHtml(language)}" value="${escHtml(String(printed.tokens.name ?? tag?.name ?? ''))}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+        </label>
+        <label class="block">
+          <span class="block text-sm font-medium text-gray-700 mb-1">Slug</span>
+          <input name="slug" value="${escHtml(tag?.slug ?? '')}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+        </label>
+        <label class="block">
+          <span class="block text-sm font-medium text-gray-700 mb-1">Tag Type</span>
+          <select name="tag_type_id" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">None</option>
+            ${tagTypeOptions}
+          </select>
+        </label>
+        <label class="block">
+          <span class="block text-sm font-medium text-gray-700 mb-1">Parent Tag</span>
+          <select name="parent_tag" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">None</option>
+            ${parentOptions}
+          </select>
+        </label>
+        <div class="flex items-center gap-3">
+          <button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg">Save</button>
+          <a href="/admin/tags" class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-semibold">Cancel</a>
+        </div>
+      </form>
+      ${deleteButton}
+    </div>`;
+  return c.html(layout({
+    title: tag ? 'Edit Tag' : 'New Tag',
+    siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
+    body,
+    admin: true,
+    userName: user.name,
+    userRole: user.role,
+    userAvatar: dbUser?.avatar_url ?? '',
+  }));
+}
