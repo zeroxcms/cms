@@ -4,22 +4,10 @@ compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
 [[d1_databases]]
-binding = "LIVE_DB"
-database_name = "cms-live"
-database_id = "ebe8137c-fd98-4da5-a372-b2370f4487b0"
-migrations_dir = "migrations/live"
-
-[[d1_databases]]
-binding = "DRAFT_DB"
-database_name = "cms-draft"
+binding = "CONTENT_DB"
+database_name = "cms-content"
 database_id = "1e0f0732-8b15-4299-9c51-6151ccf597f1"
-migrations_dir = "migrations/draft"
-
-[[d1_databases]]
-binding = "TRASH_DB"
-database_name = "cms-trash"
-database_id = "d9d97be0-6a28-4b78-b459-9bee90092eba"
-migrations_dir = "migrations/trash"
+migrations_dir = "migrations/content"
 
 [[d1_databases]]
 binding = "AUTH_DB"

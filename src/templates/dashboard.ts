@@ -1,5 +1,5 @@
 // ============================================================
-// Admin dashboard template – lists pages from DRAFT DB
+// Admin dashboard template - lists draft pages
 // with live publish status indicators
 // ============================================================
 

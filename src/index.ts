@@ -4,7 +4,7 @@
 // Routes:
 //   /auth/*   – OAuth 2.1 login / callback / logout / refresh
 //   /admin/*  – Protected CMS admin UI (editor roles required)
-//   /         – Public site (reads from LIVE DB)
+//   /         – Public site (reads from live content tables)
 // ============================================================
 
 import { Hono } from 'hono';

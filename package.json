@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "wrangler dev --local",
     "deploy": "wrangler deploy",
-    "db:migrate:live": "wrangler d1 migrations apply cms-live --local",
-    "db:migrate:draft": "wrangler d1 migrations apply cms-draft --local",
+    "db:migrate:content": "wrangler d1 migrations apply cms-content --local",
+    "db:migrate:auth": "wrangler d1 migrations apply cms-auth --local",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {

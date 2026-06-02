@@ -6,8 +6,8 @@ Content management system on Workers
 - **OAuth 2.1** login via Eventuai, GitHub, or Google with PKCE (Proof Key for Code Exchange)
 - **Dual JWT** security – short-lived access tokens (15 min) + rotatable refresh tokens (7 days) stored as httpOnly cookies; refresh tokens are hashed and stored in D1 for revocation
 - **Role-based access** – users with `admin`, `editor`, or `moderator` in their comma-separated role list can access the CMS; other users are redirected to the login page
-- **LIVE / DRAFT databases** – content is authored in the DRAFT D1 database, published to the LIVE D1 database with a single click, and un-published by deleting the LIVE record
-- **Page versioning** – every save creates a new `page_versions` row; `pages.current_page_version_id` points to the active version
+- **Single content database** – draft, live, and trash content live in one D1 database using separate table prefixes
+- **Page versioning** – every save creates a new `draft_page_versions` row; `draft_pages.current_page_version_id` points to the active version
 - **Tailwind CSS + VanillaJS** admin UI with inline HTML toolbar for content editing
 
 ---
@@ -23,25 +23,28 @@ npm install
 ### 2. Create the D1 databases
 
 ```bash
-npx wrangler d1 create cms-live
-npx wrangler d1 create cms-draft
-npx wrangler d1 create cms-trash
+npx wrangler d1 create cms-content
+npx wrangler d1 create cms-auth
 ```
 
 Copy the `database_id` values printed by each command into `wrangler.toml`.
 
+For an existing deployment, update the `CONTENT_DB` binding to point at the one
+database you want to keep. Existing rows from the old live/draft/trash databases
+must be copied into the new prefixed tables separately.
+
 ### 3. Run migrations
 
 ```bash
-# LIVE DB (content + auth tables)
-npx wrangler d1 migrations apply cms-live
+# CONTENT_DB (draft/live/trash content tables)
+npx wrangler d1 migrations apply cms-content
 
-# DRAFT DB (content tables only)
-npx wrangler d1 migrations apply cms-draft
-
-# TRASH DB (content tables only)
-npx wrangler d1 migrations apply cms-trash
+# AUTH_DB (users and refresh sessions)
+npx wrangler d1 migrations apply cms-auth
 ```
+
+The content migration creates `draft_*`, `live_*`, and `trash_*` tables in one
+database. It does not automatically import rows from other D1 databases.
 
 ### 4. Configure secrets
 
@@ -135,14 +138,18 @@ npm run deploy
 
 ## Database schema
 
-### Content tables (LIVE & DRAFT)
+### Content tables (CONTENT_DB only)
 
 | Table | Purpose |
 |-------|---------|
-| `pages` | Page metadata (name, slug, type, dates, hierarchy) |
-| `page_versions` | Versioned HTML content + JSON meta per page |
-| `page_tags` | Many-to-many page ↔ tag relationships |
-| `tags` | Tag reference table |
+| `draft_pages` | Draft page metadata (name, slug, type, dates, hierarchy) |
+| `live_pages` | Published page metadata |
+| `trash_pages` | Soft-deleted page metadata |
+| `draft_page_versions` | Versioned draft HTML content + JSON meta per page |
+| `trash_page_versions` | Versioned trashed HTML content + JSON meta per page |
+| `draft_page_tags` | Many-to-many draft page ↔ tag relationships |
+| `trash_page_tags` | Many-to-many trash page ↔ tag relationships |
+| `tags` | Shared tag reference table |
 
 ### Auth tables (AUTH_DB only)
 
@@ -154,12 +161,12 @@ npm run deploy
 ### Publish / un-publish flow
 
 ```
-DRAFT DB ──── Publish ────▶  LIVE DB   (public website reads here)
-         ◀─── Un-publish ───
+draft_pages ──── Publish ────▶  live_pages   (public website reads here)
+            ◀─── Un-publish ───
 ```
 
-Publish copies both the `pages` row and its current `page_versions` row into LIVE (upserted by `uuid`).  
-Un-publish deletes the `pages` row from LIVE (cascade removes its versions and page_tags).
+Publish upserts the `draft_pages` row into `live_pages` by `uuid`.
+Un-publish deletes the matching `live_pages` row by `uuid`.
 
 ---
 
@@ -167,8 +174,8 @@ Un-publish deletes the `pages` row from LIVE (cascade removes its versions and p
 
 ```
 ├── migrations/
-│   ├── live/          # Applied to LIVE_DB (content + auth)
-│   └── draft/         # Applied to DRAFT_DB (content only)
+│   ├── auth/          # Applied to AUTH_DB
+│   └── content/       # Applied to CONTENT_DB
 ├── src/
 │   ├── index.ts       # Hono app entry point
 │   ├── types.ts       # Shared TypeScript types & Env bindings
