@@ -290,9 +290,9 @@ authRoutes.get('/callback', async (c) => {
     return c.redirect('/auth/login?error=invalid_userinfo');
   }
 
-  // Upsert user in AUTH DB; sync role when the identity provider supplies one
+  // Upsert user in DB; sync role when the identity provider supplies one
   if (normalized.role) {
-    await c.env.AUTH_DB.prepare(
+    await c.env.DB.prepare(
       `INSERT INTO users (oauth_id, email, name, avatar_url, role)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(oauth_id) DO UPDATE SET
@@ -304,7 +304,7 @@ authRoutes.get('/callback', async (c) => {
       .bind(normalized.oauthId, normalized.email, normalized.name, normalized.avatarUrl, normalized.role)
       .run();
   } else {
-    await c.env.AUTH_DB.prepare(
+    await c.env.DB.prepare(
       `INSERT INTO users (oauth_id, email, name, avatar_url)
        VALUES (?, ?, ?, ?)
        ON CONFLICT(oauth_id) DO UPDATE SET
@@ -316,7 +316,7 @@ authRoutes.get('/callback', async (c) => {
       .run();
   }
 
-  const dbUser = await c.env.AUTH_DB.prepare(
+  const dbUser = await c.env.DB.prepare(
     'SELECT id, email, name, role FROM users WHERE oauth_id = ?',
   )
     .bind(normalized.oauthId)
@@ -357,7 +357,7 @@ authRoutes.get('/callback', async (c) => {
 
   // Store hashed jti in sessions table
   const tokenHash = await hashToken(jti);
-  await c.env.AUTH_DB.prepare(
+  await c.env.DB.prepare(
     `INSERT INTO sessions (user_id, refresh_token_hash, expires_at)
      VALUES (?, ?, datetime('now', '+7 days'))`,
   )
@@ -392,7 +392,7 @@ authRoutes.get('/logout', async (c) => {
     const payload = await verifyJWT(refreshToken, c.env.JWT_SECRET);
     if (payload?.jti) {
       const tokenHash = await hashToken(payload.jti);
-      await c.env.AUTH_DB.prepare(
+      await c.env.DB.prepare(
         'DELETE FROM sessions WHERE refresh_token_hash = ?',
       )
         .bind(tokenHash)
@@ -419,7 +419,7 @@ authRoutes.post('/refresh', async (c) => {
   }
 
   const tokenHash = await hashToken(refreshPayload.jti);
-  const session = await c.env.AUTH_DB.prepare(
+  const session = await c.env.DB.prepare(
     'SELECT id, user_id FROM sessions WHERE refresh_token_hash = ? AND expires_at > CURRENT_TIMESTAMP',
   )
     .bind(tokenHash)
@@ -429,7 +429,7 @@ authRoutes.post('/refresh', async (c) => {
     return c.json({ error: 'session_revoked' }, 401);
   }
 
-  const dbUser = await c.env.AUTH_DB.prepare(
+  const dbUser = await c.env.DB.prepare(
     'SELECT id, email, name, role FROM users WHERE id = ?',
   )
     .bind(session.user_id)
@@ -468,7 +468,7 @@ authRoutes.post('/refresh', async (c) => {
   ]);
 
   const newTokenHash = await hashToken(newJti);
-  await c.env.AUTH_DB.prepare(
+  await c.env.DB.prepare(
     `UPDATE sessions SET refresh_token_hash = ?, expires_at = datetime('now', '+7 days') WHERE id = ?`,
   )
     .bind(newTokenHash, session.id)

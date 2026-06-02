@@ -52,13 +52,13 @@ adminRoutes.get('/', async (c) => {
   const user = c.get('user');
   const flash = c.req.query('flash') ?? '';
 
-  const draftPages = await c.env.CONTENT_DB.prepare(
+  const draftPages = await c.env.DB.prepare(
     'SELECT * FROM draft_pages ORDER BY weight ASC, name ASC',
   ).all<Page>();
 
   const liveSlugs = new Set<string>();
   if (draftPages.results.length > 0) {
-    const livePages = await c.env.CONTENT_DB.prepare(
+    const livePages = await c.env.DB.prepare(
       'SELECT uuid FROM live_pages',
     ).all<{ uuid: string }>();
     livePages.results.forEach((p) => liveSlugs.add(p.uuid));
@@ -70,7 +70,7 @@ adminRoutes.get('/', async (c) => {
   }));
 
   // Fetch user avatar from DB
-  const dbUser = await c.env.AUTH_DB.prepare(
+  const dbUser = await c.env.DB.prepare(
     'SELECT avatar_url FROM users WHERE id = ?',
   )
     .bind(parseInt(user.sub, 10))
@@ -93,9 +93,9 @@ adminRoutes.get('/', async (c) => {
 adminRoutes.get('/pages/new', async (c) => {
   const user = c.get('user');
   const [parentPages, tags, dbUser] = await Promise.all([
-    c.env.CONTENT_DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
-    c.env.CONTENT_DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
-    c.env.AUTH_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+    c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
+    c.env.DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
+    c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
   ]);
@@ -129,9 +129,9 @@ adminRoutes.post('/pages', async (c) => {
 
   if (errors.length) {
     const [parentPages, tags, dbUser] = await Promise.all([
-      c.env.CONTENT_DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
-      c.env.CONTENT_DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
-      c.env.AUTH_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+      c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
+      c.env.DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
+      c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
         .bind(parseInt(user.sub, 10))
         .first<{ avatar_url: string | null }>(),
     ]);
@@ -161,7 +161,7 @@ adminRoutes.post('/pages', async (c) => {
   const meta = nullableStr(form.get('meta'));
 
   // Insert page
-  const pageResult = await c.env.CONTENT_DB.prepare(
+  const pageResult = await c.env.DB.prepare(
     `INSERT INTO draft_pages (name, slug, weight, start, end, page_type, original, page_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
@@ -170,25 +170,25 @@ adminRoutes.post('/pages', async (c) => {
 
   // The schema uses a custom DEFAULT id expression (not INTEGER PRIMARY KEY),
   // so last_row_id is the internal rowid — we must SELECT the actual id back.
-  const pageRow = await c.env.CONTENT_DB.prepare('SELECT id FROM draft_pages WHERE rowid = ?')
+  const pageRow = await c.env.DB.prepare('SELECT id FROM draft_pages WHERE rowid = ?')
     .bind(pageResult.meta.last_row_id)
     .first<{ id: number }>();
   const pageId = pageRow!.id;
 
   // Insert page version
-  const versionResult = await c.env.CONTENT_DB.prepare(
+  const versionResult = await c.env.DB.prepare(
     `INSERT INTO draft_page_versions (page_id, content, meta) VALUES (?, ?, ?)`,
   )
     .bind(pageId, content || null, meta)
     .run();
 
-  const versionRow = await c.env.CONTENT_DB.prepare('SELECT id FROM draft_page_versions WHERE rowid = ?')
+  const versionRow = await c.env.DB.prepare('SELECT id FROM draft_page_versions WHERE rowid = ?')
     .bind(versionResult.meta.last_row_id)
     .first<{ id: number }>();
   const versionId = versionRow!.id;
 
   // Link current version
-  await c.env.CONTENT_DB.prepare(
+  await c.env.DB.prepare(
     'UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?',
   )
     .bind(versionId, pageId)
@@ -197,7 +197,7 @@ adminRoutes.post('/pages', async (c) => {
   // Save tag associations
   const tagIds = form.getAll('tag_ids');
   for (const tagId of tagIds) {
-    await c.env.CONTENT_DB.prepare(
+    await c.env.DB.prepare(
       'INSERT OR IGNORE INTO draft_page_tags (page_id, tag_id) VALUES (?, ?)',
     )
       .bind(pageId, parseInt(String(tagId), 10))
@@ -214,10 +214,10 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
 
   const [page, parentPages, tags, dbUser] = await Promise.all([
-    c.env.CONTENT_DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(pageId).first<Page>(),
-    c.env.CONTENT_DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
-    c.env.CONTENT_DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
-    c.env.AUTH_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+    c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(pageId).first<Page>(),
+    c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
+    c.env.DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
+    c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
   ]);
@@ -226,11 +226,11 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
 
   const [version, pageTags] = await Promise.all([
     page.current_page_version_id
-      ? c.env.CONTENT_DB.prepare('SELECT * FROM draft_page_versions WHERE id = ?')
+      ? c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE id = ?')
           .bind(page.current_page_version_id)
           .first<PageVersion>()
       : Promise.resolve(null),
-    c.env.CONTENT_DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?')
+    c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?')
       .bind(pageId)
       .all<{ tag_id: number }>(),
   ]);
@@ -265,22 +265,22 @@ adminRoutes.post('/pages/:id', async (c) => {
   if (!slug) errors.push('Slug is required.');
   if (slug && !/^[a-z0-9-]+$/.test(slug)) errors.push('Slug may only contain lowercase letters, numbers and hyphens.');
 
-  const page = await c.env.CONTENT_DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
+  const page = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
     .bind(pageId)
     .first<Page>();
   if (!page) return c.notFound();
 
   if (errors.length) {
     const [parentPages, tags, version, pageTags, dbUser] = await Promise.all([
-      c.env.CONTENT_DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
-      c.env.CONTENT_DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
+      c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
+      c.env.DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
       page.current_page_version_id
-        ? c.env.CONTENT_DB.prepare('SELECT * FROM draft_page_versions WHERE id = ?')
+        ? c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE id = ?')
             .bind(page.current_page_version_id)
             .first<PageVersion>()
         : Promise.resolve(null),
-      c.env.CONTENT_DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?').bind(pageId).all<{ tag_id: number }>(),
-      c.env.AUTH_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+      c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?').bind(pageId).all<{ tag_id: number }>(),
+      c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
         .bind(parseInt(user.sub, 10))
         .first<{ avatar_url: string | null }>(),
     ]);
@@ -312,38 +312,38 @@ adminRoutes.post('/pages/:id', async (c) => {
   const meta = nullableStr(form.get('meta'));
 
   // Update page metadata
-  await c.env.CONTENT_DB.prepare(
+  await c.env.DB.prepare(
     `UPDATE draft_pages SET name=?, slug=?, weight=?, start=?, end=?, page_type=?, original=?, page_id=? WHERE id=?`,
   )
     .bind(name, slug, weightVal, startVal, endVal, pageTypeVal, originalVal, pageIdVal ? parseInt(pageIdVal, 10) : null, pageId)
     .run();
 
   // Create new page version
-  const versionResult = await c.env.CONTENT_DB.prepare(
+  const versionResult = await c.env.DB.prepare(
     `INSERT INTO draft_page_versions (page_id, content, meta) VALUES (?, ?, ?)`,
   )
     .bind(pageId, content || null, meta)
     .run();
 
-  const newVersionRow = await c.env.CONTENT_DB.prepare('SELECT id FROM draft_page_versions WHERE rowid = ?')
+  const newVersionRow = await c.env.DB.prepare('SELECT id FROM draft_page_versions WHERE rowid = ?')
     .bind(versionResult.meta.last_row_id)
     .first<{ id: number }>();
   const newVersionId = newVersionRow!.id;
 
-  await c.env.CONTENT_DB.prepare(
+  await c.env.DB.prepare(
     'UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?',
   )
     .bind(newVersionId, pageId)
     .run();
 
   // Replace tag associations
-  await c.env.CONTENT_DB.prepare('DELETE FROM draft_page_tags WHERE page_id = ?')
+  await c.env.DB.prepare('DELETE FROM draft_page_tags WHERE page_id = ?')
     .bind(pageId)
     .run();
 
   const tagIds = form.getAll('tag_ids');
   for (const tagId of tagIds) {
-    await c.env.CONTENT_DB.prepare(
+    await c.env.DB.prepare(
       'INSERT OR IGNORE INTO draft_page_tags (page_id, tag_id) VALUES (?, ?)',
     )
       .bind(pageId, parseInt(String(tagId), 10))
@@ -358,13 +358,13 @@ adminRoutes.post('/pages/:id', async (c) => {
 adminRoutes.post('/pages/:id/publish', async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
 
-  const page = await c.env.CONTENT_DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
+  const page = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
     .bind(pageId)
     .first<Page>();
   if (!page) return c.notFound();
 
   // Upsert page into live content table (match on uuid)
-  await c.env.CONTENT_DB.prepare(
+  await c.env.DB.prepare(
     `INSERT INTO live_pages (uuid, name, slug, weight, start, end, page_type, original, page_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
@@ -388,12 +388,12 @@ adminRoutes.post('/pages/:id/publish', async (c) => {
 adminRoutes.post('/pages/:id/unpublish', async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
 
-  const page = await c.env.CONTENT_DB.prepare('SELECT uuid FROM draft_pages WHERE id = ?')
+  const page = await c.env.DB.prepare('SELECT uuid FROM draft_pages WHERE id = ?')
     .bind(pageId)
     .first<{ uuid: string }>();
   if (!page) return c.notFound();
 
-  await c.env.CONTENT_DB.prepare('DELETE FROM live_pages WHERE uuid = ?')
+  await c.env.DB.prepare('DELETE FROM live_pages WHERE uuid = ?')
     .bind(page.uuid)
     .run();
 
@@ -405,13 +405,13 @@ adminRoutes.post('/pages/:id/unpublish', async (c) => {
 adminRoutes.post('/pages/:id/delete', async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
 
-  const page = await c.env.CONTENT_DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
+  const page = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
     .bind(pageId)
     .first<Page>();
   if (!page) return c.notFound();
 
   // Copy page into trash table (preserve uuid so we can restore)
-  await c.env.CONTENT_DB.prepare(
+  await c.env.DB.prepare(
     `INSERT INTO trash_pages (uuid, name, slug, weight, start, end, page_type, current_page_version_id, original, page_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
@@ -428,17 +428,17 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
     .run();
 
   // Fetch the trash page id
-  const trashPage = await c.env.CONTENT_DB.prepare('SELECT id FROM trash_pages WHERE uuid = ?')
+  const trashPage = await c.env.DB.prepare('SELECT id FROM trash_pages WHERE uuid = ?')
     .bind(page.uuid)
     .first<{ id: number }>();
 
   if (trashPage) {
     // Copy page versions into trash
-    const versions = await c.env.CONTENT_DB.prepare('SELECT * FROM draft_page_versions WHERE page_id = ?')
+    const versions = await c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE page_id = ?')
       .bind(pageId)
       .all<PageVersion>();
     for (const v of versions.results) {
-      await c.env.CONTENT_DB.prepare(
+      await c.env.DB.prepare(
         `INSERT INTO trash_page_versions (uuid, page_id, content, meta)
          VALUES (?, ?, ?, ?)
          ON CONFLICT(uuid) DO UPDATE SET content = excluded.content, meta = excluded.meta`,
@@ -448,11 +448,11 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
     }
 
     // Copy page tags into trash
-    const pageTags = await c.env.CONTENT_DB.prepare('SELECT * FROM draft_page_tags WHERE page_id = ?')
+    const pageTags = await c.env.DB.prepare('SELECT * FROM draft_page_tags WHERE page_id = ?')
       .bind(pageId)
       .all<PageTag>();
     for (const pt of pageTags.results) {
-      await c.env.CONTENT_DB.prepare(
+      await c.env.DB.prepare(
         `INSERT OR IGNORE INTO trash_page_tags (uuid, page_id, tag_id, weight) VALUES (?, ?, ?, ?)`,
       )
         .bind(pt.uuid, trashPage.id, pt.tag_id, pt.weight)
@@ -461,10 +461,10 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
   }
 
   // Unpublish from live (remove by uuid)
-  await c.env.CONTENT_DB.prepare('DELETE FROM live_pages WHERE uuid = ?').bind(page.uuid).run();
+  await c.env.DB.prepare('DELETE FROM live_pages WHERE uuid = ?').bind(page.uuid).run();
 
   // Delete from DRAFT
-  await c.env.CONTENT_DB.prepare('DELETE FROM draft_pages WHERE id = ?').bind(pageId).run();
+  await c.env.DB.prepare('DELETE FROM draft_pages WHERE id = ?').bind(pageId).run();
 
   return c.redirect('/admin?flash=Page+moved+to+trash');
 });
@@ -476,8 +476,8 @@ adminRoutes.get('/trash', async (c) => {
   const flash = c.req.query('flash') ?? '';
 
   const [trashedPages, dbUser] = await Promise.all([
-    c.env.CONTENT_DB.prepare('SELECT * FROM trash_pages ORDER BY updated_at DESC').all<Page>(),
-    c.env.AUTH_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+    c.env.DB.prepare('SELECT * FROM trash_pages ORDER BY updated_at DESC').all<Page>(),
+    c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
   ]);
@@ -572,13 +572,13 @@ adminRoutes.get('/trash', async (c) => {
 adminRoutes.post('/trash/:id/restore', async (c) => {
   const trashId = parseInt(c.req.param('id'), 10);
 
-  const trashPage = await c.env.CONTENT_DB.prepare('SELECT * FROM trash_pages WHERE id = ?')
+  const trashPage = await c.env.DB.prepare('SELECT * FROM trash_pages WHERE id = ?')
     .bind(trashId)
     .first<Page>();
   if (!trashPage) return c.notFound();
 
   // Upsert page back into draft content table (match on uuid)
-  await c.env.CONTENT_DB.prepare(
+  await c.env.DB.prepare(
     `INSERT INTO draft_pages (uuid, name, slug, weight, start, end, page_type, original, page_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
@@ -594,18 +594,18 @@ adminRoutes.post('/trash/:id/restore', async (c) => {
     .bind(trashPage.uuid, trashPage.name, trashPage.slug, trashPage.weight, trashPage.start, trashPage.end, trashPage.page_type, trashPage.original, trashPage.page_id)
     .run();
 
-  const draftPage = await c.env.CONTENT_DB.prepare('SELECT id FROM draft_pages WHERE uuid = ?')
+  const draftPage = await c.env.DB.prepare('SELECT id FROM draft_pages WHERE uuid = ?')
     .bind(trashPage.uuid)
     .first<{ id: number }>();
 
   if (draftPage) {
     // Restore page versions to draft
-    const trashVersions = await c.env.CONTENT_DB.prepare('SELECT * FROM trash_page_versions WHERE page_id = ?')
+    const trashVersions = await c.env.DB.prepare('SELECT * FROM trash_page_versions WHERE page_id = ?')
       .bind(trashId)
       .all<PageVersion>();
     let lastVersionId: number | null = null;
     for (const v of trashVersions.results) {
-      await c.env.CONTENT_DB.prepare(
+      await c.env.DB.prepare(
         `INSERT INTO draft_page_versions (uuid, page_id, content, meta)
          VALUES (?, ?, ?, ?)
          ON CONFLICT(uuid) DO UPDATE SET content = excluded.content, meta = excluded.meta`,
@@ -613,18 +613,18 @@ adminRoutes.post('/trash/:id/restore', async (c) => {
         .bind(v.uuid, draftPage.id, v.content, v.meta)
         .run();
 
-      const restoredVersion = await c.env.CONTENT_DB.prepare('SELECT id FROM draft_page_versions WHERE uuid = ?')
+      const restoredVersion = await c.env.DB.prepare('SELECT id FROM draft_page_versions WHERE uuid = ?')
         .bind(v.uuid)
         .first<{ id: number }>();
       lastVersionId = restoredVersion?.id ?? lastVersionId;
     }
 
     // Restore page tags to draft
-    const trashTags = await c.env.CONTENT_DB.prepare('SELECT * FROM trash_page_tags WHERE page_id = ?')
+    const trashTags = await c.env.DB.prepare('SELECT * FROM trash_page_tags WHERE page_id = ?')
       .bind(trashId)
       .all<PageTag>();
     for (const pt of trashTags.results) {
-      await c.env.CONTENT_DB.prepare(
+      await c.env.DB.prepare(
         `INSERT OR IGNORE INTO draft_page_tags (uuid, page_id, tag_id, weight) VALUES (?, ?, ?, ?)`,
       )
         .bind(pt.uuid, draftPage.id, pt.tag_id, pt.weight)
@@ -633,14 +633,14 @@ adminRoutes.post('/trash/:id/restore', async (c) => {
 
     // Restore current_page_version_id pointer if we have versions
     if (lastVersionId !== null) {
-      await c.env.CONTENT_DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
+      await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
         .bind(lastVersionId, draftPage.id)
         .run();
     }
   }
 
   // Remove from TRASH
-  await c.env.CONTENT_DB.prepare('DELETE FROM trash_pages WHERE id = ?').bind(trashId).run();
+  await c.env.DB.prepare('DELETE FROM trash_pages WHERE id = ?').bind(trashId).run();
 
   return c.redirect('/admin/trash?flash=Page+restored+to+draft');
 });
@@ -649,7 +649,7 @@ adminRoutes.post('/trash/:id/restore', async (c) => {
 
 adminRoutes.post('/trash/:id/delete', async (c) => {
   const trashId = parseInt(c.req.param('id'), 10);
-  await c.env.CONTENT_DB.prepare('DELETE FROM trash_pages WHERE id = ?').bind(trashId).run();
+  await c.env.DB.prepare('DELETE FROM trash_pages WHERE id = ?').bind(trashId).run();
   return c.redirect('/admin/trash?flash=Page+permanently+deleted');
 });
 
@@ -658,8 +658,8 @@ adminRoutes.post('/trash/:id/delete', async (c) => {
 adminRoutes.get('/tags', async (c) => {
   const user = c.get('user');
   const [tags, dbUser] = await Promise.all([
-    c.env.CONTENT_DB.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
-    c.env.AUTH_DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+    c.env.DB.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
+    c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
   ]);

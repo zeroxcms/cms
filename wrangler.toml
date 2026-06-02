@@ -4,23 +4,17 @@ compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
 [[d1_databases]]
-binding = "CONTENT_DB"
-database_name = "cms-content"
-database_id = "1e0f0732-8b15-4299-9c51-6151ccf597f1"
-migrations_dir = "migrations/content"
-
-[[d1_databases]]
-binding = "AUTH_DB"
-database_name = "cms-auth"
-database_id = "76b3ab78-7ed6-4faa-ab5a-6263b30ec984"
-migrations_dir = "migrations/auth"
+binding = "DB"
+database_name = "cms"
+database_id = "06a8b98d-7cf5-4662-aa02-fbf845b5738a"
+migrations_dir = "migrations"
 
 [vars]
 # Comma-separated list of enabled OAuth providers: "github", "google", "eventuai"
-ENABLED_PROVIDERS = "eventuai"
+ENABLED_PROVIDERS = "eventuai,github"
 # Per-provider OAuth client IDs – add the ones you use
 EVENTUAI_CLIENT_ID = "RnFAoAkXz1JLwaKx"
-# GITHUB_CLIENT_ID = ""
+GITHUB_CLIENT_ID = "Ov23lis6jG7x2nBmbFM1"
 # GOOGLE_CLIENT_ID = ""
 # Shared redirect URI – registered with every enabled provider
 OAUTH_REDIRECT_URI = "https://cms.eventuai.com/auth/callback"

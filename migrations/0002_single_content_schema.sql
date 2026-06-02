@@ -1,5 +1,5 @@
 -- ============================================================
--- Content schema - applied to the single CONTENT_DB database
+-- Content schema - applied to the CMS database
 -- ============================================================
 
 -- Tags are shared by draft, live, and trash page states.

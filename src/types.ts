@@ -77,8 +77,7 @@ export interface Tag {
 // Cloudflare Worker environment bindings
 // ============================================================
 export interface Env {
-  CONTENT_DB: D1Database;
-  AUTH_DB: D1Database;
+  DB: D1Database;
   /** HMAC-SHA256 secret for signing JWTs – set via `wrangler secret put JWT_SECRET` */
   JWT_SECRET: string;
   /**

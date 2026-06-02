@@ -1,5 +1,5 @@
 -- ============================================================
--- Auth schema – applied to AUTH database only
+-- Auth schema - applied to the CMS database
 -- ============================================================
 
 -- Users – populated on first OAuth login

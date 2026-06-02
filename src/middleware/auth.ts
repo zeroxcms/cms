@@ -48,7 +48,7 @@ export const authMiddleware = createMiddleware<{
 
     // Revocation check – the hashed jti must exist in the sessions table
     const tokenHash = await hashToken(refreshPayload.jti);
-    const session = await c.env.AUTH_DB.prepare(
+    const session = await c.env.DB.prepare(
       'SELECT id, user_id FROM sessions WHERE refresh_token_hash = ? AND expires_at > CURRENT_TIMESTAMP',
     )
       .bind(tokenHash)
@@ -57,7 +57,7 @@ export const authMiddleware = createMiddleware<{
     if (!session) return null;
 
     // Fetch up-to-date user data (role may have changed)
-    const user = await c.env.AUTH_DB.prepare(
+    const user = await c.env.DB.prepare(
       'SELECT id, email, name, role FROM users WHERE id = ?',
     )
       .bind(session.user_id)
@@ -95,7 +95,7 @@ export const authMiddleware = createMiddleware<{
     const newTokenHash = await hashToken(newJti);
 
     // Rotate session row
-    await c.env.AUTH_DB.prepare(
+    await c.env.DB.prepare(
       `UPDATE sessions SET refresh_token_hash = ?, expires_at = datetime('now', '+7 days') WHERE id = ?`,
     )
       .bind(newTokenHash, session.id)

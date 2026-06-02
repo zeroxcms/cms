@@ -6,7 +6,7 @@ Content management system on Workers
 - **OAuth 2.1** login via Eventuai, GitHub, or Google with PKCE (Proof Key for Code Exchange)
 - **Dual JWT** security – short-lived access tokens (15 min) + rotatable refresh tokens (7 days) stored as httpOnly cookies; refresh tokens are hashed and stored in D1 for revocation
 - **Role-based access** – users with `admin`, `editor`, or `moderator` in their comma-separated role list can access the CMS; other users are redirected to the login page
-- **Single content database** – draft, live, and trash content live in one D1 database using separate table prefixes
+- **Single D1 database** – auth, sessions, draft, live, and trash content live in one CMS database
 - **Page versioning** – every save creates a new `draft_page_versions` row; `draft_pages.current_page_version_id` points to the active version
 - **Tailwind CSS + VanillaJS** admin UI with inline HTML toolbar for content editing
 
@@ -20,31 +20,26 @@ Content management system on Workers
 npm install
 ```
 
-### 2. Create the D1 databases
+### 2. Create the D1 database
 
 ```bash
-npx wrangler d1 create cms-content
-npx wrangler d1 create cms-auth
+npx wrangler d1 create cms
 ```
 
-Copy the `database_id` values printed by each command into `wrangler.toml`.
+Copy the `database_id` value printed by the command into `wrangler.toml`.
 
-For an existing deployment, update the `CONTENT_DB` binding to point at the one
-database you want to keep. Existing rows from the old live/draft/trash databases
-must be copied into the new prefixed tables separately.
+For an existing deployment, update the `DB` binding to point at the one database
+you want to keep. Existing rows from the old auth/content databases must be
+copied into the merged database separately.
 
 ### 3. Run migrations
 
 ```bash
-# CONTENT_DB (draft/live/trash content tables)
-npx wrangler d1 migrations apply cms-content
-
-# AUTH_DB (users and refresh sessions)
-npx wrangler d1 migrations apply cms-auth
+npx wrangler d1 migrations apply cms
 ```
 
-The content migration creates `draft_*`, `live_*`, and `trash_*` tables in one
-database. It does not automatically import rows from other D1 databases.
+The migrations create auth tables plus `draft_*`, `live_*`, and `trash_*`
+content tables. They do not automatically import rows from other D1 databases.
 
 ### 4. Configure secrets
 
@@ -113,10 +108,10 @@ Add the Client ID and secret for every provider you enable.
 
 ### 6. Set the first user's role
 
-After signing in for the first time, update your role to `admin` in the auth database. Multiple roles can be stored as a comma-separated list, for example `admin,viewer`:
+After signing in for the first time, update your role to `admin` in the CMS database. Multiple roles can be stored as a comma-separated list, for example `admin,viewer`:
 
 ```bash
-npx wrangler d1 execute cms-auth --remote \
+npx wrangler d1 execute cms --remote \
   --command "UPDATE users SET role='admin,viewer' WHERE email='you@example.com'"
 ```
 
@@ -138,7 +133,7 @@ npm run deploy
 
 ## Database schema
 
-### Content tables (CONTENT_DB only)
+### Content tables
 
 | Table | Purpose |
 |-------|---------|
@@ -151,7 +146,7 @@ npm run deploy
 | `trash_page_tags` | Many-to-many trash page ↔ tag relationships |
 | `tags` | Shared tag reference table |
 
-### Auth tables (AUTH_DB only)
+### Auth tables
 
 | Table | Purpose |
 |-------|---------|
@@ -174,8 +169,8 @@ Un-publish deletes the matching `live_pages` row by `uuid`.
 
 ```
 ├── migrations/
-│   ├── auth/          # Applied to AUTH_DB
-│   └── content/       # Applied to CONTENT_DB
+│   ├── 0001_auth_schema.sql
+│   └── 0002_single_content_schema.sql
 ├── src/
 │   ├── index.ts       # Hono app entry point
 │   ├── types.ts       # Shared TypeScript types & Env bindings
