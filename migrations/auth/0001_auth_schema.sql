@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users(
     email TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL DEFAULT '',
     avatar_url TEXT,
-    -- role: admin | editor | moderator | viewer
+    -- role: comma-separated list of admin | editor | moderator | viewer
     role TEXT NOT NULL DEFAULT 'viewer',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL ,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL

@@ -14,7 +14,9 @@
 import { createMiddleware } from 'hono/factory';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { signJWT, verifyJWT, hashToken, generateTokenId } from '../utils/jwt';
-import type { Env, Variables, JWTPayload, UserRole } from '../types';
+import { hasAnyRole } from '../utils/roles';
+import { EDITOR_ROLES } from '../types';
+import type { Env, Variables, JWTPayload } from '../types';
 
 const ACCESS_TOKEN_TTL = 15 * 60;       // 15 minutes
 const REFRESH_TOKEN_TTL = 7 * 24 * 3600; // 7 days
@@ -59,7 +61,7 @@ export const authMiddleware = createMiddleware<{
       'SELECT id, email, name, role FROM users WHERE id = ?',
     )
       .bind(session.user_id)
-      .first<{ id: number; email: string; name: string; role: UserRole }>();
+      .first<{ id: number; email: string; name: string; role: string }>();
 
     if (!user) return null;
 
@@ -139,8 +141,7 @@ export const editorGuard = createMiddleware<{
   Variables: Variables;
 }>(async (c, next) => {
   const user = c.get('user');
-  const editorRoles: string[] = ['admin', 'editor', 'moderator'];
-  if (!editorRoles.includes(user.role)) {
+  if (!hasAnyRole(user.role, EDITOR_ROLES)) {
     return c.redirect('/auth/login?error=forbidden');
   }
   return next();

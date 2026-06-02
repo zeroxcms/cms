@@ -15,6 +15,7 @@ export interface LayoutOptions {
 
 export function layout(opts: LayoutOptions): string {
   const { title, siteTitle, body, admin = false, userName = '', userRole = '', userAvatar = '' } = opts;
+  const userRoleLabel = userRole.split(',').map((role) => role.trim()).filter(Boolean).join(', ');
 
   const sidebar = admin
     ? `
@@ -60,7 +61,7 @@ export function layout(opts: LayoutOptions): string {
           }
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-white truncate">${escHtml(userName)}</p>
-            <p class="text-xs text-gray-400 capitalize">${escHtml(userRole)}</p>
+            <p class="text-xs text-gray-400 capitalize">${escHtml(userRoleLabel)}</p>
           </div>
         </div>
         <a href="/auth/logout"

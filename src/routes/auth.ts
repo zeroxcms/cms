@@ -12,8 +12,9 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { signJWT, verifyJWT, hashToken, generateTokenId } from '../utils/jwt';
 import { generateCodeVerifier, generateCodeChallenge, generateState } from '../utils/pkce';
 import { rejectCrossSiteRequest } from '../utils/security';
+import { normalizeRoles } from '../utils/roles';
 import { loginPage } from '../templates/login';
-import type { Env, Variables, JWTPayload, UserRole } from '../types';
+import type { Env, Variables, JWTPayload } from '../types';
 
 const ACCESS_TOKEN_TTL = 15 * 60;        // 15 minutes
 const REFRESH_TOKEN_TTL = 7 * 24 * 3600; // 7 days
@@ -53,7 +54,7 @@ interface NormalizedUser {
   email: string;
   name: string;
   avatarUrl: string;
-  role?: UserRole;
+  role?: string;
 }
 
 interface OAuthStatePayload extends JWTPayload {
@@ -87,13 +88,6 @@ function getProviderCredentials(
   return null;
 }
 
-function mapRoleFromOAuth(roles: string[]): UserRole {
-  if (roles.includes('admin')) return 'admin';
-  if (roles.includes('editor')) return 'editor';
-  if (roles.includes('moderator')) return 'moderator';
-  return 'viewer';
-}
-
 function normalizeUser(provider: string, data: Record<string, unknown>): NormalizedUser | null {
   if (provider === 'eventuai') {
     const sub = typeof data['sub'] === 'string' ? data['sub'] : '';
@@ -108,7 +102,7 @@ function normalizeUser(provider: string, data: Record<string, unknown>): Normali
       email,
       name: String(data['preferred_username'] ?? sub),
       avatarUrl: '',
-      role: mapRoleFromOAuth(roles),
+      role: normalizeRoles(roles),
     };
   }
   if (provider === 'google') {
@@ -181,7 +175,7 @@ authRoutes.get('/start', async (c) => {
     sub: 'pkce',
     email: '',
     name: '',
-    role: 'viewer' as UserRole,
+    role: 'viewer',
     type: 'access' as const,
     state,
     code_verifier: codeVerifier,
@@ -326,7 +320,7 @@ authRoutes.get('/callback', async (c) => {
     'SELECT id, email, name, role FROM users WHERE oauth_id = ?',
   )
     .bind(normalized.oauthId)
-    .first<{ id: number; email: string; name: string; role: UserRole }>();
+    .first<{ id: number; email: string; name: string; role: string }>();
 
   if (!dbUser) {
     return c.redirect('/auth/login?error=db_error');
@@ -439,7 +433,7 @@ authRoutes.post('/refresh', async (c) => {
     'SELECT id, email, name, role FROM users WHERE id = ?',
   )
     .bind(session.user_id)
-    .first<{ id: number; email: string; name: string; role: UserRole }>();
+    .first<{ id: number; email: string; name: string; role: string }>();
 
   if (!dbUser) {
     return c.json({ error: 'user_not_found' }, 401);

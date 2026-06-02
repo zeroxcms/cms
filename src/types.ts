@@ -2,7 +2,9 @@
 // Shared TypeScript types
 // ============================================================
 
-export type UserRole = 'admin' | 'editor' | 'moderator' | 'viewer';
+export const USER_ROLES = ['admin', 'editor', 'moderator', 'viewer'] as const;
+
+export type UserRole = typeof USER_ROLES[number];
 
 export const EDITOR_ROLES: UserRole[] = ['admin', 'editor', 'moderator'];
 
@@ -12,7 +14,7 @@ export interface User {
   email: string;
   name: string;
   avatar_url: string | null;
-  role: UserRole;
+  role: string;
 }
 
 // Access token – short-lived (15 min)
@@ -21,7 +23,7 @@ export interface JWTPayload {
   sub: string;         // user id
   email: string;
   name: string;
-  role: UserRole;
+  role: string;
   type: 'access' | 'refresh';
   jti?: string;        // unique token id (refresh tokens only)
   exp: number;

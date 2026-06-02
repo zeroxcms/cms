@@ -5,7 +5,7 @@ Content management system on Workers
 
 - **OAuth 2.1** login via Eventuai, GitHub, or Google with PKCE (Proof Key for Code Exchange)
 - **Dual JWT** security – short-lived access tokens (15 min) + rotatable refresh tokens (7 days) stored as httpOnly cookies; refresh tokens are hashed and stored in D1 for revocation
-- **Role-based access** – only `admin`, `editor`, and `moderator` roles can access the CMS; other users are redirected to the login page
+- **Role-based access** – users with `admin`, `editor`, or `moderator` in their comma-separated role list can access the CMS; other users are redirected to the login page
 - **LIVE / DRAFT databases** – content is authored in the DRAFT D1 database, published to the LIVE D1 database with a single click, and un-published by deleting the LIVE record
 - **Page versioning** – every save creates a new `page_versions` row; `pages.current_page_version_id` points to the active version
 - **Tailwind CSS + VanillaJS** admin UI with inline HTML toolbar for content editing
@@ -110,11 +110,11 @@ Add the Client ID and secret for every provider you enable.
 
 ### 6. Set the first user's role
 
-After signing in for the first time, update your role to `admin` in the LIVE database:
+After signing in for the first time, update your role to `admin` in the auth database. Multiple roles can be stored as a comma-separated list, for example `admin,viewer`:
 
 ```bash
-npx wrangler d1 execute cms-live \
-  --command "UPDATE users SET role='admin' WHERE email='you@example.com'"
+npx wrangler d1 execute cms-auth --remote \
+  --command "UPDATE users SET role='admin,viewer' WHERE email='you@example.com'"
 ```
 
 ### 7. Run locally
