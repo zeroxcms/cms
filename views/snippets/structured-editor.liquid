@@ -1,11 +1,11 @@
-<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-5">
-  <div class="flex items-center justify-between gap-4">
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 space-y-5 sm:p-6">
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
     <p class="text-sm font-semibold text-gray-700">Structured Content</p>
-    <label class="flex items-center gap-2 text-xs text-gray-500">
+    <label class="flex w-full items-center gap-2 text-xs text-gray-500 sm:w-auto">
       Language
       <select
         name="_language"
-        class="px-2 py-1 border border-gray-300 rounded-lg text-xs"
+        class="flex-1 px-2 py-1 border border-gray-300 rounded-lg text-xs sm:flex-none"
         onchange="switchEditorLanguage(this.value)"
       >
         {% for option in languageOptions %}
@@ -16,17 +16,17 @@
   </div>
   {{ fieldsHtml }}
   <div class="border-t border-gray-100 pt-5 space-y-4">
-    <div class="flex items-center justify-between gap-4">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <p class="text-sm font-semibold text-gray-700">Blocks</p>
       {% if hasBlockOptions %}
-        <div class="flex items-center gap-2">
-          <select name="block-select" class="px-2 py-1 border border-gray-300 rounded-lg text-xs">
+        <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <select name="block-select" class="w-full px-2 py-1 border border-gray-300 rounded-lg text-xs sm:w-auto">
             {% for option in blockOptions %}
               <option value="{{ option.value | escape }}">{{ option.value | escape }}</option>
             {% endfor %}
           </select>
           <button type="submit" name="action" value="block-add"
-                  class="px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-semibold">Add Block</button>
+                  class="w-full px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-semibold sm:w-auto">Add Block</button>
         </div>
       {% endif %}
     </div>

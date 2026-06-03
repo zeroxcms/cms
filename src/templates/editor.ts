@@ -84,7 +84,7 @@ function renderLectFields(
     .join('');
 
   return `
-    <div class="grid grid-cols-2 gap-5">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
       ${attributeFields}
       ${pointerFields}
       ${valueFields}
@@ -104,10 +104,10 @@ function renderItemGroup(
   const addAction = blockMatch ? `block-item-add:${blockMatch[1]}|${props.name}` : `item-add:${props.name}`;
   return `
     <div class="rounded-lg border border-gray-100 bg-gray-50 p-4 space-y-4">
-      <div class="flex items-center justify-between">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p class="text-sm font-semibold text-gray-700">${escHtml(props.name)}</p>
         <button type="submit" name="action" value="${escHtml(addAction)}"
-                class="px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-xs font-semibold text-gray-700">Add Item</button>
+                class="w-full sm:w-auto px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-xs font-semibold text-gray-700">Add Item</button>
       </div>
       ${
         rows.length
@@ -124,7 +124,7 @@ function renderItemGroup(
                   ? `block-item-delete:${blockMatch[1]}|${props.name}|${index}`
                   : `item-delete:${props.name}|${index}`;
                 return `<div class="rounded-lg bg-white border border-gray-200 p-4 space-y-3">
-                          <div class="flex items-center justify-between">
+                          <div class="flex items-center justify-between gap-3">
                             <span class="text-xs text-gray-400">Item ${index + 1}</span>
                             <button type="submit" name="action" value="${escHtml(deleteAction)}"
                                     class="text-xs font-semibold text-red-600 hover:text-red-700">Delete</button>
@@ -149,7 +149,7 @@ function renderInput(name: string, label: string, value: string, type: string, p
               placeholder="${escHtml(placeholder)}"
               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">`;
 
-  return `<label class="${isLong ? 'col-span-2' : ''} block">
+  return `<label class="${isLong ? 'sm:col-span-2' : ''} block">
             <span class="block text-sm font-medium text-gray-700 mb-1">${escHtml(label)}</span>
             ${input}
           </label>`;
