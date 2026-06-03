@@ -1,21 +1,30 @@
+{% if hasSettings %}
+  <div class="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-5 sm:p-6">
+    <p class="text-sm font-semibold text-gray-700">Settings</p>
+    {{ settingsHtml }}
+  </div>
+{% endif %}
+
 <div class="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-5 sm:p-6">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-    <p class="text-sm font-semibold text-gray-700">Structured Content</p>
-    <label for="structured_language" class="flex min-w-0 w-full items-center gap-2 text-xs text-gray-500 sm:w-auto">
-      Language
-      <select
-        id="structured_language"
-        name="_language"
-        class="min-w-0 flex-1 px-2 py-1 border border-gray-300 rounded-lg text-xs sm:flex-none"
-        onchange="switchEditorLanguage(this.value)"
-      >
-        {% for option in languageOptions %}
-          <option value="{{ option.value | escape }}" {% if option.selected %}selected{% endif %}>{{ option.value | escape }}</option>
-        {% endfor %}
-      </select>
-    </label>
+    <p class="text-sm font-semibold text-gray-700">Content</p>
+    {% if hasLanguageContent %}
+      <label for="structured_language" class="flex min-w-0 w-full items-center gap-2 text-xs text-gray-500 sm:w-auto">
+        Language
+        <select
+          id="structured_language"
+          name="_language"
+          class="min-w-0 flex-1 px-2 py-1 border border-gray-300 rounded-lg text-xs sm:flex-none"
+          onchange="switchEditorLanguage(this.value)"
+        >
+          {% for option in languageOptions %}
+            <option value="{{ option.value | escape }}" {% if option.selected %}selected{% endif %}>{{ option.value | escape }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    {% endif %}
   </div>
-  {{ fieldsHtml }}
+  {{ contentHtml }}
   <div class="border-t border-gray-100 pt-5 space-y-4">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <p class="text-sm font-semibold text-gray-700">Blocks</p>
@@ -33,16 +42,23 @@
       {% endif %}
     </div>
     {% if hasBlocks %}
-      {% for block in blocks %}
+      {% assign sortedBlocks = blocks | sort: 'weight' %}
+      {% for block in sortedBlocks %}
         <div class="min-w-0 rounded-lg border border-gray-200 p-4 space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <p class="min-w-0 break-words text-xs font-semibold uppercase tracking-wide text-gray-500">{{ block.type | escape }}</p>
+            <p class="min-w-0 break-words text-xs font-semibold uppercase tracking-wide text-gray-500">{{ block.name | escape }}</p>
             <button type="submit" name="action" value="{{ block.deleteAction | escape }}"
                     class="shrink-0 text-xs font-semibold text-red-600 hover:text-red-700">Delete Block</button>
           </div>
           <input type="hidden" name="#{{ block.index }}@_type" value="{{ block.type | escape }}">
           <input type="hidden" name="#{{ block.index }}@_id" value="{{ block.id | escape }}">
-          {{ block.fieldsHtml }}
+          {% if block.hasSettings %}
+            <div class="space-y-3">
+              <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">Settings</p>
+              {{ block.settingsHtml }}
+            </div>
+          {% endif %}
+          {{ block.contentHtml }}
         </div>
       {% endfor %}
     {% else %}

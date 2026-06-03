@@ -7,6 +7,7 @@ export interface DashboardPage extends Page {
   contentPreview?: string;
   liveWeight?: number;
   hasLiveWeightDrift?: boolean;
+  hasLiveLectDrift?: boolean;
 }
 
 export async function dashboardPage(views: Fetcher, opts: {
@@ -35,6 +36,7 @@ export async function dashboardPage(views: Fetcher, opts: {
       weight: page.weight,
       liveWeight: page.liveWeight,
       hasLiveWeightDrift: !!page.hasLiveWeightDrift,
+      hasLiveLectDrift: !!page.hasLiveLectDrift,
       isPublished: page.isPublished,
       weightAction: `/admin/pages/${page.id}/weight`,
       editHref: `/admin/pages/${page.id}/edit`,

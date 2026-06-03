@@ -94,6 +94,22 @@ function blockPropsByName(): Record<string, ReturnType<typeof getBlueprintProps>
   return props;
 }
 
+function lectsMatch(left: string | null | undefined, right: string | null | undefined): boolean {
+  if ((left ?? '') === (right ?? '')) return true;
+  return stringifyLect(safeParseLect(left)) === stringifyLect(safeParseLect(right));
+}
+
+async function editorTaxonomy(db: D1Database): Promise<{ tags: Tag[]; tagTypes: TagType[] }> {
+  const [tags, tagTypes] = await Promise.all([
+    db.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
+    db.prepare('SELECT * FROM tag_types ORDER BY name ASC').all<TagType>(),
+  ]);
+  return {
+    tags: tags.results,
+    tagTypes: tagTypes.results,
+  };
+}
+
 function lectForPage(pageType: string, stored: string | null | undefined): Lect {
   return mergeLects(
     blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
@@ -306,8 +322,9 @@ adminRoutes.get('/', async (c) => {
     'SELECT * FROM draft_pages ORDER BY weight ASC, name ASC',
   ).all<Page>();
 
-  const livePages = await c.env.DB.prepare('SELECT uuid, weight FROM live_pages').all<{
+  const livePages = await c.env.DB.prepare('SELECT uuid, lect, weight FROM live_pages').all<{
     uuid: string;
+    lect: string | null;
     weight: number;
   }>();
   const liveMap = new Map(livePages.results.map((page) => [page.uuid, page]));
@@ -317,6 +334,7 @@ adminRoutes.get('/', async (c) => {
     isPublished: liveMap.has(p.uuid),
     liveWeight: liveMap.get(p.uuid)?.weight,
     hasLiveWeightDrift: liveMap.has(p.uuid) && liveMap.get(p.uuid)?.weight !== p.weight,
+    hasLiveLectDrift: liveMap.has(p.uuid) && !lectsMatch(liveMap.get(p.uuid)?.lect, p.lect),
   }));
 
   // Fetch user avatar from DB
@@ -380,7 +398,7 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
         isPublished: liveMap.has(page.uuid),
         liveWeight: liveMap.get(page.uuid)?.weight,
         hasLiveWeightDrift: liveMap.has(page.uuid) && liveMap.get(page.uuid)?.weight !== page.weight,
-        contentPreview: liveMap.get(page.uuid)?.lect === page.lect ? 'synced' : 'changed',
+        hasLiveLectDrift: liveMap.has(page.uuid) && !lectsMatch(liveMap.get(page.uuid)?.lect, page.lect),
       })),
       flash: flash || undefined,
       returnPath: `/admin/pages/list/${encodeURIComponent(pageType)}${search ? `?search=${encodeURIComponent(search)}` : ''}`,
@@ -503,9 +521,9 @@ adminRoutes.get('/pages/new', async (c) => {
   const pageType = c.req.query('page_type') || 'default';
   const language = languageFromRequest(c);
   const lect = blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
-  const [parentPages, tags, dbUser] = await Promise.all([
+  const [parentPages, taxonomy, dbUser] = await Promise.all([
     c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
-    c.env.DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
+    editorTaxonomy(c.env.DB),
     c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
@@ -518,20 +536,21 @@ adminRoutes.get('/pages/new', async (c) => {
       userRole: user.role,
       userAvatar: dbUser?.avatar_url ?? '',
       parentPages: parentPages.results,
-        tags: tags.results,
-        selectedTagIds: [],
-        action: '/admin/pages',
-        defaultPageType: pageType,
-        structured: {
-          config: cmsConfig,
-          language,
-          lect,
-          blueprintProps: blueprintPropsFor(pageType),
-          blockProps: blockPropsByName(),
-          blockNames: cmsConfig.blockLists[pageType] ?? cmsConfig.blockLists.default,
-          versions: [],
-        },
-      }),
+      tags: taxonomy.tags,
+      tagTypes: taxonomy.tagTypes,
+      selectedTagIds: [],
+      action: '/admin/pages',
+      defaultPageType: pageType,
+      structured: {
+        config: cmsConfig,
+        language,
+        lect,
+        blueprintProps: blueprintPropsFor(pageType),
+        blockProps: blockPropsByName(),
+        blockNames: cmsConfig.blockLists[pageType] ?? cmsConfig.blockLists.default,
+        versions: [],
+      },
+    }),
   );
 });
 
@@ -550,9 +569,9 @@ adminRoutes.post('/pages', async (c) => {
   if (!/^[a-z0-9-]+$/.test(slug)) errors.push('Slug may only contain lowercase letters, numbers and hyphens.');
 
   if (errors.length) {
-    const [parentPages, tags, dbUser] = await Promise.all([
+    const [parentPages, taxonomy, dbUser] = await Promise.all([
       c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
-      c.env.DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
+      editorTaxonomy(c.env.DB),
       c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
         .bind(parseInt(user.sub, 10))
         .first<{ avatar_url: string | null }>(),
@@ -564,7 +583,8 @@ adminRoutes.post('/pages', async (c) => {
         userRole: user.role,
         userAvatar: dbUser?.avatar_url ?? '',
         parentPages: parentPages.results,
-        tags: tags.results,
+        tags: taxonomy.tags,
+        tagTypes: taxonomy.tagTypes,
         selectedTagIds: [],
         errors,
         action: '/admin/pages',
@@ -648,10 +668,10 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
   const language = languageFromRequest(c);
   const requestedVersionId = parseInt(c.req.query('version') ?? '', 10);
 
-  const [page, parentPages, tags, dbUser] = await Promise.all([
+  const [page, parentPages, taxonomy, dbUser] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(pageId).first<Page>(),
     c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
-    c.env.DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
+    editorTaxonomy(c.env.DB),
     c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
@@ -689,7 +709,8 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
       page: displayPage,
       version: version ?? undefined,
       parentPages: parentPages.results,
-      tags: tags.results,
+      tags: taxonomy.tags,
+      tagTypes: taxonomy.tagTypes,
       selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
       action: `/admin/pages/${pageId}`,
       structured: {
@@ -755,9 +776,9 @@ adminRoutes.post('/pages/:id', async (c) => {
   }
 
   if (errors.length) {
-    const [parentPages, tags, version, versions, pageTags, dbUser] = await Promise.all([
+    const [parentPages, taxonomy, version, versions, pageTags, dbUser] = await Promise.all([
       c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
-      c.env.DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
+      editorTaxonomy(c.env.DB),
       page.current_page_version_id
         ? c.env.DB.prepare('SELECT * FROM page_versions WHERE id = ?')
             .bind(page.current_page_version_id)
@@ -782,7 +803,8 @@ adminRoutes.post('/pages/:id', async (c) => {
         page,
         version: version ?? undefined,
         parentPages: parentPages.results,
-        tags: tags.results,
+        tags: taxonomy.tags,
+        tagTypes: taxonomy.tagTypes,
         selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
         errors,
         action: `/admin/pages/${pageId}`,

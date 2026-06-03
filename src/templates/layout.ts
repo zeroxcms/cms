@@ -22,7 +22,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     userRole,
     userAvatar,
     userRoleLabel,
-    userInitial: userName.charAt(0).toUpperCase(),
+    userInitial: userName.trim().charAt(0).toUpperCase() || '?',
     contentClass: admin ? 'md:ml-64' : '',
   });
 }

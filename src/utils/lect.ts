@@ -7,6 +7,7 @@ export type LectValue = LectScalar | LectLanguageMap | Lect | LectItem[] | Lect[
 export interface Lect {
   [key: string]: LectValue | undefined;
   _type?: string;
+  _name?: LectScalar;
   _id?: string;
   _weight?: LectScalar;
   _pointers?: Record<string, LectScalar>;
@@ -146,9 +147,9 @@ export function blockToLect(
 ): Lect {
   const lect = blueprintToLect(blockType, blocks, defaultLanguage);
   lect._type = blockType;
+  lect._name = '';
   lect._id = Date.now().toString(36);
   lect._weight = 0;
-  lect._blocks = [];
   return lect;
 }
 
@@ -203,10 +204,11 @@ export function postToLect(form: FormLike, language: string): Lect {
     }
   }
 
-  lect._blocks = Object.keys(blockPosts)
+  const blocks = Object.keys(blockPosts)
     .map((key) => Number(key))
     .sort((left, right) => left - right)
     .map((index) => postToLect(blockPosts[index], language));
+  if (blocks.length) lect._blocks = blocks;
 
   return lect;
 }
@@ -346,7 +348,9 @@ function legacyStructuredToLect(value: LegacyStructuredLike): Lect {
     lect[key] = Array.isArray(items) ? items.map((item) => legacyStructuredToLect(item)) : [];
   }
 
-  lect._blocks = Array.isArray(value.blocks) ? value.blocks.map((block) => legacyStructuredToLect(block)) : [];
+  if (Array.isArray(value.blocks) && value.blocks.length) {
+    lect._blocks = value.blocks.map((block, index) => normalizeBlockLect(legacyStructuredToLect(block), index));
+  }
   if (Array.isArray(value.tags)) lect._tags = value.tags.map((tag) => legacyStructuredToLect(tag));
 
   return lect;
@@ -363,7 +367,8 @@ function normalizePlainLect(value: Record<string, unknown>): Lect {
     }
 
     if (key === '_blocks') {
-      lect._blocks = Array.isArray(entry) ? entry.map((block) => normalizeLect(block)) : [];
+      const blocks = Array.isArray(entry) ? entry.map((block, index) => normalizeBlockLect(block, index)) : [];
+      if (blocks.length) lect._blocks = blocks;
       continue;
     }
 
@@ -481,6 +486,15 @@ function localizedObject(value: Record<string, unknown>, language: string, defau
     }
   }
   return result;
+}
+
+function normalizeBlockLect(value: unknown, fallbackWeight: number): Lect {
+  const block = normalizeLect(value);
+  const type = String(block._type || 'default');
+  block._type = type;
+  block._name = block._name ?? '';
+  block._weight = block._weight ?? fallbackWeight;
+  return block;
 }
 
 function ensureItem(lect: Lect, name: string, index: number): LectItem {

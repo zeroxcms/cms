@@ -20,6 +20,7 @@
   {% endif %}
 
   <form method="POST" action="{{ action | escape }}" class="min-w-0 space-y-6">
+    <button type="submit" class="sr-only" tabindex="-1" aria-hidden="true">{{ saveLabel | escape }}</button>
     <div class="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-5 sm:p-6">
       <div class="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
         <div class="min-w-0 sm:col-span-2">
@@ -103,17 +104,32 @@
 
     {{ structuredBlock }}
 
-    {% if hasTags %}
+    {% if hasPreservedTagIds %}
+      {% for tagId in preservedTagIds %}
+        <input type="hidden" name="tag_ids" value="{{ tagId | escape }}">
+      {% endfor %}
+    {% endif %}
+
+    {% if hasTagGroups %}
       <div class="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
         <p class="text-sm font-medium text-gray-700 mb-3">Tags</p>
-        <div class="flex flex-wrap gap-3">
-          {% for tag in tags %}
-            <label for="tag_{{ tag.id }}" class="flex min-w-0 items-center gap-2 cursor-pointer">
-              <input id="tag_{{ tag.id }}" type="checkbox" name="tag_ids" value="{{ tag.id }}"
-                     {% if tag.checked %}checked{% endif %}
-                     class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
-              <span class="min-w-0 break-words text-sm text-gray-700">{{ tag.name | escape }}</span>
-            </label>
+        <div class="space-y-4">
+          {% for group in tagGroups %}
+            <div class="min-w-0 space-y-2">
+              <p class="min-w-0 break-words text-xs font-semibold uppercase tracking-wide text-gray-400">{{ group.name | escape }}</p>
+              {% if group.hasTags %}
+                <div class="flex flex-wrap gap-3">
+                  {% for tag in group.tags %}
+                    <label for="tag_{{ tag.id }}" class="flex min-w-0 items-center gap-2 cursor-pointer">
+                      <input id="tag_{{ tag.id }}" type="checkbox" name="tag_ids" value="{{ tag.id }}"
+                             {% if tag.checked %}checked{% endif %}
+                             class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                      <span class="min-w-0 break-words text-sm text-gray-700">{{ tag.name | escape }}</span>
+                    </label>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
           {% endfor %}
         </div>
       </div>

@@ -66,15 +66,27 @@
                 </form>
               </td>
               <td class="px-6 py-4">
-                {% if page.isPublished %}
-                  <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Live
-                  </span>
-                {% else %}
-                  <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                    <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>Draft
-                  </span>
-                {% endif %}
+                <div class="flex items-center gap-2">
+                  {% if page.isPublished %}
+                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Live
+                    </span>
+                    {% if page.hasLiveLectDrift %}
+                      <span title="Live content differs from draft; publish to sync"
+                            class="inline-flex items-center text-amber-600">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                        </svg>
+                        <span class="sr-only">Live content differs from draft</span>
+                      </span>
+                    {% endif %}
+                  {% else %}
+                    <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                      <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>Draft
+                    </span>
+                  {% endif %}
+                </div>
               </td>
               <td class="px-6 py-4">
                 <div class="flex flex-wrap items-center gap-2">
