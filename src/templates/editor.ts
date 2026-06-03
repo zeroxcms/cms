@@ -33,7 +33,7 @@ function renderStructuredEditor(opts: {
           <select
             name="_language"
             class="px-2 py-1 border border-gray-300 rounded-lg text-xs"
-            onchange="const params = new window.URLSearchParams(window.location.search); params.set('language', this.value); window.location.href = window.location.pathname + '?' + params.toString();"
+            onchange="switchEditorLanguage(this.value)"
           >
             ${languageOptions}
           </select>
@@ -446,6 +446,22 @@ export function editorPage(opts: {
     </div>
 
     <script>
+      const editorScrollKey = 'cms-editor-scroll:' + window.location.pathname;
+      const savedEditorScroll = window.sessionStorage.getItem(editorScrollKey);
+      if (savedEditorScroll !== null) {
+        window.sessionStorage.removeItem(editorScrollKey);
+        window.requestAnimationFrame(() => {
+          window.scrollTo(0, Number(savedEditorScroll) || 0);
+        });
+      }
+
+      function switchEditorLanguage(language) {
+        window.sessionStorage.setItem(editorScrollKey, String(window.scrollY));
+        const params = new window.URLSearchParams(window.location.search);
+        params.set('language', language);
+        window.location.href = window.location.pathname + '?' + params.toString();
+      }
+
       // Auto-generate slug from page name
       let slugEdited = ${isEdit ? 'true' : 'false'};
       document.getElementById('slug').addEventListener('input', () => { slugEdited = true; });
