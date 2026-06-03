@@ -475,12 +475,13 @@ function localizedObject(value: Record<string, unknown>, language: string, defau
     } else if (isScalarRecord(entry)) {
       result[key] = entry[language] ?? entry[defaultLanguage] ?? '';
     } else if (Array.isArray(entry)) {
-      result[key] = entry.filter(isPlainObject).map((item, index) => ({
-        tokens: lectTokens(normalizePlainLect(item), language, defaultLanguage),
-        raw: normalizePlainLect(item),
-        _key: index,
-        _weight: weightOf(normalizePlainLect(item)),
-      }));
+      result[key] = sortByWeight(entry.filter(isPlainObject).map((item) => normalizePlainLect(item)))
+        .map((item, index) => ({
+          tokens: lectTokens(item, language, defaultLanguage),
+          raw: item,
+          _key: index,
+          _weight: weightOf(item),
+        }));
     } else if (isPlainObject(entry)) {
       result[key] = localizedObject(entry, language, defaultLanguage);
     }

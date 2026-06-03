@@ -23,6 +23,10 @@ const implicitBlockAttributes: FieldProps[] = [
   { name: '_name', type: 'text' },
 ];
 
+const implicitItemAttributes: FieldProps[] = [
+  { name: '_weight', type: 'number' },
+];
+
 async function renderStructuredEditor(views: Fetcher, opts: {
   config: CmsConfig;
   language: string;
@@ -82,14 +86,25 @@ async function renderStructuredEditor(views: Fetcher, opts: {
 }
 
 function withImplicitBlockProps(props: BlueprintProps): BlueprintProps {
-  const attributes = [...implicitBlockAttributes];
-  for (const field of props.attributes) {
-    if (!attributes.some((implicitField) => implicitField.name === field.name)) attributes.push(field);
-  }
   return {
     ...props,
-    attributes,
+    attributes: withImplicitAttributes(props.attributes, implicitBlockAttributes),
   };
+}
+
+function withImplicitItemProps(props: BlueprintProps): BlueprintProps {
+  return {
+    ...props,
+    attributes: withImplicitAttributes(props.attributes, implicitItemAttributes),
+  };
+}
+
+function withImplicitAttributes(attributes: FieldProps[], implicitAttributes: FieldProps[]): FieldProps[] {
+  const merged = [...implicitAttributes];
+  for (const field of attributes) {
+    if (!merged.some((implicitField) => implicitField.name === field.name)) merged.push(field);
+  }
+  return merged;
 }
 
 function withImplicitBlockAttributes(block: Lect, type: string, index: number): Lect {
@@ -103,6 +118,18 @@ function withImplicitBlockAttributes(block: Lect, type: string, index: number): 
 
 function blockWeight(block: Lect, fallback: number): number {
   const weight = Number(block._weight ?? fallback);
+  return Number.isFinite(weight) ? weight : fallback;
+}
+
+function withImplicitItemAttributes(item: LectItem, index: number): LectItem {
+  return {
+    ...item,
+    _weight: item._weight ?? index,
+  };
+}
+
+function itemWeight(item: LectItem, fallback: number): number {
+  const weight = Number(item._weight ?? fallback);
   return Number.isFinite(weight) ? weight : fallback;
 }
 
@@ -163,9 +190,19 @@ function renderItemGroup(
   language: string,
   defaultLanguage: string,
 ): string {
-  const rows = items.length ? items : [];
+  const rows = items.length
+    ? items
+        .map((item, index) => ({ item, index }))
+        .sort((left, right) => itemWeight(left.item, left.index) - itemWeight(right.item, right.index) || left.index - right.index)
+    : [];
   const blockMatch = prefix.match(/^#(\d+)/);
   const addAction = blockMatch ? `block-item-add:${blockMatch[1]}|${props.name}` : `item-add:${props.name}`;
+  const groupProps = withImplicitItemProps({
+    attributes: props.attributes,
+    pointers: props.pointers,
+    fields: props.fields,
+    items: props.items ?? [],
+  });
   return `
     <div class="min-w-0 rounded-lg border border-gray-100 bg-gray-50 p-4 space-y-4">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -176,21 +213,16 @@ function renderItemGroup(
       ${
         rows.length
           ? rows
-              .map((item, index) => {
+              .map(({ item, index }, displayIndex) => {
                 const itemPrefix = `${prefix}.${props.name}[${index}]`;
-                const nestedProps: BlueprintProps = {
-                  attributes: props.attributes,
-                  pointers: props.pointers,
-                  fields: props.fields,
-                  items: props.items ?? [],
-                };
                 const deleteAction = blockMatch
                   ? `block-item-delete:${blockMatch[1]}|${props.name}|${index}`
                   : `item-delete:${props.name}|${index}`;
-                const itemFields = renderLectFields(itemPrefix, item, nestedProps, language, defaultLanguage);
+                const itemWithDefaults = withImplicitItemAttributes(item, index);
+                const itemFields = renderLectFields(itemPrefix, itemWithDefaults, groupProps, language, defaultLanguage);
                 return `<div class="min-w-0 rounded-lg bg-white border border-gray-200 p-4 space-y-3">
                           <div class="flex items-center justify-between gap-3">
-                            <span class="min-w-0 text-xs text-gray-400">Item ${index + 1}</span>
+                            <span class="min-w-0 text-xs text-gray-400">Item ${displayIndex + 1}</span>
                             <button type="submit" name="action" value="${escHtml(deleteAction)}"
                                     class="shrink-0 text-xs font-semibold text-red-600 hover:text-red-700">Delete</button>
                           </div>
