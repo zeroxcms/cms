@@ -1,0 +1,197 @@
+<div class="px-8 py-8 max-w-4xl">
+  <div class="flex items-center gap-3 mb-6">
+    <a href="/admin" class="text-gray-400 hover:text-gray-600 transition-colors">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+      </svg>
+    </a>
+    <h2 class="text-2xl font-bold text-gray-900">{{ pageTitle | escape }}</h2>
+  </div>
+
+  {% if hasErrors %}
+    <div class="mb-6 rounded-lg bg-red-50 border border-red-200 p-4">
+      <p class="text-sm font-semibold text-red-700 mb-1">Please fix the following errors:</p>
+      <ul class="list-disc list-inside text-sm text-red-600">
+        {% for error in errors %}
+          <li>{{ error | escape }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form method="POST" action="{{ action | escape }}" class="space-y-6">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-5">
+      <div class="grid grid-cols-2 gap-5">
+        <div class="col-span-2">
+          <label for="name" class="block text-sm font-medium text-gray-700 mb-1">
+            Page Name <span class="text-red-500">*</span>
+          </label>
+          <input type="text" id="name" name="name" required
+                 value="{{ page.name | escape }}"
+                 placeholder="My Awesome Page"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                 oninput="autoSlug(this.value)">
+        </div>
+
+        <div class="col-span-2">
+          <label for="slug" class="block text-sm font-medium text-gray-700 mb-1">
+            Slug <span class="text-red-500">*</span>
+          </label>
+          <div class="flex items-center">
+            <span class="px-3 py-2 bg-gray-50 border border-r-0 border-gray-300 rounded-l-lg text-sm text-gray-500">/</span>
+            <input type="text" id="slug" name="slug" required
+                   value="{{ page.slug | escape }}"
+                   placeholder="my-awesome-page"
+                   class="flex-1 px-3 py-2 border border-gray-300 rounded-r-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+          </div>
+        </div>
+
+        <div>
+          <label for="page_type" class="block text-sm font-medium text-gray-700 mb-1">Page Type</label>
+          <input type="text" id="page_type" name="page_type" list="page_type_options"
+                 value="{{ page.pageType | escape }}"
+                 placeholder="e.g. blog, product, landing"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+          <datalist id="page_type_options">
+            {% for option in pageTypeOptions %}
+              <option value="{{ option.value | escape }}"></option>
+            {% endfor %}
+          </datalist>
+        </div>
+
+        <div>
+          <label for="weight" class="block text-sm font-medium text-gray-700 mb-1">Sort Weight</label>
+          <input type="number" id="weight" name="weight"
+                 value="{{ page.weight }}" min="0" max="100"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+        </div>
+
+        <div>
+          <label for="start" class="block text-sm font-medium text-gray-700 mb-1">Publish From</label>
+          <input type="datetime-local" id="start" name="start"
+                 value="{{ page.start | escape }}"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+        </div>
+
+        <div>
+          <label for="end" class="block text-sm font-medium text-gray-700 mb-1">Publish Until</label>
+          <input type="datetime-local" id="end" name="end"
+                 value="{{ page.end | escape }}"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+        </div>
+
+        <div class="col-span-2">
+          <label for="page_id" class="block text-sm font-medium text-gray-700 mb-1">Parent Page</label>
+          <select id="page_id" name="page_id"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+            <option value="">- None (top-level page) -</option>
+            {% for option in parentOptions %}
+              <option value="{{ option.id }}" {% if option.selected %}selected{% endif %}>{{ option.name | escape }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-span-2">
+          <label for="lect_json" class="block text-sm font-medium text-gray-700 mb-1">Lect JSON</label>
+          <textarea id="lect_json" name="lect_json" rows="4"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y">{{ page.lect | escape }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    {{ structuredBlock }}
+
+    {% if hasTags %}
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <p class="text-sm font-medium text-gray-700 mb-3">Tags</p>
+        <div class="flex flex-wrap gap-3">
+          {% for tag in tags %}
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="tag_ids" value="{{ tag.id }}"
+                     {% if tag.checked %}checked{% endif %}
+                     class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+              <span class="text-sm text-gray-700">{{ tag.name | escape }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if hasVersions %}
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <p class="text-sm font-semibold text-gray-700 mb-3">Versions</p>
+        <div class="flex flex-wrap gap-2">
+          {% for version in versions %}
+            <a href="{{ version.href | escape }}"
+               class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-xs text-gray-700 hover:bg-gray-50">{{ version.label | escape }}</a>
+            <button type="submit" name="action" value="{{ version.revertAction | escape }}"
+                    class="px-3 py-1.5 rounded-lg border border-yellow-300 bg-yellow-50 text-xs text-yellow-800 hover:bg-yellow-100">Revert</button>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="flex items-center gap-3 pt-2">
+      <button type="submit"
+              class="px-6 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
+        {{ saveLabel | escape }}
+      </button>
+      {% if isEdit %}
+        <button type="submit" name="action" value="publish"
+                class="px-6 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-sm">Publish</button>
+      {% endif %}
+      <a href="/admin" class="px-6 py-2 bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors">
+        Cancel
+      </a>
+    </div>
+  </form>
+</div>
+
+<script>
+  const editorScrollKey = 'cms-editor-scroll:' + window.location.pathname;
+  const savedEditorScroll = window.sessionStorage.getItem(editorScrollKey);
+  if (savedEditorScroll !== null) {
+    window.sessionStorage.removeItem(editorScrollKey);
+    window.requestAnimationFrame(() => {
+      window.scrollTo(0, Number(savedEditorScroll) || 0);
+    });
+  }
+
+  function switchEditorLanguage(language) {
+    window.sessionStorage.setItem(editorScrollKey, String(window.scrollY));
+    const params = new window.URLSearchParams(window.location.search);
+    params.set('language', language);
+    window.location.href = window.location.pathname + '?' + params.toString();
+  }
+
+  const structuredActions = new Set([
+    'block-add',
+    'block-delete',
+    'item-add',
+    'item-delete',
+    'block-item-add',
+    'block-item-delete',
+  ]);
+  const editorForm = document.querySelector('form[method="POST"]');
+  if (editorForm) {
+    editorForm.addEventListener('submit', (event) => {
+      const submitter = event.submitter || document.activeElement;
+      const action = submitter && submitter.getAttribute ? submitter.getAttribute('value') || '' : '';
+      if (structuredActions.has(action.split(':')[0])) {
+        window.sessionStorage.setItem(editorScrollKey, String(window.scrollY));
+      }
+    });
+  }
+
+  let slugEdited = {% if isEdit %}true{% else %}false{% endif %};
+  document.getElementById('slug').addEventListener('input', () => { slugEdited = true; });
+
+  function autoSlug(name) {
+    if (slugEdited) return;
+    const slug = name.toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    document.getElementById('slug').value = slug;
+  }
+</script>

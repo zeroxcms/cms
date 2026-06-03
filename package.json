@@ -9,7 +9,8 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "hono": "^4.12.23"
+    "hono": "^4.12.23",
+    "liquidjs": "^10.27.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260530.1",

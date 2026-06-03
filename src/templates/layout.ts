@@ -1,6 +1,5 @@
-// ============================================================
-// Shared HTML layout with TailwindCSS Play CDN + VanillaJS
-// ============================================================
+import layoutTemplate from '../views/layout/default.liquid';
+import { renderLiquid } from './liquid';
 
 export interface LayoutOptions {
   title: string;
@@ -14,125 +13,22 @@ export interface LayoutOptions {
 }
 
 export function layout(opts: LayoutOptions): string {
-  const { title, siteTitle, body, admin = false, userName = '', userRole = '', userAvatar = '' } = opts;
+  const { admin = false, userName = '', userRole = '', userAvatar = '' } = opts;
   const userRoleLabel = userRole.split(',').map((role) => role.trim()).filter(Boolean).join(', ');
 
-  const sidebar = admin
-    ? `
-    <aside class="fixed inset-y-0 left-0 w-64 bg-gray-900 text-white flex flex-col shadow-xl z-40">
-      <div class="flex items-center gap-3 px-6 py-5 border-b border-gray-700">
-        <svg class="w-7 h-7 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-        </svg>
-        <span class="font-bold text-lg tracking-tight">${escHtml(siteTitle)}</span>
-      </div>
-      <nav class="flex-1 px-4 py-6 space-y-1">
-        <a href="/admin"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M3 7h18M3 12h18M3 17h18"/>
-          </svg>
-          Pages
-        </a>
-        <a href="/admin/tags"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a2 2 0 012-2z"/>
-          </svg>
-          Tags
-        </a>
-        <a href="/admin/tag-types"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M4 6h16M4 12h10M4 18h7"/>
-          </svg>
-          Tag Types
-        </a>
-        <a href="/admin/trash"
-           class="flex items-center gap-3 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"/>
-          </svg>
-          Trash
-        </a>
-      </nav>
-      <div class="px-4 py-4 border-t border-gray-700">
-        <div class="flex items-center gap-3 mb-3">
-          ${userAvatar
-            ? `<img src="${escHtml(userAvatar)}" class="w-8 h-8 rounded-full" alt="avatar">`
-            : `<div class="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-sm font-bold">${escHtml(userName.charAt(0).toUpperCase())}</div>`
-          }
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-white truncate">${escHtml(userName)}</p>
-            <p class="text-xs text-gray-400 capitalize">${escHtml(userRoleLabel)}</p>
-          </div>
-        </div>
-        <a href="/auth/logout"
-           class="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
-          </svg>
-          Sign out
-        </a>
-      </div>
-    </aside>
-    `
-    : '';
-
-  const contentClass = admin ? 'ml-64' : '';
-
-  return `<!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-50">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escHtml(title)} – ${escHtml(siteTitle)}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    // Tailwind config
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              50: '#eef2ff',
-              600: '#4f46e5',
-              700: '#4338ca',
-            }
-          }
-        }
-      }
-    };
-
-    // Silent token refresh every 14 minutes
-    (function() {
-      const INTERVAL = 14 * 60 * 1000;
-      async function refresh() {
-        try {
-          const res = await fetch('/auth/refresh', { method: 'POST' });
-          if (!res.ok) { window.location.href = '/auth/login'; }
-        } catch(e) { /* ignore */ }
-      }
-      setInterval(refresh, INTERVAL);
-    })();
-  </script>
-</head>
-<body class="h-full">
-  ${sidebar}
-  <div class="${contentClass} min-h-full">
-    ${body}
-  </div>
-</body>
-</html>`;
+  return renderLiquid(layoutTemplate, {
+    ...opts,
+    admin,
+    userName,
+    userRole,
+    userAvatar,
+    userRoleLabel,
+    userInitial: userName.charAt(0).toUpperCase(),
+    contentClass: admin ? 'ml-64' : '',
+  });
 }
 
-/** Minimal HTML escaping to prevent XSS in template strings. */
+/** Minimal HTML escaping to prevent XSS in pre-rendered HTML fragments. */
 export function escHtml(str: string): string {
   return str
     .replace(/&/g, '&amp;')
