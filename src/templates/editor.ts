@@ -33,7 +33,7 @@ function renderStructuredEditor(opts: {
           <select
             name="_language"
             class="px-2 py-1 border border-gray-300 rounded-lg text-xs"
-            onchange="const url = new URL(window.location.href); url.searchParams.set('language', this.value); window.location.href = url.toString();"
+            onchange="const params = new window.URLSearchParams(window.location.search); params.set('language', this.value); window.location.href = window.location.pathname + '?' + params.toString();"
           >
             ${languageOptions}
           </select>

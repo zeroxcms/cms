@@ -58,6 +58,9 @@ app.get('/media/*', async (c) => {
 // ── Login shortcut ────────────────────────────────────────────────────────────
 app.get('/login', (c) => c.redirect('/auth/login'));
 
+// ── Favicon ───────────────────────────────────────────────────────────────────
+app.get('/favicon.ico', () => new Response(null, { status: 204 }));
+
 // ── Public root ───────────────────────────────────────────────────────────────
 app.get('/', (c) => {
   // Redirect root to the login page if no other public site handler is installed
