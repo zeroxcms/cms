@@ -186,7 +186,7 @@ authRoutes.get('/start', async (c) => {
   setCookie(c, 'oauth_state', stateCookie, {
     httpOnly: true,
     secure: true,
-    sameSite: 'Lax',
+    sameSite: 'None',
     path: '/auth',
     maxAge: 600,
   });
@@ -217,7 +217,11 @@ authRoutes.get('/callback', async (c) => {
 
   // Verify PKCE state cookie
   const stateCookie = getCookie(c, 'oauth_state');
-  deleteCookie(c, 'oauth_state', { path: '/auth' });
+  deleteCookie(c, 'oauth_state', {
+    secure: true,
+    sameSite: 'None',
+    path: '/auth',
+  });
   if (!stateCookie) {
     return c.redirect('/auth/login?error=missing_state');
   }
