@@ -1,5 +1,5 @@
 import { layout } from './layout';
-import { renderLiquid } from './liquid';
+import { renderView } from './liquid';
 import type { Page } from '../types';
 
 export interface DashboardPage extends Page {
@@ -20,7 +20,7 @@ export async function dashboardPage(views: Fetcher, opts: {
 }): Promise<string> {
   const { siteTitle, userName, userRole, userAvatar, pages, flash, returnPath = '/admin' } = opts;
   const pageCount = pages.length;
-  const body = await renderLiquid(views, '/templates/dashboard.liquid', {
+  const body = await renderView(views, '/templates/dashboard.json', {
     flash,
     hasFlash: !!flash,
     returnPath,

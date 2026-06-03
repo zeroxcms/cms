@@ -1,4 +1,4 @@
-import { renderLiquid } from './liquid';
+import { renderView } from './liquid';
 
 export async function errorPage(views: Fetcher, opts: {
   status: 404 | 500;
@@ -7,8 +7,9 @@ export async function errorPage(views: Fetcher, opts: {
   message?: string;
   siteTitle: string;
 }): Promise<string> {
-  return renderLiquid(views, '/templates/error.liquid', {
+  return renderView(views, '/templates/error.json', {
     ...opts,
     hasMessage: !!opts.message,
+    sectionComments: false,
   });
 }

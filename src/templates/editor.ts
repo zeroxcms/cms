@@ -1,5 +1,5 @@
 import { layout, escHtml } from './layout';
-import { renderLiquid } from './liquid';
+import { renderLiquid, renderView } from './liquid';
 import type { Page, PageVersion, Tag } from '../types';
 import {
   getLectBlocks,
@@ -207,7 +207,7 @@ export async function editorPage(views: Fetcher, opts: {
     revertAction: `revert:${version.id}`,
   })) ?? [];
 
-  const body = await renderLiquid(views, '/templates/editor.liquid', {
+  const body = await renderView(views, '/templates/editor.json', {
     pageTitle,
     action,
     isEdit,

@@ -1,0 +1,10 @@
+{
+  "sections": {
+    "main": {
+      "type": "tag-types"
+    }
+  },
+  "order": [
+    "main"
+  ]
+}

@@ -1,5 +1,5 @@
 import { layout } from './layout';
-import { renderLiquid } from './liquid';
+import { renderView } from './liquid';
 import type { Tag, TagType } from '../types';
 
 export async function tagsPage(views: Fetcher, opts: {
@@ -13,7 +13,7 @@ export async function tagsPage(views: Fetcher, opts: {
 }): Promise<string> {
   const { siteTitle, userName, userRole, userAvatar, tagTypes, tags, filterTagType } = opts;
   const tagTypeMap = new Map(tagTypes.map((type) => [type.id, type.name]));
-  const body = await renderLiquid(views, '/templates/tags.liquid', {
+  const body = await renderView(views, '/templates/tags.json', {
     hasTags: tags.length > 0,
     filterOptions: tagTypes.map((type) => ({
       id: type.id,
@@ -66,7 +66,7 @@ export async function tagFormPage(views: Fetcher, opts: {
     tagTypes,
     parentTags,
   } = opts;
-  const body = await renderLiquid(views, '/templates/tag-form.liquid', {
+  const body = await renderView(views, '/templates/tag-form.json', {
     isEdit: !!tag,
     heading: tag ? 'Edit Tag' : 'New Tag',
     action: tag ? `/admin/tags/${tag.id}` : '/admin/tags',

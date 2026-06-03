@@ -1,5 +1,5 @@
 import { layout } from './layout';
-import { renderLiquid } from './liquid';
+import { renderView } from './liquid';
 
 export async function importPage(views: Fetcher, opts: {
   siteTitle: string;
@@ -9,7 +9,7 @@ export async function importPage(views: Fetcher, opts: {
   pageType: string;
 }): Promise<string> {
   const { siteTitle, userName, userRole, userAvatar, pageType } = opts;
-  const body = await renderLiquid(views, '/templates/import.liquid', {
+  const body = await renderView(views, '/templates/import.json', {
     pageType,
     backHref: `/admin/pages/list/${encodeURIComponent(pageType)}`,
   });

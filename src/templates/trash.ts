@@ -1,5 +1,5 @@
 import { layout } from './layout';
-import { renderLiquid } from './liquid';
+import { renderView } from './liquid';
 import type { Page } from '../types';
 
 export async function trashPage(views: Fetcher, opts: {
@@ -12,7 +12,7 @@ export async function trashPage(views: Fetcher, opts: {
 }): Promise<string> {
   const { siteTitle, userName, userRole, userAvatar, pages, flash } = opts;
   const pageCount = pages.length;
-  const body = await renderLiquid(views, '/templates/trash.liquid', {
+  const body = await renderView(views, '/templates/trash.json', {
     flash,
     hasFlash: !!flash,
     pageCountLabel: `${pageCount} page${pageCount === 1 ? '' : 's'} in trash`,

@@ -1,5 +1,5 @@
 import { layout } from './layout';
-import { renderLiquid } from './liquid';
+import { renderView } from './liquid';
 
 function providerLabel(provider: string): string {
   if (provider === 'google') return 'Google';
@@ -34,7 +34,7 @@ export async function loginPage(views: Fetcher, opts: {
 }): Promise<string> {
   const { siteTitle, providers, error } = opts;
 
-  const body = await renderLiquid(views, '/templates/login.liquid', {
+  const body = await renderView(views, '/templates/login.json', {
     siteTitle,
     error,
     isForbidden: error === 'forbidden',
