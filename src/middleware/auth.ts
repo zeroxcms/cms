@@ -21,6 +21,10 @@ import type { Env, Variables, JWTPayload } from '../types';
 const ACCESS_TOKEN_TTL = 15 * 60;       // 15 minutes
 const REFRESH_TOKEN_TTL = 7 * 24 * 3600; // 7 days
 
+function isSecureRequest(request: Request): boolean {
+  return new URL(request.url).protocol === 'https:';
+}
+
 export const authMiddleware = createMiddleware<{
   Bindings: Env;
   Variables: Variables;
@@ -104,7 +108,7 @@ export const authMiddleware = createMiddleware<{
     // Set cookies
     const cookieOpts = {
       httpOnly: true,
-      secure: true,
+      secure: isSecureRequest(c.req.raw),
       sameSite: 'Lax' as const,
       path: '/',
     };

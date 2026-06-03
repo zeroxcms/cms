@@ -63,6 +63,10 @@ interface OAuthStatePayload extends JWTPayload {
   provider?: string;
 }
 
+function isSecureRequest(request: Request): boolean {
+  return new URL(request.url).protocol === 'https:';
+}
+
 /** Returns the enabled providers in declaration order. */
 function getEnabledProviders(env: Env): string[] {
   return (env.ENABLED_PROVIDERS ?? '')
@@ -183,10 +187,11 @@ authRoutes.get('/start', async (c) => {
     exp: Math.floor(Date.now() / 1000) + 600, // 10 minutes
   };
   const stateCookie = await signJWT(statePayload, c.env.JWT_SECRET);
+  const secureCookie = isSecureRequest(c.req.raw);
   setCookie(c, 'oauth_state', stateCookie, {
     httpOnly: true,
-    secure: true,
-    sameSite: 'None',
+    secure: secureCookie,
+    sameSite: secureCookie ? 'None' : 'Lax',
     path: '/auth',
     maxAge: 600,
   });
@@ -217,9 +222,10 @@ authRoutes.get('/callback', async (c) => {
 
   // Verify PKCE state cookie
   const stateCookie = getCookie(c, 'oauth_state');
+  const secureCookie = isSecureRequest(c.req.raw);
   deleteCookie(c, 'oauth_state', {
-    secure: true,
-    sameSite: 'None',
+    secure: secureCookie,
+    sameSite: secureCookie ? 'None' : 'Lax',
     path: '/auth',
   });
   if (!stateCookie) {
@@ -370,7 +376,7 @@ authRoutes.get('/callback', async (c) => {
 
   const cookieOpts = {
     httpOnly: true,
-    secure: true,
+    secure: isSecureRequest(c.req.raw),
     sameSite: 'Lax' as const,
     path: '/',
   };
@@ -480,7 +486,7 @@ authRoutes.post('/refresh', async (c) => {
 
   const cookieOpts = {
     httpOnly: true,
-    secure: true,
+    secure: isSecureRequest(c.req.raw),
     sameSite: 'Lax' as const,
     path: '/',
   };

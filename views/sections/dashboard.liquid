@@ -45,12 +45,13 @@
               </td>
               <td class="px-6 py-4 text-sm text-gray-500">{{ page.pageType | escape }}</td>
               <td class="px-6 py-4">
-                <form method="POST" action="{{ page.weightAction | escape }}" class="flex items-center gap-2">
+                <form method="POST" action="{{ page.weightAction | escape }}" class="flex min-w-0 flex-wrap items-center gap-2">
                   <input type="hidden" name="return_to" value="{{ returnPath | escape }}">
-                  <input type="number" name="weight" value="{{ page.weight }}" min="0" max="1000"
-                         class="w-20 px-2 py-1 border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                  <label for="weight_{{ page.id }}" class="sr-only">Weight for {{ page.name | escape }}</label>
+                  <input id="weight_{{ page.id }}" type="number" name="weight" value="{{ page.weight }}" min="0" max="1000"
+                         class="min-w-0 w-20 max-w-full px-2 py-1 border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
                   <button type="submit"
-                          class="px-2.5 py-1 rounded-lg border border-gray-300 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                          class="shrink-0 px-2.5 py-1 rounded-lg border border-gray-300 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50">
                     Save
                   </button>
                   {% if page.hasLiveWeightDrift %}
@@ -90,7 +91,7 @@
                     <span class="sr-only">Edit</span>
                   </a>
                   {% if page.isPublished %}
-                    <form method="POST" action="{{ page.unpublishAction | escape }}" class="inline"
+                    <form method="POST" action="{{ page.unpublishAction | escape }}" class="inline shrink-0"
                           onsubmit="return confirm('Unpublish this page?')">
                       <button type="submit"
                               title="Unpublish"
@@ -106,7 +107,7 @@
                       </button>
                     </form>
                   {% else %}
-                    <form method="POST" action="{{ page.publishAction | escape }}" class="inline">
+                    <form method="POST" action="{{ page.publishAction | escape }}" class="inline shrink-0">
                       <button type="submit"
                               title="Publish"
                               aria-label="Publish {{ page.name | escape }}"
@@ -121,7 +122,7 @@
                       </button>
                     </form>
                   {% endif %}
-                  <form method="POST" action="{{ page.deleteAction | escape }}" class="inline"
+                  <form method="POST" action="{{ page.deleteAction | escape }}" class="inline shrink-0"
                         onsubmit="return confirm('Move this page to trash?')">
                     <button type="submit"
                             title="Trash"

@@ -1,59 +1,59 @@
-<div class="max-w-xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
+<div class="min-w-0 max-w-xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <h2 class="text-2xl font-bold text-gray-900 mb-6">{{ heading | escape }}</h2>
-  <form method="POST" action="{{ action | escape }}" class="space-y-4">
-    <label class="block">
+  <form method="POST" action="{{ action | escape }}" class="min-w-0 space-y-4">
+    <label for="tag_language" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Language</span>
-      <select name="_language"
+      <select id="tag_language" name="_language"
               onchange="switchTagLanguage(this.value)"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
         {% for option in languageOptions %}
           <option value="{{ option.value | escape }}" {% if option.selected %}selected{% endif %}>{{ option.value | escape }}</option>
         {% endfor %}
       </select>
     </label>
-    <label class="block">
+    <label for="tag_name" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Name</span>
       <input id="tag_name" name="name" required value="{{ name | escape }}"
              oninput="autoTagSlug(this.value)"
-             class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+             class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
     </label>
-    <label class="block">
+    <label for="translated_name" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Translated Name</span>
-      <input name="{{ translatedFieldName | escape }}"
+      <input id="translated_name" name="{{ translatedFieldName | escape }}"
              value="{{ translatedName | escape }}"
              placeholder="{{ translatedPlaceholder | escape }}"
-             class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+             class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
     </label>
-    <label class="block">
+    <label for="tag_slug" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Slug</span>
-      <input id="tag_slug" name="slug" value="{{ slug | escape }}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+      <input id="tag_slug" name="slug" value="{{ slug | escape }}" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
     </label>
-    <label class="block">
+    <label for="tag_type_id" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Tag Type</span>
-      <select name="tag_type_id" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+      <select id="tag_type_id" name="tag_type_id" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
         <option value="">None</option>
         {% for option in tagTypeOptions %}
           <option value="{{ option.id }}" {% if option.selected %}selected{% endif %}>{{ option.name | escape }}</option>
         {% endfor %}
       </select>
     </label>
-    <label class="block">
+    <label for="parent_tag" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Parent Tag</span>
-      <select name="parent_tag" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+      <select id="parent_tag" name="parent_tag" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
         <option value="">None</option>
         {% for option in parentOptions %}
           <option value="{{ option.id }}" {% if option.selected %}selected{% endif %}>{{ option.name | escape }}</option>
         {% endfor %}
       </select>
     </label>
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-      <button type="submit" class="w-full px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg sm:w-auto">Save</button>
-      <a href="/admin/tags" class="w-full px-4 py-2 text-center bg-white border border-gray-300 rounded-lg text-sm font-semibold sm:w-auto">Cancel</a>
+    <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+      <button type="submit" class="w-full shrink-0 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg sm:w-auto">Save</button>
+      <a href="/admin/tags" class="w-full shrink-0 px-4 py-2 text-center bg-white border border-gray-300 rounded-lg text-sm font-semibold sm:w-auto">Cancel</a>
     </div>
   </form>
   {% if isEdit %}
     <form method="POST" action="{{ deleteAction | escape }}">
-      <button type="submit" class="px-4 py-2 text-sm font-semibold text-red-600">Delete</button>
+      <button type="submit" class="w-full px-4 py-2 text-sm font-semibold text-red-600 sm:w-auto">Delete</button>
     </form>
   {% endif %}
 </div>
