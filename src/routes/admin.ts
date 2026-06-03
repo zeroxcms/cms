@@ -73,6 +73,14 @@ function userIdFromContext(c: AdminContext): number {
   return num(c.get('user').sub, 0);
 }
 
+function withDraftMetadata(lect: Lect, modifier: number): Lect {
+  return {
+    ...normalizeLect(lect),
+    _modifier: modifier,
+    _updated_at: new Date().toISOString(),
+  };
+}
+
 function editorsFromForm(form: FormData): string | null {
   const ids = str(form.get('editors'))
     .split(',')
@@ -451,11 +459,14 @@ adminRoutes.post('/pages/new_post/:pageType', async (c) => {
   const name = str(form.get('name')) || `Untitled ${pageType.replace(/[_-]/g, ' ')}`;
   const slug = str(form.get('slug')) || slugify(name);
   const lect = stringifyLect(
-    lectFromForm(
-      pageType,
-      blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
-      form,
-      language,
+    withDraftMetadata(
+      lectFromForm(
+        pageType,
+        blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
+        form,
+        language,
+      ),
+      userIdFromContext(c),
     ),
   );
 
@@ -527,7 +538,10 @@ adminRoutes.post('/pages/import/:pageType', async (c) => {
           items: item.items,
           blocks: item.blocks,
         });
-    const lect = mergeLects(blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage), itemLect);
+    const lect = withDraftMetadata(
+      mergeLects(blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage), itemLect),
+      userIdFromContext(c),
+    );
     lect._type = pageType;
     const name = item.name ?? (getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || 'Untitled');
     const slug = item.slug ?? slugify(name);
@@ -658,11 +672,14 @@ adminRoutes.post('/pages', async (c) => {
   const creator = userIdFromContext(c);
   const editorsVal = editorsFromForm(form);
   const lectVal = stringifyLect(
-    lectFromForm(
-      pageTypeVal,
-      blueprintToLect(pageTypeVal, cmsConfig.blueprint, cmsConfig.defaultLanguage),
-      form,
-      language,
+    withDraftMetadata(
+      lectFromForm(
+        pageTypeVal,
+        blueprintToLect(pageTypeVal, cmsConfig.blueprint, cmsConfig.defaultLanguage),
+        form,
+        language,
+      ),
+      userIdFromContext(c),
     ),
   );
 
@@ -889,7 +906,7 @@ adminRoutes.post('/pages/:id', async (c) => {
     action,
     form,
   );
-  const lectVal = stringifyLect(lect);
+  const lectVal = stringifyLect(withDraftMetadata(lect, userIdFromContext(c)));
 
   // Update page metadata
   await c.env.DB.prepare(
