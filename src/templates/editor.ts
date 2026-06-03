@@ -98,8 +98,9 @@ function renderOriginalFields(
       renderInput(
         `${prefix}.${field.name}|${language}`,
         field.name,
-        original.values[language]?.[field.name] ?? original.values[defaultLanguage]?.[field.name] ?? '',
+        original.values[language]?.[field.name] ?? '',
         field.type,
+        language === defaultLanguage ? '' : (original.values[defaultLanguage]?.[field.name] ?? ''),
       ),
     )
     .join('');
@@ -162,13 +163,15 @@ function renderItemGroup(
     </div>`;
 }
 
-function renderInput(name: string, label: string, value: string, type: string): string {
+function renderInput(name: string, label: string, value: string, type: string, placeholder = ''): string {
   const isLong = type.includes('textarea') || label === 'body' || label === 'description';
   const input = isLong
     ? `<textarea name="${escHtml(name)}" rows="4"
+                 placeholder="${escHtml(placeholder)}"
                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y">${escHtml(value)}</textarea>`
     : `<input type="${type === 'date' ? 'date' : 'text'}" name="${escHtml(name)}"
               value="${escHtml(value)}"
+              placeholder="${escHtml(placeholder)}"
               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">`;
 
   return `<label class="${isLong ? 'col-span-2' : ''} block">
