@@ -42,7 +42,7 @@ export interface Page {
   end: string | null;
   page_type: string | null;
   current_page_version_id: number | null;
-  original: string | null;
+  lect: string | null;
   page_id: number | null;
 }
 
@@ -52,9 +52,7 @@ export interface PageVersion {
   created_at: string;
   updated_at: string;
   page_id: number;
-  content: string | null;
-  meta: string | null;
-  original: string | null;
+  lect: string | null;
   action: string | null;
 }
 
@@ -77,7 +75,7 @@ export interface Tag {
   slug: string;
   tag_type_id: number | null;
   parent_tag: number | null;
-  original: string | null;
+  lect: string | null;
 }
 
 export interface TagType {

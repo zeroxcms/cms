@@ -4,19 +4,26 @@
 
 import { layout, escHtml } from './layout';
 import type { Page, PageVersion, Tag } from '../types';
-import type { BlueprintProps, Original, OriginalItem } from '../utils/original';
+import {
+  getLectBlocks,
+  getLectItems,
+  getLectLocalizedValue,
+  getLectPointer,
+  getLectScalar,
+} from '../utils/lect';
+import type { BlueprintProps, Lect, LectItem } from '../utils/lect';
 import type { CmsConfig } from '../cms-config';
 
 function renderStructuredEditor(opts: {
   config: CmsConfig;
   language: string;
-  original: Original;
+  lect: Lect;
   blueprintProps: BlueprintProps;
   blockProps: Record<string, BlueprintProps>;
   blockNames: string[];
   versions: PageVersion[];
 }): string {
-  const { config, language, original, blueprintProps, blockProps, blockNames } = opts;
+  const { config, language, lect, blueprintProps, blockProps, blockNames } = opts;
   const languageOptions = config.languages
     .map((lang) => `<option value="${escHtml(lang)}" ${lang === language ? 'selected' : ''}>${escHtml(lang)}</option>`)
     .join('');
@@ -39,7 +46,7 @@ function renderStructuredEditor(opts: {
           </select>
         </label>
       </div>
-      ${renderOriginalFields('', original, blueprintProps, language, config.defaultLanguage)}
+      ${renderLectFields('', lect, blueprintProps, language, config.defaultLanguage)}
       <div class="border-t border-gray-100 pt-5 space-y-4">
         <div class="flex items-center justify-between gap-4">
           <p class="text-sm font-semibold text-gray-700">Blocks</p>
@@ -54,10 +61,10 @@ function renderStructuredEditor(opts: {
           }
         </div>
         ${
-          original.blocks.length
-            ? original.blocks
+          getLectBlocks(lect).length
+            ? getLectBlocks(lect)
                 .map((block, index) => {
-                  const type = block.attributes._type || 'default';
+                  const type = String(block._type || 'default');
                   return `<div class="rounded-lg border border-gray-200 p-4 space-y-4">
                             <div class="flex items-center justify-between gap-3">
                               <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">${escHtml(type)}</p>
@@ -65,8 +72,8 @@ function renderStructuredEditor(opts: {
                                       class="text-xs font-semibold text-red-600 hover:text-red-700">Delete Block</button>
                             </div>
                             <input type="hidden" name="#${index}@_type" value="${escHtml(type)}">
-                            <input type="hidden" name="#${index}@_id" value="${escHtml(block.attributes._id ?? '')}">
-                            ${renderOriginalFields(`#${index}`, block, blockProps[type] ?? blockProps.default, language, config.defaultLanguage)}
+                            <input type="hidden" name="#${index}@_id" value="${escHtml(block._id ?? '')}">
+                            ${renderLectFields(`#${index}`, block, blockProps[type] ?? blockProps.default, language, config.defaultLanguage)}
                           </div>`;
                 })
                 .join('')
@@ -76,36 +83,36 @@ function renderStructuredEditor(opts: {
     </div>`;
 }
 
-function renderOriginalFields(
+function renderLectFields(
   prefix: string,
-  original: Original | OriginalItem,
+  lect: Lect | LectItem,
   props: BlueprintProps,
   language: string,
   defaultLanguage: string,
 ): string {
   const attributeFields = props.attributes
     .map((field) =>
-      renderInput(`${prefix}@${field.name}`, field.name, original.attributes[field.name] ?? '', field.type),
+      renderInput(`${prefix}@${field.name}`, fieldLabel(field.name), getLectScalar(lect, field.name), field.type),
     )
     .join('');
   const pointerFields = props.pointers
     .map((field) =>
-      renderInput(`${prefix}*${field.name}`, `${field.name} reference`, original.pointers[field.name] ?? '', field.type),
+      renderInput(`${prefix}*${field.name}`, `${fieldLabel(field.name)} reference`, getLectPointer(lect, field.name), field.type),
     )
     .join('');
   const valueFields = props.fields
     .map((field) =>
       renderInput(
         `${prefix}.${field.name}|${language}`,
-        field.name,
-        original.values[language]?.[field.name] ?? '',
+        fieldLabel(field.name),
+        getLectLocalizedValue(lect, field.name, language),
         field.type,
-        language === defaultLanguage ? '' : (original.values[defaultLanguage]?.[field.name] ?? ''),
+        language === defaultLanguage ? '' : getLectLocalizedValue(lect, field.name, defaultLanguage),
       ),
     )
     .join('');
   const itemFields = props.items
-    .map((item) => renderItemGroup(prefix, item, original.items[item.name] ?? [], language, defaultLanguage))
+    .map((item) => renderItemGroup(prefix, item, getLectItems(lect, item.name), language, defaultLanguage))
     .join('');
 
   return `
@@ -120,7 +127,7 @@ function renderOriginalFields(
 function renderItemGroup(
   prefix: string,
   props: NonNullable<BlueprintProps['items'][number]>,
-  items: OriginalItem[],
+  items: LectItem[],
   language: string,
   defaultLanguage: string,
 ): string {
@@ -154,7 +161,7 @@ function renderItemGroup(
                             <button type="submit" name="action" value="${escHtml(deleteAction)}"
                                     class="text-xs font-semibold text-red-600 hover:text-red-700">Delete</button>
                           </div>
-                          ${renderOriginalFields(itemPrefix, item, nestedProps, language, defaultLanguage)}
+                          ${renderLectFields(itemPrefix, item, nestedProps, language, defaultLanguage)}
                         </div>`;
               })
               .join('')
@@ -180,6 +187,10 @@ function renderInput(name: string, label: string, value: string, type: string, p
           </label>`;
 }
 
+function fieldLabel(name: string): string {
+  return name.replace(/__/g, '.');
+}
+
 export function editorPage(opts: {
   siteTitle: string;
   userName: string;
@@ -196,7 +207,7 @@ export function editorPage(opts: {
   structured?: {
     config: CmsConfig;
     language: string;
-    original: Original;
+    lect: Lect;
     blueprintProps: BlueprintProps;
     blockProps: Record<string, BlueprintProps>;
     blockNames: string[];
@@ -209,7 +220,6 @@ export function editorPage(opts: {
     userRole,
     userAvatar,
     page,
-    version,
     parentPages,
     tags,
     selectedTagIds,
@@ -362,55 +372,14 @@ export function editorPage(opts: {
             </div>
 
             <div class="col-span-2">
-              <label for="original_json" class="block text-sm font-medium text-gray-700 mb-1">Original JSON</label>
-              <textarea id="original_json" name="original_json" rows="4"
-                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y">${escHtml(page?.original ?? '')}</textarea>
+              <label for="lect_json" class="block text-sm font-medium text-gray-700 mb-1">Lect JSON</label>
+              <textarea id="lect_json" name="lect_json" rows="4"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y">${escHtml(page?.lect ?? '')}</textarea>
             </div>
           </div>
         </div>
 
         ${structuredBlock}
-
-        <!-- Content editor -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <label for="content" class="block text-sm font-medium text-gray-700 mb-2">Content</label>
-          <!-- Toolbar -->
-          <div class="flex items-center gap-1 mb-2 p-2 bg-gray-50 border border-b-0 border-gray-300 rounded-t-lg">
-            <button type="button" onclick="insertTag('h2')"
-                    class="px-2 py-1 text-xs font-bold text-gray-600 hover:bg-gray-200 rounded" title="Heading">H2</button>
-            <button type="button" onclick="insertTag('h3')"
-                    class="px-2 py-1 text-xs font-bold text-gray-600 hover:bg-gray-200 rounded" title="Sub-heading">H3</button>
-            <span class="w-px h-4 bg-gray-300 mx-1"></span>
-            <button type="button" onclick="wrapSelection('strong')"
-                    class="px-2 py-1 text-xs font-bold text-gray-600 hover:bg-gray-200 rounded" title="Bold"><b>B</b></button>
-            <button type="button" onclick="wrapSelection('em')"
-                    class="px-2 py-1 text-xs italic font-bold text-gray-600 hover:bg-gray-200 rounded" title="Italic"><i>I</i></button>
-            <span class="w-px h-4 bg-gray-300 mx-1"></span>
-            <button type="button" onclick="insertTag('p')"
-                    class="px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded" title="Paragraph">¶</button>
-            <button type="button" onclick="insertList('ul')"
-                    class="px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded" title="Unordered list">• List</button>
-            <button type="button" onclick="insertList('ol')"
-                    class="px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded" title="Ordered list">1. List</button>
-            <button type="button" onclick="insertLink()"
-                    class="px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded" title="Link">Link</button>
-          </div>
-          <textarea id="content" name="content" rows="16"
-                    placeholder="Enter HTML content here..."
-                    class="w-full px-3 py-2 border border-gray-300 rounded-b-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y">${escHtml(version?.content ?? '')}</textarea>
-          <p class="text-xs text-gray-400 mt-1">Content is saved as HTML.</p>
-        </div>
-
-        <!-- Meta / JSON -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <label for="meta" class="block text-sm font-medium text-gray-700 mb-1">
-            Meta (JSON)
-            <span class="text-gray-400 font-normal">– SEO title, description, og:image, etc.</span>
-          </label>
-          <textarea id="meta" name="meta" rows="4"
-                    placeholder='{"title": "...", "description": "...", "og_image": "..."}'
-                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y">${escHtml(version?.meta ?? '')}</textarea>
-        </div>
 
         <!-- Tags -->
         ${
@@ -475,53 +444,6 @@ export function editorPage(opts: {
         document.getElementById('slug').value = slug;
       }
 
-      // Simple HTML insertion helpers
-      function insertTag(tag) {
-        const ta = document.getElementById('content');
-        const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd) || 'Content here';
-        const insert = '<' + tag + '>' + sel + '</' + tag + '>';
-        replaceSelection(ta, insert);
-      }
-
-      function wrapSelection(tag) {
-        const ta = document.getElementById('content');
-        const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd);
-        if (!sel) return;
-        replaceSelection(ta, '<' + tag + '>' + sel + '</' + tag + '>');
-      }
-
-      function insertList(type) {
-        const ta = document.getElementById('content');
-        const insert = '<' + type + '>\\n  <li>Item 1</li>\\n  <li>Item 2</li>\\n</' + type + '>';
-        replaceSelection(ta, insert);
-      }
-
-      function insertLink() {
-        const url = prompt('URL:', 'https://');
-        if (!url) return;
-        const ta = document.getElementById('content');
-        const text = ta.value.substring(ta.selectionStart, ta.selectionEnd) || 'Link text';
-        replaceSelection(ta, '<a href="' + url + '">' + text + '</a>');
-      }
-
-      function replaceSelection(ta, text) {
-        const start = ta.selectionStart;
-        const end = ta.selectionEnd;
-        ta.value = ta.value.substring(0, start) + text + ta.value.substring(end);
-        ta.selectionStart = ta.selectionEnd = start + text.length;
-        ta.focus();
-      }
-
-      // Validate meta JSON on submit
-      document.querySelector('form').addEventListener('submit', (e) => {
-        const metaEl = document.getElementById('meta');
-        if (metaEl.value.trim()) {
-          try { JSON.parse(metaEl.value); } catch(err) {
-            e.preventDefault();
-            alert('Meta field contains invalid JSON: ' + err.message);
-          }
-        }
-      });
     </script>`;
 
   return layout({

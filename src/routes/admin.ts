@@ -23,19 +23,22 @@ import { editorPage } from '../templates/editor';
 import { layout, escHtml } from '../templates/layout';
 import { cmsConfig } from '../cms-config';
 import {
-  blockToOriginal,
-  blueprintToOriginal,
-  defaultOriginalItem,
+  blockToLect,
+  blueprintToLect,
+  defaultLectItem,
   getBlueprintProps,
-  mergeOriginals,
-  normalizeOriginal,
-  originalToPrint,
-  postToOriginal,
-  safeParseOriginal,
-  stringifyOriginal,
-} from '../utils/original';
+  getLectBlocks,
+  getLectItems,
+  getLectLocalizedValue,
+  mergeLects,
+  normalizeLect,
+  lectToPrint,
+  postToLect,
+  safeParseLect,
+  stringifyLect,
+} from '../utils/lect';
 import type { Env, Variables, Page, PageVersion, PageTag, Tag, TagType } from '../types';
-import type { Original, OriginalItem } from '../utils/original';
+import type { Lect, LectItem } from '../utils/lect';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -59,8 +62,8 @@ function nullableStr(v: FormValue): string | null {
   return s === '' ? null : s;
 }
 
-function num(v: FormValue, fallback = 5): number {
-  const n = parseInt(str(v), 10);
+function num(v: unknown, fallback = 5): number {
+  const n = typeof v === 'number' ? v : parseInt(typeof v === 'string' ? v.trim() : String(v ?? ''), 10);
   return isNaN(n) ? fallback : n;
 }
 
@@ -89,24 +92,24 @@ function blockPropsByName(): Record<string, ReturnType<typeof getBlueprintProps>
   return props;
 }
 
-function originalForPage(pageType: string, stored: string | null | undefined): Original {
-  return mergeOriginals(
-    blueprintToOriginal(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
-    safeParseOriginal(stored),
+function lectForPage(pageType: string, stored: string | null | undefined): Lect {
+  return mergeLects(
+    blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
+    safeParseLect(stored),
   );
 }
 
-function originalFromForm(pageType: string, existing: Original, form: FormData, language: string): Original {
-  const jsonOriginal = safeParseOriginal(str(form.get('original_json')));
-  const postedOriginal = postToOriginal(form, language);
-  return mergeOriginals(
-    mergeOriginals(blueprintToOriginal(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage), existing),
-    mergeOriginals(jsonOriginal, postedOriginal),
+function lectFromForm(pageType: string, existing: Lect, form: FormData, language: string): Lect {
+  const jsonLect = safeParseLect(str(form.get('lect_json')));
+  const postedLect = postToLect(form, language);
+  return mergeLects(
+    mergeLects(blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage), existing),
+    mergeLects(jsonLect, postedLect),
   );
 }
 
-function applyStructuredAction(original: Original, pageType: string, action: string, form: FormData): Original {
-  const next = normalizeOriginal(original);
+function applyStructuredAction(lect: Lect, pageType: string, action: string, form: FormData): Lect {
+  const next = normalizeLect(lect);
   const [actionType, actionParam = ''] = action.split(':');
   const actionParams = actionParam.split('|');
   const count = Math.max(1, num(form.get(`count:${actionParam}`), 1));
@@ -114,72 +117,105 @@ function applyStructuredAction(original: Original, pageType: string, action: str
   if (actionType === 'block-add') {
     const blockName = str(form.get('block-select'));
     if (!blockName || !cmsConfig.blocks[blockName]) return next;
-    const block = blockToOriginal(blockName, cmsConfig.blocks, cmsConfig.defaultLanguage);
-    block.attributes._weight = String(next.blocks.reduce((max, item) => Math.max(max, num(item.attributes._weight, 0)), -1) + 1);
-    next.blocks.push(block);
+    const block = blockToLect(blockName, cmsConfig.blocks, cmsConfig.defaultLanguage);
+    next._blocks ||= [];
+    block._weight = getNextWeight(next._blocks);
+    next._blocks.push(block);
     return next;
   }
 
   if (actionType === 'block-delete') {
-    next.blocks.splice(parseInt(actionParam, 10), 1);
+    next._blocks?.splice(parseInt(actionParam, 10), 1);
     return next;
   }
 
   if (actionType === 'item-add') {
-    addDefaultItem(next.items, pageType, actionParam, count);
+    addDefaultItem(next, pageType, actionParam, count);
     return next;
   }
 
   if (actionType === 'item-delete') {
     const [itemName, itemIndex] = actionParams;
-    next.items[itemName]?.splice(parseInt(itemIndex, 10), 1);
+    getMutableItems(next, itemName).splice(parseInt(itemIndex, 10), 1);
     return next;
   }
 
   if (actionType === 'block-item-add') {
     const [blockIndex, itemName] = actionParams;
-    const block = next.blocks[parseInt(blockIndex, 10)];
+    const block = getLectBlocks(next)[parseInt(blockIndex, 10)];
     if (block) addDefaultBlockItem(block, itemName, count);
+    next._blocks = replaceBlock(next, parseInt(blockIndex, 10), block);
     return next;
   }
 
   if (actionType === 'block-item-delete') {
     const [blockIndex, itemName, itemIndex] = actionParams;
-    const block = next.blocks[parseInt(blockIndex, 10)];
-    block?.items[itemName]?.splice(parseInt(itemIndex, 10), 1);
+    const index = parseInt(blockIndex, 10);
+    const block = getLectBlocks(next)[index];
+    if (block) {
+      getMutableItems(block, itemName).splice(parseInt(itemIndex, 10), 1);
+      next._blocks = replaceBlock(next, index, block);
+    }
     return next;
   }
 
   return next;
 }
 
-function addDefaultItem(items: Record<string, OriginalItem[]>, pageType: string, itemName: string, count: number): void {
+function addDefaultItem(lect: Lect, pageType: string, itemName: string, count: number): void {
   if (!itemName) return;
-  const defaults = blueprintToOriginal(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
-  const defaultItem = defaults.items[itemName]?.[0] ?? defaultOriginalItem();
-  items[itemName] ||= [];
+  const defaults = blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
+  const defaultItem = getLectItems(defaults, itemName)[0] ?? defaultLectItem();
+  const items = getMutableItems(lect, itemName);
   for (let index = 0; index < count; index++) {
     const item = cloneItem(defaultItem);
-    item.attributes._weight = String(items[itemName].reduce((max, entry) => Math.max(max, num(entry.attributes._weight, 0)), -1) + 1);
-    items[itemName].push(item);
+    item._weight = getNextWeight(items);
+    items.push(item);
   }
 }
 
-function addDefaultBlockItem(block: Original, itemName: string, count: number): void {
+function addDefaultBlockItem(block: Lect, itemName: string, count: number): void {
   if (!itemName) return;
-  const blockType = block.attributes._type || 'default';
-  const defaults = blockToOriginal(blockType, cmsConfig.blocks, cmsConfig.defaultLanguage);
-  const defaultItem = defaults.items[itemName]?.[0] ?? defaultOriginalItem();
-  block.items[itemName] ||= [];
+  const blockType = String(block._type || 'default');
+  const defaults = blockToLect(blockType, cmsConfig.blocks, cmsConfig.defaultLanguage);
+  const defaultItem = getLectItems(defaults, itemName)[0] ?? defaultLectItem();
+  const items = getMutableItems(block, itemName);
   for (let index = 0; index < count; index++) {
     const item = cloneItem(defaultItem);
-    item.attributes._weight = String(block.items[itemName].reduce((max, entry) => Math.max(max, num(entry.attributes._weight, 0)), -1) + 1);
-    block.items[itemName].push(item);
+    item._weight = getNextWeight(items);
+    items.push(item);
   }
 }
 
-function cloneItem(item: OriginalItem): OriginalItem {
-  return JSON.parse(JSON.stringify(item)) as OriginalItem;
+function cloneItem(item: LectItem): LectItem {
+  return JSON.parse(JSON.stringify(item)) as LectItem;
+}
+
+function getMutableItems(lect: Lect, itemName: string): LectItem[] {
+  if (!Array.isArray(lect[itemName])) lect[itemName] = [];
+  return lect[itemName] as LectItem[];
+}
+
+function getNextWeight(items: LectItem[]): number {
+  return items.reduce((max, entry) => Math.max(max, num(entry._weight, 0)), -1) + 1;
+}
+
+function replaceBlock(lect: Lect, index: number, block?: Lect): Lect[] {
+  const blocks = getLectBlocks(lect);
+  if (block) blocks[index] = block;
+  return blocks;
+}
+
+function ensureDefaultLectName(lect: Lect, name: string): void {
+  if (getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage)) return;
+  const current = lect.name;
+  const languageMap = current && typeof current === 'object' && !Array.isArray(current)
+    ? current as Record<string, string>
+    : {};
+  lect.name = {
+    ...languageMap,
+    [cmsConfig.defaultLanguage]: name,
+  };
 }
 
 async function getCurrentVersion(db: D1Database, page: Page): Promise<PageVersion | null> {
@@ -192,15 +228,13 @@ async function getCurrentVersion(db: D1Database, page: Page): Promise<PageVersio
 async function saveDraftVersion(
   db: D1Database,
   pageId: number,
-  content: string | null,
-  meta: string | null,
-  original: string | null,
+  lect: string | null,
   action: string | null,
 ): Promise<number> {
   const result = await db.prepare(
-    `INSERT INTO draft_page_versions (page_id, content, meta, original, action) VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO draft_page_versions (page_id, lect, action) VALUES (?, ?, ?)`,
   )
-    .bind(pageId, content, meta, original, action)
+    .bind(pageId, lect, action)
     .run();
   const row = await db.prepare('SELECT id FROM draft_page_versions WHERE rowid = ?')
     .bind(result.meta.last_row_id)
@@ -216,7 +250,7 @@ async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
 
   const version = await getCurrentVersion(db, page);
   await db.prepare(
-    `INSERT INTO live_pages (uuid, name, slug, weight, start, end, page_type, current_page_version_id, original, page_id)
+    `INSERT INTO live_pages (uuid, name, slug, weight, start, end, page_type, current_page_version_id, lect, page_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
        name = excluded.name,
@@ -225,10 +259,10 @@ async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
        start = excluded.start,
        end = excluded.end,
        page_type = excluded.page_type,
-       original = excluded.original,
+       lect = excluded.lect,
        page_id = excluded.page_id`,
   )
-    .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, null, page.original, page.page_id)
+    .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, null, page.lect, page.page_id)
     .run();
 
   const livePage = await db.prepare('SELECT id FROM live_pages WHERE uuid = ?')
@@ -244,10 +278,10 @@ async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
   let liveVersionId: number | null = null;
   if (version) {
     const versionResult = await db.prepare(
-      `INSERT INTO live_page_versions (uuid, page_id, content, meta, original, action)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO live_page_versions (uuid, page_id, lect, action)
+       VALUES (?, ?, ?, ?)`,
     )
-      .bind(version.uuid, livePage.id, version.content, version.meta, version.original, 'publish')
+      .bind(version.uuid, livePage.id, version.lect, 'publish')
       .run();
     const liveVersion = await db.prepare('SELECT id FROM live_page_versions WHERE rowid = ?')
       .bind(versionResult.meta.last_row_id)
@@ -336,9 +370,9 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
       )
         .bind(pageType)
         .all<Page>();
-  const livePages = await c.env.DB.prepare('SELECT uuid, original, slug, weight FROM live_pages').all<{
+  const livePages = await c.env.DB.prepare('SELECT uuid, lect, slug, weight FROM live_pages').all<{
     uuid: string;
-    original: string | null;
+    lect: string | null;
     slug: string;
     weight: number;
   }>();
@@ -356,7 +390,7 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
       pages: draftPages.results.map((page) => ({
         ...page,
         isPublished: liveMap.has(page.uuid),
-        contentPreview: liveMap.get(page.uuid)?.original === page.original ? 'synced' : 'changed',
+        contentPreview: liveMap.get(page.uuid)?.lect === page.lect ? 'synced' : 'changed',
       })),
       flash: flash || undefined,
     }),
@@ -380,27 +414,27 @@ adminRoutes.post('/pages/new_post/:pageType', async (c) => {
   const language = languageFromRequest(c, form);
   const name = str(form.get('name')) || `Untitled ${pageType.replace(/[_-]/g, ' ')}`;
   const slug = str(form.get('slug')) || slugify(name);
-  const original = stringifyOriginal(
-    originalFromForm(
+  const lect = stringifyLect(
+    lectFromForm(
       pageType,
-      blueprintToOriginal(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
+      blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
       form,
       language,
     ),
   );
 
   const result = await c.env.DB.prepare(
-    `INSERT INTO draft_pages (name, slug, weight, page_type, original)
+    `INSERT INTO draft_pages (name, slug, weight, page_type, lect)
      VALUES (?, ?, ?, ?, ?)`,
   )
-    .bind(name, slug, num(form.get('weight')), pageType, original)
+    .bind(name, slug, num(form.get('weight')), pageType, lect)
     .run();
   const page = await c.env.DB.prepare('SELECT id FROM draft_pages WHERE rowid = ?')
     .bind(result.meta.last_row_id)
     .first<{ id: number }>();
   if (!page) return c.notFound();
 
-  const versionId = await saveDraftVersion(c.env.DB, page.id, str(form.get('content')) || null, nullableStr(form.get('meta')), original, 'create');
+  const versionId = await saveDraftVersion(c.env.DB, page.id, lect, 'create');
   await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
     .bind(versionId, page.id)
     .run();
@@ -446,37 +480,39 @@ adminRoutes.post('/pages/import/:pageType', async (c) => {
     name?: string;
     slug?: string;
     weight?: number;
-    original?: unknown;
+    lect?: unknown;
     values?: Record<string, Record<string, string>>;
     attributes?: Record<string, string>;
     pointers?: Record<string, string>;
-    items?: Record<string, OriginalItem[]>;
-    blocks?: Original[];
+    items?: Record<string, LectItem[]>;
+    blocks?: Lect[];
   }>;
 
   let imported = 0;
   for (const item of items) {
-    const name = item.name ?? item.values?.[cmsConfig.defaultLanguage]?.name ?? 'Untitled';
+    const itemLect = item.lect
+      ? normalizeLect(item.lect)
+      : normalizeLect({
+          attributes: {
+            ...(item.attributes ?? {}),
+            _type: pageType,
+          },
+          values: item.values,
+          pointers: item.pointers,
+          items: item.items,
+          blocks: item.blocks,
+        });
+    const lect = mergeLects(blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage), itemLect);
+    lect._type = pageType;
+    const name = item.name ?? (getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || 'Untitled');
     const slug = item.slug ?? slugify(name);
-    const original = normalizeOriginal({
-      ...blueprintToOriginal(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
-      ...(typeof item.original === 'object' && item.original ? item.original : {}),
-      attributes: {
-        ...(item.attributes ?? {}),
-        _type: pageType,
-      },
-      values: item.values,
-      pointers: item.pointers,
-      items: item.items,
-      blocks: item.blocks,
-    });
 
     await c.env.DB.prepare(
-      `INSERT INTO draft_pages (name, slug, weight, page_type, original)
+      `INSERT INTO draft_pages (name, slug, weight, page_type, lect)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(uuid) DO UPDATE SET name = excluded.name`,
     )
-      .bind(name, slug, item.weight ?? 5, pageType, stringifyOriginal(original))
+      .bind(name, slug, item.weight ?? 5, pageType, stringifyLect(lect))
       .run();
     imported++;
   }
@@ -490,7 +526,7 @@ adminRoutes.get('/pages/new', async (c) => {
   const user = c.get('user');
   const pageType = c.req.query('page_type') || 'default';
   const language = languageFromRequest(c);
-  const original = blueprintToOriginal(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
+  const lect = blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
   const [parentPages, tags, dbUser] = await Promise.all([
     c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
     c.env.DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
@@ -513,7 +549,7 @@ adminRoutes.get('/pages/new', async (c) => {
         structured: {
           config: cmsConfig,
           language,
-          original,
+          lect,
           blueprintProps: blueprintPropsFor(pageType),
           blockProps: blockPropsByName(),
           blockNames: cmsConfig.blockLists[pageType] ?? cmsConfig.blockLists.default,
@@ -560,9 +596,9 @@ adminRoutes.post('/pages', async (c) => {
         structured: {
           config: cmsConfig,
           language,
-          original: originalFromForm(
+          lect: lectFromForm(
             nullableStr(form.get('page_type')) ?? 'default',
-            blueprintToOriginal(nullableStr(form.get('page_type')) ?? 'default', cmsConfig.blueprint, cmsConfig.defaultLanguage),
+            blueprintToLect(nullableStr(form.get('page_type')) ?? 'default', cmsConfig.blueprint, cmsConfig.defaultLanguage),
             form,
             language,
           ),
@@ -581,12 +617,10 @@ adminRoutes.post('/pages', async (c) => {
   const endVal = nullableStr(form.get('end'));
   const pageIdVal = nullableStr(form.get('page_id'));
   const weightVal = num(form.get('weight'));
-  const content = str(form.get('content'));
-  const meta = nullableStr(form.get('meta'));
-  const originalVal = stringifyOriginal(
-    originalFromForm(
+  const lectVal = stringifyLect(
+    lectFromForm(
       pageTypeVal,
-      blueprintToOriginal(pageTypeVal, cmsConfig.blueprint, cmsConfig.defaultLanguage),
+      blueprintToLect(pageTypeVal, cmsConfig.blueprint, cmsConfig.defaultLanguage),
       form,
       language,
     ),
@@ -594,10 +628,10 @@ adminRoutes.post('/pages', async (c) => {
 
   // Insert page
   const pageResult = await c.env.DB.prepare(
-    `INSERT INTO draft_pages (name, slug, weight, start, end, page_type, original, page_id)
+    `INSERT INTO draft_pages (name, slug, weight, start, end, page_type, lect, page_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(name, slug, weightVal, startVal, endVal, pageTypeVal, originalVal, pageIdVal ? parseInt(pageIdVal, 10) : null)
+    .bind(name, slug, weightVal, startVal, endVal, pageTypeVal, lectVal, pageIdVal ? parseInt(pageIdVal, 10) : null)
     .run();
 
   // The schema uses a custom DEFAULT id expression (not INTEGER PRIMARY KEY),
@@ -608,7 +642,7 @@ adminRoutes.post('/pages', async (c) => {
   const pageId = pageRow!.id;
 
   // Insert page version
-  const versionId = await saveDraftVersion(c.env.DB, pageId, content || null, meta, originalVal, 'create');
+  const versionId = await saveDraftVersion(c.env.DB, pageId, lectVal, 'create');
 
   // Link current version
   await c.env.DB.prepare(
@@ -667,8 +701,8 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
       .all<{ tag_id: number }>(),
   ]);
   const pageType = page.page_type ?? 'default';
-  const original = originalForPage(pageType, version?.original ?? page.original);
-  const displayPage = { ...page, original: stringifyOriginal(original) };
+  const lect = lectForPage(pageType, version?.lect ?? page.lect);
+  const displayPage = { ...page, lect: stringifyLect(lect) };
 
   return c.html(
     editorPage({
@@ -685,7 +719,7 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
       structured: {
         config: cmsConfig,
         language,
-        original,
+        lect,
         blueprintProps: blueprintPropsFor(pageType),
         blockProps: blockPropsByName(),
         blockNames: cmsConfig.blockLists[pageType] ?? cmsConfig.blockLists.default,
@@ -722,8 +756,8 @@ adminRoutes.post('/pages/:id', async (c) => {
       .bind(pageId, versionId)
       .first<PageVersion>();
     if (!version) return c.notFound();
-    await c.env.DB.prepare('UPDATE draft_pages SET original = ?, current_page_version_id = ? WHERE id = ?')
-      .bind(version.original ?? page.original, version.id, pageId)
+    await c.env.DB.prepare('UPDATE draft_pages SET lect = ?, current_page_version_id = ? WHERE id = ?')
+      .bind(version.lect ?? page.lect, version.id, pageId)
       .run();
     return c.redirect(`/admin/pages/${pageId}/edit?flash=Version+restored`);
   }
@@ -746,7 +780,7 @@ adminRoutes.post('/pages/:id', async (c) => {
         .first<{ avatar_url: string | null }>(),
     ]);
     const pageType = nullableStr(form.get('page_type')) ?? page.page_type ?? 'default';
-    const original = originalFromForm(pageType, originalForPage(pageType, page.original), form, language);
+    const lect = lectFromForm(pageType, lectForPage(pageType, page.lect), form, language);
     return c.html(
       editorPage({
         siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
@@ -763,7 +797,7 @@ adminRoutes.post('/pages/:id', async (c) => {
         structured: {
           config: cmsConfig,
           language,
-          original,
+          lect,
           blueprintProps: blueprintPropsFor(pageType),
           blockProps: blockPropsByName(),
           blockNames: cmsConfig.blockLists[pageType] ?? cmsConfig.blockLists.default,
@@ -779,29 +813,25 @@ adminRoutes.post('/pages/:id', async (c) => {
   const endVal = nullableStr(form.get('end'));
   const pageIdVal = nullableStr(form.get('page_id'));
   const weightVal = num(form.get('weight'));
-  const content = str(form.get('content'));
-  const meta = nullableStr(form.get('meta'));
-  const original = applyStructuredAction(
-    originalFromForm(pageTypeVal, originalForPage(pageTypeVal, page.original), form, language),
+  const lect = applyStructuredAction(
+    lectFromForm(pageTypeVal, lectForPage(pageTypeVal, page.lect), form, language),
     pageTypeVal,
     action,
     form,
   );
-  const originalVal = stringifyOriginal(original);
+  const lectVal = stringifyLect(lect);
 
   // Update page metadata
   await c.env.DB.prepare(
-    `UPDATE draft_pages SET name=?, slug=?, weight=?, start=?, end=?, page_type=?, original=?, page_id=? WHERE id=?`,
+    `UPDATE draft_pages SET name=?, slug=?, weight=?, start=?, end=?, page_type=?, lect=?, page_id=? WHERE id=?`,
   )
-    .bind(name, slug, weightVal, startVal, endVal, pageTypeVal, originalVal, pageIdVal ? parseInt(pageIdVal, 10) : null, pageId)
+    .bind(name, slug, weightVal, startVal, endVal, pageTypeVal, lectVal, pageIdVal ? parseInt(pageIdVal, 10) : null, pageId)
     .run();
 
   const newVersionId = await saveDraftVersion(
     c.env.DB,
     pageId,
-    content || null,
-    meta,
-    originalVal,
+    lectVal,
     action || 'update',
   );
 
@@ -882,7 +912,7 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
 
   // Copy page into trash table (preserve uuid so we can restore)
   await c.env.DB.prepare(
-    `INSERT INTO trash_pages (uuid, name, slug, weight, start, end, page_type, current_page_version_id, original, page_id)
+    `INSERT INTO trash_pages (uuid, name, slug, weight, start, end, page_type, current_page_version_id, lect, page_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
        name = excluded.name,
@@ -891,10 +921,10 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
        start = excluded.start,
        end = excluded.end,
        page_type = excluded.page_type,
-       original = excluded.original,
+       lect = excluded.lect,
        page_id = excluded.page_id`,
   )
-    .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, page.current_page_version_id, page.original, page.page_id)
+    .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, page.current_page_version_id, page.lect, page.page_id)
     .run();
 
   // Fetch the trash page id
@@ -909,11 +939,11 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
       .all<PageVersion>();
     for (const v of versions.results) {
       await c.env.DB.prepare(
-        `INSERT INTO trash_page_versions (uuid, page_id, content, meta)
+        `INSERT INTO trash_page_versions (uuid, page_id, lect, action)
          VALUES (?, ?, ?, ?)
-         ON CONFLICT(uuid) DO UPDATE SET content = excluded.content, meta = excluded.meta`,
+         ON CONFLICT(uuid) DO UPDATE SET lect = excluded.lect, action = excluded.action`,
       )
-        .bind(v.uuid, trashPage.id, v.content, v.meta)
+        .bind(v.uuid, trashPage.id, v.lect, v.action)
         .run();
     }
 
@@ -1059,7 +1089,7 @@ adminRoutes.post('/trash/:id/restore', async (c) => {
 
   // Upsert page back into draft content table (match on uuid)
   await c.env.DB.prepare(
-    `INSERT INTO draft_pages (uuid, name, slug, weight, start, end, page_type, original, page_id)
+    `INSERT INTO draft_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
        name = excluded.name,
@@ -1068,10 +1098,10 @@ adminRoutes.post('/trash/:id/restore', async (c) => {
        start = excluded.start,
        end = excluded.end,
        page_type = excluded.page_type,
-       original = excluded.original,
+       lect = excluded.lect,
        page_id = excluded.page_id`,
   )
-    .bind(trashPage.uuid, trashPage.name, trashPage.slug, trashPage.weight, trashPage.start, trashPage.end, trashPage.page_type, trashPage.original, trashPage.page_id)
+    .bind(trashPage.uuid, trashPage.name, trashPage.slug, trashPage.weight, trashPage.start, trashPage.end, trashPage.page_type, trashPage.lect, trashPage.page_id)
     .run();
 
   const draftPage = await c.env.DB.prepare('SELECT id FROM draft_pages WHERE uuid = ?')
@@ -1086,11 +1116,11 @@ adminRoutes.post('/trash/:id/restore', async (c) => {
     let lastVersionId: number | null = null;
     for (const v of trashVersions.results) {
       await c.env.DB.prepare(
-        `INSERT INTO draft_page_versions (uuid, page_id, content, meta)
+        `INSERT INTO draft_page_versions (uuid, page_id, lect, action)
          VALUES (?, ?, ?, ?)
-         ON CONFLICT(uuid) DO UPDATE SET content = excluded.content, meta = excluded.meta`,
+         ON CONFLICT(uuid) DO UPDATE SET lect = excluded.lect, action = excluded.action`,
       )
-        .bind(v.uuid, draftPage.id, v.content, v.meta)
+        .bind(v.uuid, draftPage.id, v.lect, v.action)
         .run();
 
       const restoredVersion = await c.env.DB.prepare('SELECT id FROM draft_page_versions WHERE uuid = ?')
@@ -1154,7 +1184,7 @@ adminRoutes.get('/api/tags/:type', async (c) => {
     .all<Tag>();
   return c.json(tags.results.map((tag) => ({
     value: tag.id,
-    label: safeParseOriginal(tag.original).values[cmsConfig.defaultLanguage]?.name || tag.name,
+    label: getLectLocalizedValue(safeParseLect(tag.lect), 'name', cmsConfig.defaultLanguage) || tag.name,
   })));
 });
 
@@ -1408,13 +1438,12 @@ adminRoutes.post('/tags', async (c) => {
   const language = languageFromRequest(c, form);
   const name = str(form.get('name'));
   const slug = str(form.get('slug')) || slugify(name);
-  const original = postToOriginal(form, language);
-  original.values[cmsConfig.defaultLanguage] ||= {};
-  original.values[cmsConfig.defaultLanguage].name ||= name;
+  const lect = postToLect(form, language);
+  ensureDefaultLectName(lect, name);
   await c.env.DB.prepare(
-    'INSERT INTO tags (name, slug, tag_type_id, parent_tag, original) VALUES (?, ?, ?, ?, ?)',
+    'INSERT INTO tags (name, slug, tag_type_id, parent_tag, lect) VALUES (?, ?, ?, ?, ?)',
   )
-    .bind(name, slug, nullableStr(form.get('tag_type_id')) ? num(form.get('tag_type_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyOriginal(original))
+    .bind(name, slug, nullableStr(form.get('tag_type_id')) ? num(form.get('tag_type_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyLect(lect))
     .run();
   return c.redirect('/admin/tags');
 });
@@ -1434,13 +1463,12 @@ adminRoutes.post('/tags/:id', async (c) => {
   const slug = str(form.get('slug')) || slugify(name);
   const existing = await c.env.DB.prepare('SELECT * FROM tags WHERE id = ?').bind(id).first<Tag>();
   if (!existing) return c.notFound();
-  const original = mergeOriginals(safeParseOriginal(existing.original), postToOriginal(form, language));
-  original.values[cmsConfig.defaultLanguage] ||= {};
-  original.values[cmsConfig.defaultLanguage].name ||= name;
+  const lect = mergeLects(safeParseLect(existing.lect), postToLect(form, language));
+  ensureDefaultLectName(lect, name);
   await c.env.DB.prepare(
-    'UPDATE tags SET name = ?, slug = ?, tag_type_id = ?, parent_tag = ?, original = ? WHERE id = ?',
+    'UPDATE tags SET name = ?, slug = ?, tag_type_id = ?, parent_tag = ?, lect = ? WHERE id = ?',
   )
-    .bind(name, slug, nullableStr(form.get('tag_type_id')) ? num(form.get('tag_type_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyOriginal(original), id)
+    .bind(name, slug, nullableStr(form.get('tag_type_id')) ? num(form.get('tag_type_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyLect(lect), id)
     .run();
   return c.redirect('/admin/tags');
 });
@@ -1508,8 +1536,8 @@ async function tagForm(c: AdminContext, tag?: Tag) {
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
   ]);
-  const original = safeParseOriginal(tag?.original);
-  const printed = originalToPrint(original, language, cmsConfig.defaultLanguage);
+  const lect = safeParseLect(tag?.lect);
+  const printed = lectToPrint(lect, language, cmsConfig.defaultLanguage);
   const tagTypeOptions = tagTypes.results
     .map((type) => `<option value="${type.id}" ${tag?.tag_type_id === type.id ? 'selected' : ''}>${escHtml(type.name)}</option>`)
     .join('');

@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS draft_pages(
     end DATETIME ,
     page_type TEXT ,
     current_page_version_id INTEGER ,
-    original TEXT ,
+    lect TEXT ,
     page_id INTEGER ,
     FOREIGN KEY (page_id) REFERENCES draft_pages (id) ON DELETE CASCADE
 );
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS live_pages(
     start DATETIME ,
     end DATETIME ,
     page_type TEXT ,
-    original TEXT ,
+    lect TEXT ,
     page_id INTEGER ,
     FOREIGN KEY (page_id) REFERENCES live_pages (id) ON DELETE CASCADE
 );
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS trash_pages(
     end DATETIME ,
     page_type TEXT ,
     current_page_version_id INTEGER ,
-    original TEXT ,
+    lect TEXT ,
     page_id INTEGER ,
     FOREIGN KEY (page_id) REFERENCES trash_pages (id) ON DELETE CASCADE
 );
@@ -73,8 +73,6 @@ CREATE TABLE IF NOT EXISTS draft_page_versions(
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL ,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL ,
     page_id INTEGER NOT NULL ,
-    content TEXT ,
-    meta TEXT ,
     FOREIGN KEY (page_id) REFERENCES draft_pages (id) ON DELETE CASCADE
 );
 
@@ -85,8 +83,6 @@ CREATE TABLE IF NOT EXISTS trash_page_versions(
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL ,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL ,
     page_id INTEGER NOT NULL ,
-    content TEXT ,
-    meta TEXT ,
     FOREIGN KEY (page_id) REFERENCES trash_pages (id) ON DELETE CASCADE
 );
 

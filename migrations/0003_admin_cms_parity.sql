@@ -1,6 +1,6 @@
 -- ============================================================
 -- Admin CMS parity schema
--- Adds LionRock-style tag types, structured originals, live tag
+-- Adds LionRock-style tag types, structured lect snapshots, live tag
 -- copies, version browsing, and media metadata.
 -- ============================================================
 
@@ -16,10 +16,12 @@ CREATE TABLE IF NOT EXISTS tag_types(
 
 ALTER TABLE tags ADD COLUMN tag_type_id INTEGER REFERENCES tag_types(id) ON DELETE SET NULL;
 ALTER TABLE tags ADD COLUMN parent_tag INTEGER REFERENCES tags(id) ON DELETE SET NULL;
-ALTER TABLE tags ADD COLUMN original TEXT;
+ALTER TABLE tags ADD COLUMN lect TEXT;
 
-ALTER TABLE draft_page_versions ADD COLUMN original TEXT;
+ALTER TABLE draft_page_versions ADD COLUMN lect TEXT;
 ALTER TABLE draft_page_versions ADD COLUMN action TEXT;
+ALTER TABLE trash_page_versions ADD COLUMN lect TEXT;
+ALTER TABLE trash_page_versions ADD COLUMN action TEXT;
 
 ALTER TABLE live_pages ADD COLUMN current_page_version_id INTEGER;
 
@@ -30,9 +32,7 @@ CREATE TABLE IF NOT EXISTS live_page_versions(
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
     page_id INTEGER NOT NULL,
-    content TEXT,
-    meta TEXT,
-    original TEXT,
+    lect TEXT,
     action TEXT,
     FOREIGN KEY (page_id) REFERENCES live_pages(id) ON DELETE CASCADE
 );
