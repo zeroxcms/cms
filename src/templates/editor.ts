@@ -30,7 +30,11 @@ function renderStructuredEditor(opts: {
         <p class="text-sm font-semibold text-gray-700">Structured Content</p>
         <label class="flex items-center gap-2 text-xs text-gray-500">
           Language
-          <select name="_language" class="px-2 py-1 border border-gray-300 rounded-lg text-xs">
+          <select
+            name="_language"
+            class="px-2 py-1 border border-gray-300 rounded-lg text-xs"
+            onchange="const url = new URL(window.location.href); url.searchParams.set('language', this.value); window.location.href = url.toString();"
+          >
             ${languageOptions}
           </select>
         </label>
