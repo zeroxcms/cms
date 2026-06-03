@@ -64,9 +64,7 @@ interface LegacyStructuredLike {
 }
 
 export function defaultLect(): Lect {
-  return {
-    _blocks: [],
-  };
+  return {};
 }
 
 export function defaultLectItem(): LectItem {

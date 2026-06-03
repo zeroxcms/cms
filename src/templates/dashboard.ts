@@ -9,6 +9,8 @@ import type { Page } from '../types';
 export interface DashboardPage extends Page {
   isPublished: boolean;
   contentPreview?: string;
+  liveWeight?: number;
+  hasLiveWeightDrift?: boolean;
 }
 
 export function dashboardPage(opts: {
@@ -18,8 +20,9 @@ export function dashboardPage(opts: {
   userAvatar: string;
   pages: DashboardPage[];
   flash?: string;
+  returnPath?: string;
 }): string {
-  const { siteTitle, userName, userRole, userAvatar, pages, flash } = opts;
+  const { siteTitle, userName, userRole, userAvatar, pages, flash, returnPath = '/admin' } = opts;
 
   const flashBanner = flash
     ? `<div id="flash" class="mb-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700 flex items-center gap-2">
@@ -40,7 +43,28 @@ export function dashboardPage(opts: {
             <div class="text-sm text-gray-500 font-mono">/${escHtml(p.slug)}</div>
           </td>
           <td class="px-6 py-4 text-sm text-gray-500">${escHtml(p.page_type ?? '—')}</td>
-          <td class="px-6 py-4 text-sm text-gray-500">${p.weight}</td>
+          <td class="px-6 py-4">
+            <form method="POST" action="/admin/pages/${p.id}/weight" class="flex items-center gap-2">
+              <input type="hidden" name="return_to" value="${escHtml(returnPath)}">
+              <input type="number" name="weight" value="${p.weight}" min="0" max="1000"
+                     class="w-20 px-2 py-1 border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+              <button type="submit"
+                      class="px-2.5 py-1 rounded-lg border border-gray-300 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                Save
+              </button>
+              ${
+                p.hasLiveWeightDrift
+                  ? `<span title="Live weight is ${p.liveWeight}; publish to sync"
+                           class="inline-flex items-center text-amber-600">
+                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                               d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                       </svg>
+                     </span>`
+                  : ''
+              }
+            </form>
+          </td>
           <td class="px-6 py-4">
             ${
               p.isPublished

@@ -431,6 +431,25 @@ export function editorPage(opts: {
         window.location.href = window.location.pathname + '?' + params.toString();
       }
 
+      const structuredActions = new Set([
+        'block-add',
+        'block-delete',
+        'item-add',
+        'item-delete',
+        'block-item-add',
+        'block-item-delete',
+      ]);
+      const editorForm = document.querySelector('form[method="POST"]');
+      if (editorForm) {
+        editorForm.addEventListener('submit', (event) => {
+          const submitter = event.submitter || document.activeElement;
+          const action = submitter && submitter.getAttribute ? submitter.getAttribute('value') || '' : '';
+          if (structuredActions.has(action.split(':')[0])) {
+            window.sessionStorage.setItem(editorScrollKey, String(window.scrollY));
+          }
+        });
+      }
+
       // Auto-generate slug from page name
       let slugEdited = ${isEdit ? 'true' : 'false'};
       document.getElementById('slug').addEventListener('input', () => { slugEdited = true; });

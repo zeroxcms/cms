@@ -20,7 +20,10 @@ import type { Context } from 'hono';
 import { authMiddleware, editorGuard } from '../middleware/auth';
 import { dashboardPage } from '../templates/dashboard';
 import { editorPage } from '../templates/editor';
-import { layout, escHtml } from '../templates/layout';
+import { importPage } from '../templates/import';
+import { tagTypeFormPage, tagTypesPage } from '../templates/tag-types';
+import { tagFormPage, tagsPage } from '../templates/tags';
+import { trashPage } from '../templates/trash';
 import { cmsConfig } from '../cms-config';
 import {
   blockToLect,
@@ -32,7 +35,6 @@ import {
   getLectLocalizedValue,
   mergeLects,
   normalizeLect,
-  lectToPrint,
   postToLect,
   safeParseLect,
   stringifyLect,
@@ -218,6 +220,22 @@ function ensureDefaultLectName(lect: Lect, name: string): void {
   };
 }
 
+function safeAdminReturnPath(path: FormValue, fallback = '/admin'): string {
+  const value = str(path);
+  return value.startsWith('/admin') ? value : fallback;
+}
+
+function isStructuredEditorAction(action: string): boolean {
+  return [
+    'block-add',
+    'block-delete',
+    'item-add',
+    'item-delete',
+    'block-item-add',
+    'block-item-delete',
+  ].includes(action.split(':')[0] || '');
+}
+
 async function savePageVersion(
   db: D1Database,
   pageId: number,
@@ -288,17 +306,17 @@ adminRoutes.get('/', async (c) => {
     'SELECT * FROM draft_pages ORDER BY weight ASC, name ASC',
   ).all<Page>();
 
-  const liveSlugs = new Set<string>();
-  if (draftPages.results.length > 0) {
-    const livePages = await c.env.DB.prepare(
-      'SELECT uuid FROM live_pages',
-    ).all<{ uuid: string }>();
-    livePages.results.forEach((p) => liveSlugs.add(p.uuid));
-  }
+  const livePages = await c.env.DB.prepare('SELECT uuid, weight FROM live_pages').all<{
+    uuid: string;
+    weight: number;
+  }>();
+  const liveMap = new Map(livePages.results.map((page) => [page.uuid, page]));
 
   const pages = draftPages.results.map((p) => ({
     ...p,
-    isPublished: liveSlugs.has(p.uuid),
+    isPublished: liveMap.has(p.uuid),
+    liveWeight: liveMap.get(p.uuid)?.weight,
+    hasLiveWeightDrift: liveMap.has(p.uuid) && liveMap.get(p.uuid)?.weight !== p.weight,
   }));
 
   // Fetch user avatar from DB
@@ -316,6 +334,7 @@ adminRoutes.get('/', async (c) => {
       userAvatar: dbUser?.avatar_url ?? '',
       pages,
       flash: flash || undefined,
+      returnPath: '/admin',
     }),
   );
 });
@@ -359,9 +378,12 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
       pages: draftPages.results.map((page) => ({
         ...page,
         isPublished: liveMap.has(page.uuid),
+        liveWeight: liveMap.get(page.uuid)?.weight,
+        hasLiveWeightDrift: liveMap.has(page.uuid) && liveMap.get(page.uuid)?.weight !== page.weight,
         contentPreview: liveMap.get(page.uuid)?.lect === page.lect ? 'synced' : 'changed',
       })),
       flash: flash || undefined,
+      returnPath: `/admin/pages/list/${encodeURIComponent(pageType)}${search ? `?search=${encodeURIComponent(search)}` : ''}`,
     }),
   );
 });
@@ -417,27 +439,12 @@ adminRoutes.get('/pages/import/:pageType', async (c) => {
   const dbUser = await c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
     .bind(parseInt(user.sub, 10))
     .first<{ avatar_url: string | null }>();
-  const body = `
-    <div class="px-8 py-8 max-w-3xl">
-      <div class="flex items-center justify-between mb-6">
-        <h2 class="text-2xl font-bold text-gray-900">Import ${escHtml(pageType)}</h2>
-        <a href="/admin/pages/list/${escHtml(pageType)}" class="text-sm text-indigo-600 hover:underline">Back</a>
-      </div>
-      <form method="POST" class="space-y-4">
-        <textarea name="items" rows="18"
-                  placeholder='[{"name":"Example","slug":"example","values":{"en":{"name":"Example"}}}]'
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"></textarea>
-        <button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg">Import</button>
-      </form>
-    </div>`;
-  return c.html(layout({
-    title: 'Import',
+  return c.html(importPage({
     siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
-    body,
-    admin: true,
     userName: user.name,
     userRole: user.role,
     userAvatar: dbUser?.avatar_url ?? '',
+    pageType,
   }));
 });
 
@@ -698,6 +705,22 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
   );
 });
 
+adminRoutes.post('/pages/:id/weight', async (c) => {
+  const pageId = parseInt(c.req.param('id'), 10);
+  const form = await c.req.formData();
+  const weight = num(form.get('weight'));
+  const returnPath = safeAdminReturnPath(form.get('return_to'));
+
+  const result = await c.env.DB.prepare('UPDATE draft_pages SET weight = ? WHERE id = ?')
+    .bind(weight, pageId)
+    .run();
+  if (!result.success) {
+    return c.redirect(`${returnPath}${returnPath.includes('?') ? '&' : '?'}flash=Weight+update+failed`);
+  }
+
+  return c.redirect(`${returnPath}${returnPath.includes('?') ? '&' : '?'}flash=Draft+weight+updated`);
+});
+
 // ── Update page ───────────────────────────────────────────────────────────────
 
 adminRoutes.post('/pages/:id', async (c) => {
@@ -829,6 +852,10 @@ adminRoutes.post('/pages/:id', async (c) => {
     return c.redirect('/admin?flash=Page+published+successfully');
   }
 
+  if (isStructuredEditorAction(action)) {
+    return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}`);
+  }
+
   return c.redirect('/admin?flash=Page+updated+successfully');
 });
 
@@ -941,89 +968,14 @@ adminRoutes.get('/trash', async (c) => {
       .first<{ avatar_url: string | null }>(),
   ]);
 
-  const { layout } = await import('../templates/layout');
-  const { escHtml } = await import('../templates/layout');
-
-  const flashBanner = flash
-    ? `<div id="flash" class="mb-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">${escHtml(flash)}</div>`
-    : '';
-
-  const tableRows = trashedPages.results.length
-    ? trashedPages.results
-        .map(
-          (p) => `
-        <tr class="hover:bg-gray-50 transition-colors">
-          <td class="px-6 py-4">
-            <div class="font-medium text-gray-900">${escHtml(p.name)}</div>
-            <div class="text-sm text-gray-500 font-mono">/${escHtml(p.slug)}</div>
-          </td>
-          <td class="px-6 py-4 text-sm text-gray-500">${escHtml(p.page_type ?? '—')}</td>
-          <td class="px-6 py-4 text-sm text-gray-400">${escHtml(p.updated_at)}</td>
-          <td class="px-6 py-4">
-            <div class="flex items-center gap-2">
-              <form method="POST" action="/admin/trash/${p.id}/restore" class="inline">
-                <button type="submit"
-                        class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">Restore</button>
-              </form>
-              <form method="POST" action="/admin/trash/${p.id}/delete" class="inline"
-                    onsubmit="return confirm('Permanently delete this page? This cannot be undone.')">
-                <button type="submit"
-                        class="text-red-500 hover:text-red-700 text-sm font-medium">Delete Forever</button>
-              </form>
-            </div>
-          </td>
-        </tr>`,
-        )
-        .join('')
-    : `<tr>
-        <td colspan="4" class="px-6 py-12 text-center text-gray-400">Trash is empty.</td>
-       </tr>`;
-
-  const body = `
-    <div class="px-8 py-8">
-      <div class="flex items-center justify-between mb-6">
-        <div>
-          <h2 class="text-2xl font-bold text-gray-900">Trash</h2>
-          <p class="text-sm text-gray-500 mt-1">${trashedPages.results.length} page${trashedPages.results.length !== 1 ? 's' : ''} in trash</p>
-        </div>
-        <a href="/admin" class="text-sm text-indigo-600 hover:underline">← Back to Pages</a>
-      </div>
-
-      ${flashBanner}
-
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <table class="w-full text-left">
-          <thead class="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Page</th>
-              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
-              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Deleted</th>
-              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100">
-            ${tableRows}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <script>
-      const flash = document.getElementById('flash');
-      if (flash) setTimeout(() => flash.remove(), 4000);
-    </script>`;
-
-  return c.html(
-    layout({
-      title: 'Trash',
-      siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
-      body,
-      admin: true,
-      userName: user.name,
-      userRole: user.role,
-      userAvatar: dbUser?.avatar_url ?? '',
-    }),
-  );
+  return c.html(trashPage({
+    siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
+    userName: user.name,
+    userRole: user.role,
+    userAvatar: dbUser?.avatar_url ?? '',
+    pages: trashedPages.results,
+    flash: flash || undefined,
+  }));
 });
 
 // ── Restore page from trash → draft ──────────────────────────────────────────
@@ -1470,7 +1422,13 @@ async function tagForm(c: AdminContext, tag?: Tag) {
       .first<{ avatar_url: string | null }>(),
   ]);
   const lect = safeParseLect(tag?.lect);
-  const printed = lectToPrint(lect, language, cmsConfig.defaultLanguage);
+  const rawTranslatedName = getLectLocalizedValue(lect, 'name', language);
+  const translatedName = language === cmsConfig.defaultLanguage ? rawTranslatedName || tag?.name || '' : rawTranslatedName;
+  const defaultTranslatedName = getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || tag?.name || '';
+  const translatedPlaceholder = language === cmsConfig.defaultLanguage ? '' : defaultTranslatedName;
+  const languageOptions = cmsConfig.languages
+    .map((lang) => `<option value="${escHtml(lang)}" ${lang === language ? 'selected' : ''}>${escHtml(lang)}</option>`)
+    .join('');
   const tagTypeOptions = tagTypes.results
     .map((type) => `<option value="${type.id}" ${tag?.tag_type_id === type.id ? 'selected' : ''}>${escHtml(type.name)}</option>`)
     .join('');
@@ -1488,18 +1446,30 @@ async function tagForm(c: AdminContext, tag?: Tag) {
     <div class="px-8 py-8 max-w-xl">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">${tag ? 'Edit' : 'New'} Tag</h2>
       <form method="POST" action="${action}" class="space-y-4">
-        <input type="hidden" name="_language" value="${escHtml(language)}">
+        <label class="block">
+          <span class="block text-sm font-medium text-gray-700 mb-1">Language</span>
+          <select name="_language"
+                  onchange="switchTagLanguage(this.value)"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            ${languageOptions}
+          </select>
+        </label>
         <label class="block">
           <span class="block text-sm font-medium text-gray-700 mb-1">Name</span>
-          <input name="name" required value="${escHtml(tag?.name ?? '')}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+          <input id="tag_name" name="name" required value="${escHtml(tag?.name ?? '')}"
+                 oninput="autoTagSlug(this.value)"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
         </label>
         <label class="block">
           <span class="block text-sm font-medium text-gray-700 mb-1">Translated Name</span>
-          <input name=".name|${escHtml(language)}" value="${escHtml(String(printed.tokens.name ?? tag?.name ?? ''))}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+          <input name=".name|${escHtml(language)}"
+                 value="${escHtml(translatedName)}"
+                 placeholder="${escHtml(translatedPlaceholder)}"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
         </label>
         <label class="block">
           <span class="block text-sm font-medium text-gray-700 mb-1">Slug</span>
-          <input name="slug" value="${escHtml(tag?.slug ?? '')}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+          <input id="tag_slug" name="slug" value="${escHtml(tag?.slug ?? '')}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
         </label>
         <label class="block">
           <span class="block text-sm font-medium text-gray-700 mb-1">Tag Type</span>
@@ -1521,7 +1491,28 @@ async function tagForm(c: AdminContext, tag?: Tag) {
         </div>
       </form>
       ${deleteButton}
-    </div>`;
+    </div>
+    <script>
+      function switchTagLanguage(language) {
+        const params = new window.URLSearchParams(window.location.search);
+        params.set('language', language);
+        window.location.href = window.location.pathname + '?' + params.toString();
+      }
+
+      let tagSlugEdited = ${tag ? 'true' : 'false'};
+      const tagSlugInput = document.getElementById('tag_slug');
+      if (tagSlugInput) {
+        tagSlugInput.addEventListener('input', () => { tagSlugEdited = true; });
+      }
+
+      function autoTagSlug(name) {
+        if (tagSlugEdited || !tagSlugInput) return;
+        tagSlugInput.value = name.toLowerCase()
+          .trim()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '');
+      }
+    </script>`;
   return c.html(layout({
     title: tag ? 'Edit Tag' : 'New Tag',
     siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
