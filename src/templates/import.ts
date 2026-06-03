@@ -1,21 +1,20 @@
-import importTemplate from '../views/templates/import.liquid';
 import { layout } from './layout';
 import { renderLiquid } from './liquid';
 
-export function importPage(opts: {
+export async function importPage(views: Fetcher, opts: {
   siteTitle: string;
   userName: string;
   userRole: string;
   userAvatar: string;
   pageType: string;
-}): string {
+}): Promise<string> {
   const { siteTitle, userName, userRole, userAvatar, pageType } = opts;
-  const body = renderLiquid(importTemplate, {
+  const body = await renderLiquid(views, '/templates/import.liquid', {
     pageType,
     backHref: `/admin/pages/list/${encodeURIComponent(pageType)}`,
   });
 
-  return layout({
+  return layout(views, {
     title: 'Import',
     siteTitle,
     body,

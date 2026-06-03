@@ -327,7 +327,7 @@ adminRoutes.get('/', async (c) => {
     .first<{ avatar_url: string | null }>();
 
   return c.html(
-    dashboardPage({
+    await dashboardPage(c.env.VIEWS, {
       siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
       userName: user.name,
       userRole: user.role,
@@ -370,7 +370,7 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
     .first<{ avatar_url: string | null }>();
 
   return c.html(
-    dashboardPage({
+    await dashboardPage(c.env.VIEWS, {
       siteTitle: `${c.env.SITE_TITLE ?? 'Worker CMS'} · ${pageType}`,
       userName: user.name,
       userRole: user.role,
@@ -439,7 +439,7 @@ adminRoutes.get('/pages/import/:pageType', async (c) => {
   const dbUser = await c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
     .bind(parseInt(user.sub, 10))
     .first<{ avatar_url: string | null }>();
-  return c.html(importPage({
+  return c.html(await importPage(c.env.VIEWS, {
     siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
     userName: user.name,
     userRole: user.role,
@@ -512,7 +512,7 @@ adminRoutes.get('/pages/new', async (c) => {
   ]);
 
   return c.html(
-    editorPage({
+    await editorPage(c.env.VIEWS, {
       siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
       userName: user.name,
       userRole: user.role,
@@ -558,7 +558,7 @@ adminRoutes.post('/pages', async (c) => {
         .first<{ avatar_url: string | null }>(),
     ]);
     return c.html(
-      editorPage({
+      await editorPage(c.env.VIEWS, {
         siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
         userName: user.name,
         userRole: user.role,
@@ -681,7 +681,7 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
   const displayPage = { ...page, lect: stringifyLect(lect) };
 
   return c.html(
-    editorPage({
+    await editorPage(c.env.VIEWS, {
       siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
       userName: user.name,
       userRole: user.role,
@@ -774,7 +774,7 @@ adminRoutes.post('/pages/:id', async (c) => {
     const pageType = nullableStr(form.get('page_type')) ?? page.page_type ?? 'default';
     const lect = lectFromForm(pageType, lectForPage(pageType, page.lect), form, language);
     return c.html(
-      editorPage({
+      await editorPage(c.env.VIEWS, {
         siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
         userName: user.name,
         userRole: user.role,
@@ -968,7 +968,7 @@ adminRoutes.get('/trash', async (c) => {
       .first<{ avatar_url: string | null }>(),
   ]);
 
-  return c.html(trashPage({
+  return c.html(await trashPage(c.env.VIEWS, {
     siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
     userName: user.name,
     userRole: user.role,
@@ -1156,7 +1156,7 @@ adminRoutes.get('/tag-types', async (c) => {
       .first<{ avatar_url: string | null }>(),
   ]);
 
-  return c.html(tagTypesPage({
+  return c.html(await tagTypesPage(c.env.VIEWS, {
     siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
     userName: user.name,
     userRole: user.role,
@@ -1219,7 +1219,7 @@ adminRoutes.get('/tags', async (c) => {
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
   ]);
-  return c.html(tagsPage({
+  return c.html(await tagsPage(c.env.VIEWS, {
     siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
     userName: user.name,
     userRole: user.role,
@@ -1289,7 +1289,7 @@ async function tagTypeForm(c: AdminContext, tagType?: TagType) {
   const dbUser = await c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
     .bind(parseInt(user.sub, 10))
     .first<{ avatar_url: string | null }>();
-  return c.html(tagTypeFormPage({
+  return c.html(await tagTypeFormPage(c.env.VIEWS, {
     siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
     userName: user.name,
     userRole: user.role,
@@ -1313,7 +1313,7 @@ async function tagForm(c: AdminContext, tag?: Tag) {
   const translatedName = language === cmsConfig.defaultLanguage ? rawTranslatedName || tag?.name || '' : rawTranslatedName;
   const defaultTranslatedName = getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || tag?.name || '';
   const translatedPlaceholder = language === cmsConfig.defaultLanguage ? '' : defaultTranslatedName;
-  return c.html(tagFormPage({
+  return c.html(await tagFormPage(c.env.VIEWS, {
     siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
     userName: user.name,
     userRole: user.role,

@@ -69,9 +69,9 @@ app.get('/', (c) => {
 });
 
 // ── 404 handler ───────────────────────────────────────────────────────────────
-app.notFound((c) => {
+app.notFound(async (c) => {
   return c.html(
-    errorPage({
+    await errorPage(c.env.VIEWS, {
       status: 404,
       title: 'Not Found',
       heading: 'Page Not Found',
@@ -82,10 +82,10 @@ app.notFound((c) => {
 });
 
 // ── Error handler ─────────────────────────────────────────────────────────────
-app.onError((err, c) => {
+app.onError(async (err, c) => {
   console.error(err);
   return c.html(
-    errorPage({
+    await errorPage(c.env.VIEWS, {
       status: 500,
       title: 'Server Error',
       heading: 'Internal Server Error',

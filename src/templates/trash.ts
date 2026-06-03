@@ -1,19 +1,18 @@
-import trashTemplate from '../views/templates/trash.liquid';
 import { layout } from './layout';
 import { renderLiquid } from './liquid';
 import type { Page } from '../types';
 
-export function trashPage(opts: {
+export async function trashPage(views: Fetcher, opts: {
   siteTitle: string;
   userName: string;
   userRole: string;
   userAvatar: string;
   pages: Page[];
   flash?: string;
-}): string {
+}): Promise<string> {
   const { siteTitle, userName, userRole, userAvatar, pages, flash } = opts;
   const pageCount = pages.length;
-  const body = renderLiquid(trashTemplate, {
+  const body = await renderLiquid(views, '/templates/trash.liquid', {
     flash,
     hasFlash: !!flash,
     pageCountLabel: `${pageCount} page${pageCount === 1 ? '' : 's'} in trash`,
@@ -29,7 +28,7 @@ export function trashPage(opts: {
     })),
   });
 
-  return layout({
+  return layout(views, {
     title: 'Trash',
     siteTitle,
     body,

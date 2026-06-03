@@ -1,4 +1,3 @@
-import dashboardTemplate from '../views/templates/dashboard.liquid';
 import { layout } from './layout';
 import { renderLiquid } from './liquid';
 import type { Page } from '../types';
@@ -10,7 +9,7 @@ export interface DashboardPage extends Page {
   hasLiveWeightDrift?: boolean;
 }
 
-export function dashboardPage(opts: {
+export async function dashboardPage(views: Fetcher, opts: {
   siteTitle: string;
   userName: string;
   userRole: string;
@@ -18,10 +17,10 @@ export function dashboardPage(opts: {
   pages: DashboardPage[];
   flash?: string;
   returnPath?: string;
-}): string {
+}): Promise<string> {
   const { siteTitle, userName, userRole, userAvatar, pages, flash, returnPath = '/admin' } = opts;
   const pageCount = pages.length;
-  const body = renderLiquid(dashboardTemplate, {
+  const body = await renderLiquid(views, '/templates/dashboard.liquid', {
     flash,
     hasFlash: !!flash,
     returnPath,
@@ -45,7 +44,7 @@ export function dashboardPage(opts: {
     })),
   });
 
-  return layout({
+  return layout(views, {
     title: 'Dashboard',
     siteTitle,
     body,

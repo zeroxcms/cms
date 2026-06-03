@@ -1,4 +1,3 @@
-import layoutTemplate from '../views/layout/default.liquid';
 import { renderLiquid } from './liquid';
 
 export interface LayoutOptions {
@@ -12,11 +11,11 @@ export interface LayoutOptions {
   userAvatar?: string;
 }
 
-export function layout(opts: LayoutOptions): string {
+export async function layout(views: Fetcher, opts: LayoutOptions): Promise<string> {
   const { admin = false, userName = '', userRole = '', userAvatar = '' } = opts;
   const userRoleLabel = userRole.split(',').map((role) => role.trim()).filter(Boolean).join(', ');
 
-  return renderLiquid(layoutTemplate, {
+  return renderLiquid(views, '/layout/default.liquid', {
     ...opts,
     admin,
     userName,

@@ -1,4 +1,3 @@
-import loginTemplate from '../views/templates/login.liquid';
 import { layout } from './layout';
 import { renderLiquid } from './liquid';
 
@@ -28,14 +27,14 @@ function providerIcon(provider: string): string {
          </svg>`;
 }
 
-export function loginPage(opts: {
+export async function loginPage(views: Fetcher, opts: {
   siteTitle: string;
   providers: string[];
   error?: string;
-}): string {
+}): Promise<string> {
   const { siteTitle, providers, error } = opts;
 
-  const body = renderLiquid(loginTemplate, {
+  const body = await renderLiquid(views, '/templates/login.liquid', {
     siteTitle,
     error,
     isForbidden: error === 'forbidden',
@@ -54,5 +53,5 @@ export function loginPage(opts: {
     }),
   });
 
-  return layout({ title: 'Sign In', siteTitle, body });
+  return layout(views, { title: 'Sign In', siteTitle, body });
 }

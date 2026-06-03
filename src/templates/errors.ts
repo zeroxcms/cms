@@ -1,14 +1,13 @@
-import errorTemplate from '../views/templates/error.liquid';
 import { renderLiquid } from './liquid';
 
-export function errorPage(opts: {
+export async function errorPage(views: Fetcher, opts: {
   status: 404 | 500;
   title: string;
   heading: string;
   message?: string;
   siteTitle: string;
-}): string {
-  return renderLiquid(errorTemplate, {
+}): Promise<string> {
+  return renderLiquid(views, '/templates/error.liquid', {
     ...opts,
     hasMessage: !!opts.message,
   });

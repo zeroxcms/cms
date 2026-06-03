@@ -134,11 +134,11 @@ function normalizeUser(provider: string, data: Record<string, unknown>): Normali
 export const authRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // GET /auth/login – show the login page (HTML)
-authRoutes.get('/login', (c) => {
+authRoutes.get('/login', async (c) => {
   const providers = getEnabledProviders(c.env);
   const error = c.req.query('error');
   return c.html(
-    loginPage({
+    await loginPage(c.env.VIEWS, {
       siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
       providers: providers.length > 0 ? providers : ['github'],
       error,

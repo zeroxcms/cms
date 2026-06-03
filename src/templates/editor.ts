@@ -1,5 +1,3 @@
-import structuredEditorTemplate from '../views/snippets/structured-editor.liquid';
-import editorTemplate from '../views/templates/editor.liquid';
 import { layout, escHtml } from './layout';
 import { renderLiquid } from './liquid';
 import type { Page, PageVersion, Tag } from '../types';
@@ -13,7 +11,7 @@ import {
 import type { BlueprintProps, Lect, LectItem } from '../utils/lect';
 import type { CmsConfig } from '../cms-config';
 
-function renderStructuredEditor(opts: {
+async function renderStructuredEditor(views: Fetcher, opts: {
   config: CmsConfig;
   language: string;
   lect: Lect;
@@ -21,7 +19,7 @@ function renderStructuredEditor(opts: {
   blockProps: Record<string, BlueprintProps>;
   blockNames: string[];
   versions: PageVersion[];
-}): string {
+}): Promise<string> {
   const { config, language, lect, blueprintProps, blockProps, blockNames } = opts;
   const blocks = getLectBlocks(lect).map((block, index) => {
     const type = String(block._type || 'default');
@@ -40,7 +38,7 @@ function renderStructuredEditor(opts: {
     };
   });
 
-  return renderLiquid(structuredEditorTemplate, {
+  return renderLiquid(views, '/snippets/structured-editor.liquid', {
     languageOptions: config.languages.map((lang) => ({
       value: lang,
       selected: lang === language,
@@ -161,7 +159,7 @@ function fieldLabel(name: string): string {
   return name.replace(/__/g, '.');
 }
 
-export function editorPage(opts: {
+export async function editorPage(views: Fetcher, opts: {
   siteTitle: string;
   userName: string;
   userRole: string;
@@ -183,7 +181,7 @@ export function editorPage(opts: {
     blockNames: string[];
     versions: PageVersion[];
   };
-}): string {
+}): Promise<string> {
   const {
     siteTitle,
     userName,
@@ -201,7 +199,7 @@ export function editorPage(opts: {
 
   const isEdit = !!page;
   const pageTitle = isEdit ? `Edit: ${page.name}` : 'New Page';
-  const structuredBlock = structured ? renderStructuredEditor(structured) : '';
+  const structuredBlock = structured ? await renderStructuredEditor(views, structured) : '';
   const versionHrefBase = page ? `/admin/pages/${page.id}/edit` : action;
   const versions = structured?.versions.map((version) => ({
     label: `${version.created_at}${version.action ? ` - ${version.action}` : ''}`,
@@ -209,7 +207,7 @@ export function editorPage(opts: {
     revertAction: `revert:${version.id}`,
   })) ?? [];
 
-  const body = renderLiquid(editorTemplate, {
+  const body = await renderLiquid(views, '/templates/editor.liquid', {
     pageTitle,
     action,
     isEdit,
@@ -246,7 +244,7 @@ export function editorPage(opts: {
     hasVersions: versions.length > 0,
   });
 
-  return layout({
+  return layout(views, {
     title: pageTitle,
     siteTitle,
     body,

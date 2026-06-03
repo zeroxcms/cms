@@ -1,10 +1,8 @@
-import tagFormTemplate from '../views/templates/tag-form.liquid';
-import tagsTemplate from '../views/templates/tags.liquid';
 import { layout } from './layout';
 import { renderLiquid } from './liquid';
 import type { Tag, TagType } from '../types';
 
-export function tagsPage(opts: {
+export async function tagsPage(views: Fetcher, opts: {
   siteTitle: string;
   userName: string;
   userRole: string;
@@ -12,10 +10,10 @@ export function tagsPage(opts: {
   tagTypes: TagType[];
   tags: Tag[];
   filterTagType: number;
-}): string {
+}): Promise<string> {
   const { siteTitle, userName, userRole, userAvatar, tagTypes, tags, filterTagType } = opts;
   const tagTypeMap = new Map(tagTypes.map((type) => [type.id, type.name]));
-  const body = renderLiquid(tagsTemplate, {
+  const body = await renderLiquid(views, '/templates/tags.liquid', {
     hasTags: tags.length > 0,
     filterOptions: tagTypes.map((type) => ({
       id: type.id,
@@ -31,7 +29,7 @@ export function tagsPage(opts: {
     })),
   });
 
-  return layout({
+  return layout(views, {
     title: 'Tags',
     siteTitle,
     body,
@@ -42,7 +40,7 @@ export function tagsPage(opts: {
   });
 }
 
-export function tagFormPage(opts: {
+export async function tagFormPage(views: Fetcher, opts: {
   siteTitle: string;
   userName: string;
   userRole: string;
@@ -54,7 +52,7 @@ export function tagFormPage(opts: {
   translatedPlaceholder: string;
   tagTypes: TagType[];
   parentTags: Tag[];
-}): string {
+}): Promise<string> {
   const {
     siteTitle,
     userName,
@@ -68,7 +66,7 @@ export function tagFormPage(opts: {
     tagTypes,
     parentTags,
   } = opts;
-  const body = renderLiquid(tagFormTemplate, {
+  const body = await renderLiquid(views, '/templates/tag-form.liquid', {
     isEdit: !!tag,
     heading: tag ? 'Edit Tag' : 'New Tag',
     action: tag ? `/admin/tags/${tag.id}` : '/admin/tags',
@@ -97,7 +95,7 @@ export function tagFormPage(opts: {
     deleteAction: tag ? `/admin/tags/${tag.id}/delete` : '',
   });
 
-  return layout({
+  return layout(views, {
     title: tag ? 'Edit Tag' : 'New Tag',
     siteTitle,
     body,

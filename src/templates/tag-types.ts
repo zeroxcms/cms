@@ -1,18 +1,16 @@
-import tagTypeFormTemplate from '../views/templates/tag-type-form.liquid';
-import tagTypesTemplate from '../views/templates/tag-types.liquid';
 import { layout } from './layout';
 import { renderLiquid } from './liquid';
 import type { TagType } from '../types';
 
-export function tagTypesPage(opts: {
+export async function tagTypesPage(views: Fetcher, opts: {
   siteTitle: string;
   userName: string;
   userRole: string;
   userAvatar: string;
   tagTypes: TagType[];
-}): string {
+}): Promise<string> {
   const { siteTitle, userName, userRole, userAvatar, tagTypes } = opts;
-  const body = renderLiquid(tagTypesTemplate, {
+  const body = await renderLiquid(views, '/templates/tag-types.liquid', {
     hasTagTypes: tagTypes.length > 0,
     tagTypes: tagTypes.map((tagType) => ({
       id: tagType.id,
@@ -22,7 +20,7 @@ export function tagTypesPage(opts: {
     })),
   });
 
-  return layout({
+  return layout(views, {
     title: 'Tag Types',
     siteTitle,
     body,
@@ -33,15 +31,15 @@ export function tagTypesPage(opts: {
   });
 }
 
-export function tagTypeFormPage(opts: {
+export async function tagTypeFormPage(views: Fetcher, opts: {
   siteTitle: string;
   userName: string;
   userRole: string;
   userAvatar: string;
   tagType?: TagType;
-}): string {
+}): Promise<string> {
   const { siteTitle, userName, userRole, userAvatar, tagType } = opts;
-  const body = renderLiquid(tagTypeFormTemplate, {
+  const body = await renderLiquid(views, '/templates/tag-type-form.liquid', {
     isEdit: !!tagType,
     heading: tagType ? 'Edit Tag Type' : 'New Tag Type',
     action: tagType ? `/admin/tag-types/${tagType.id}` : '/admin/tag-types',
@@ -50,7 +48,7 @@ export function tagTypeFormPage(opts: {
     deleteAction: tagType ? `/admin/tag-types/${tagType.id}/delete` : '',
   });
 
-  return layout({
+  return layout(views, {
     title: tagType ? 'Edit Tag Type' : 'New Tag Type',
     siteTitle,
     body,
