@@ -11,7 +11,7 @@ run_worker_first = true
 [[d1_databases]]
 binding = "DB"
 database_name = "cms"
-database_id = "a029bb80-f174-464e-bd72-ab49a2e3b400"
+database_id = "036882b7-c7d1-4163-9a40-cba28bc87233"
 migrations_dir = "migrations"
 
 [vars]

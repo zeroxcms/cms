@@ -337,6 +337,8 @@ export async function editorPage(views: Fetcher, opts: {
       weight: page?.weight ?? 5,
       start: page?.start ? page.start.replace(' ', 'T').slice(0, 16) : '',
       end: page?.end ? page.end.replace(' ', 'T').slice(0, 16) : '',
+      creator: page?.creator ?? '',
+      editors: page?.editors ?? '',
       lect: page?.lect ?? '',
     },
     parentOptions: parentPages

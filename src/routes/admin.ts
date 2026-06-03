@@ -69,6 +69,18 @@ function num(v: unknown, fallback = 5): number {
   return isNaN(n) ? fallback : n;
 }
 
+function userIdFromContext(c: AdminContext): number {
+  return num(c.get('user').sub, 0);
+}
+
+function editorsFromForm(form: FormData): string | null {
+  const ids = str(form.get('editors'))
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => /^\d+$/.test(id));
+  return ids.length ? Array.from(new Set(ids)).join(',') : null;
+}
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -276,8 +288,8 @@ async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
   if (!page) return false;
 
   await db.prepare(
-    `INSERT INTO live_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO live_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id, creator, editors)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
        name = excluded.name,
        slug = excluded.slug,
@@ -286,9 +298,23 @@ async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
        end = excluded.end,
        page_type = excluded.page_type,
        lect = excluded.lect,
-       page_id = excluded.page_id`,
+       page_id = excluded.page_id,
+       creator = excluded.creator,
+       editors = excluded.editors`,
   )
-    .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, page.lect, page.page_id)
+    .bind(
+      page.uuid,
+      page.name,
+      page.slug,
+      page.weight,
+      page.start,
+      page.end,
+      page.page_type,
+      page.lect,
+      page.page_id,
+      page.creator,
+      page.editors,
+    )
     .run();
 
   const livePage = await db.prepare('SELECT id FROM live_pages WHERE uuid = ?')
@@ -421,6 +447,7 @@ adminRoutes.post('/pages/new_post/:pageType', async (c) => {
   const pageType = c.req.param('pageType');
   const form = await c.req.formData();
   const language = languageFromRequest(c, form);
+  const creator = userIdFromContext(c);
   const name = str(form.get('name')) || `Untitled ${pageType.replace(/[_-]/g, ' ')}`;
   const slug = str(form.get('slug')) || slugify(name);
   const lect = stringifyLect(
@@ -433,10 +460,10 @@ adminRoutes.post('/pages/new_post/:pageType', async (c) => {
   );
 
   const result = await c.env.DB.prepare(
-    `INSERT INTO draft_pages (name, slug, weight, page_type, lect)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO draft_pages (name, slug, weight, page_type, lect, creator, editors)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(name, slug, num(form.get('weight')), pageType, lect)
+    .bind(name, slug, num(form.get('weight')), pageType, lect, creator || null, editorsFromForm(form))
     .run();
   const page = await c.env.DB.prepare('SELECT id FROM draft_pages WHERE rowid = ?')
     .bind(result.meta.last_row_id)
@@ -467,13 +494,17 @@ adminRoutes.get('/pages/import/:pageType', async (c) => {
 });
 
 adminRoutes.post('/pages/import/:pageType', async (c) => {
+  const user = c.get('user');
   const pageType = c.req.param('pageType');
   const form = await c.req.formData();
   const raw = str(form.get('items'));
+  const creator = parseInt(user.sub, 10) || null;
   const items = JSON.parse(raw) as Array<{
     name?: string;
     slug?: string;
     weight?: number;
+    creator?: number | null;
+    editors?: string | null;
     lect?: unknown;
     values?: Record<string, Record<string, string>>;
     attributes?: Record<string, string>;
@@ -502,11 +533,22 @@ adminRoutes.post('/pages/import/:pageType', async (c) => {
     const slug = item.slug ?? slugify(name);
 
     await c.env.DB.prepare(
-      `INSERT INTO draft_pages (name, slug, weight, page_type, lect)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(uuid) DO UPDATE SET name = excluded.name`,
+      `INSERT INTO draft_pages (name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(uuid) DO UPDATE SET
+         name = excluded.name,
+         creator = COALESCE(draft_pages.creator, excluded.creator),
+         editors = excluded.editors`,
     )
-      .bind(name, slug, item.weight ?? 5, pageType, stringifyLect(lect))
+      .bind(
+        name,
+        slug,
+        item.weight ?? 5,
+        pageType,
+        stringifyLect(lect),
+        item.creator ?? creator,
+        item.editors ?? null,
+      )
       .run();
     imported++;
   }
@@ -613,6 +655,8 @@ adminRoutes.post('/pages', async (c) => {
   const endVal = nullableStr(form.get('end'));
   const pageIdVal = nullableStr(form.get('page_id'));
   const weightVal = num(form.get('weight'));
+  const creator = userIdFromContext(c);
+  const editorsVal = editorsFromForm(form);
   const lectVal = stringifyLect(
     lectFromForm(
       pageTypeVal,
@@ -624,10 +668,21 @@ adminRoutes.post('/pages', async (c) => {
 
   // Insert page
   const pageResult = await c.env.DB.prepare(
-    `INSERT INTO draft_pages (name, slug, weight, start, end, page_type, lect, page_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO draft_pages (name, slug, weight, start, end, page_type, lect, page_id, creator, editors)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(name, slug, weightVal, startVal, endVal, pageTypeVal, lectVal, pageIdVal ? parseInt(pageIdVal, 10) : null)
+    .bind(
+      name,
+      slug,
+      weightVal,
+      startVal,
+      endVal,
+      pageTypeVal,
+      lectVal,
+      pageIdVal ? parseInt(pageIdVal, 10) : null,
+      creator || null,
+      editorsVal,
+    )
     .run();
 
   // The schema uses a custom DEFAULT id expression (not INTEGER PRIMARY KEY),
@@ -827,6 +882,7 @@ adminRoutes.post('/pages/:id', async (c) => {
   const endVal = nullableStr(form.get('end'));
   const pageIdVal = nullableStr(form.get('page_id'));
   const weightVal = num(form.get('weight'));
+  const editorsVal = editorsFromForm(form);
   const lect = applyStructuredAction(
     lectFromForm(pageTypeVal, lectForPage(pageTypeVal, page.lect), form, language),
     pageTypeVal,
@@ -837,9 +893,20 @@ adminRoutes.post('/pages/:id', async (c) => {
 
   // Update page metadata
   await c.env.DB.prepare(
-    `UPDATE draft_pages SET name=?, slug=?, weight=?, start=?, end=?, page_type=?, lect=?, page_id=? WHERE id=?`,
+    `UPDATE draft_pages SET name=?, slug=?, weight=?, start=?, end=?, page_type=?, lect=?, page_id=?, editors=? WHERE id=?`,
   )
-    .bind(name, slug, weightVal, startVal, endVal, pageTypeVal, lectVal, pageIdVal ? parseInt(pageIdVal, 10) : null, pageId)
+    .bind(
+      name,
+      slug,
+      weightVal,
+      startVal,
+      endVal,
+      pageTypeVal,
+      lectVal,
+      pageIdVal ? parseInt(pageIdVal, 10) : null,
+      editorsVal,
+      pageId,
+    )
     .run();
 
   const newVersionId = await savePageVersion(
@@ -927,8 +994,8 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
 
   // Copy page into trash table (preserve uuid so we can restore)
   await c.env.DB.prepare(
-    `INSERT INTO trash_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO trash_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id, creator, editors)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
        name = excluded.name,
        slug = excluded.slug,
@@ -937,9 +1004,23 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
        end = excluded.end,
        page_type = excluded.page_type,
        lect = excluded.lect,
-       page_id = excluded.page_id`,
+       page_id = excluded.page_id,
+       creator = excluded.creator,
+       editors = excluded.editors`,
   )
-    .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, page.lect, page.page_id)
+    .bind(
+      page.uuid,
+      page.name,
+      page.slug,
+      page.weight,
+      page.start,
+      page.end,
+      page.page_type,
+      page.lect,
+      page.page_id,
+      page.creator,
+      page.editors,
+    )
     .run();
 
   // Fetch the trash page id
@@ -1012,8 +1093,8 @@ adminRoutes.post('/trash/:id/restore', async (c) => {
 
   // Upsert page back into draft page table (match on uuid)
   await c.env.DB.prepare(
-    `INSERT INTO draft_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO draft_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id, creator, editors)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
        name = excluded.name,
        slug = excluded.slug,
@@ -1022,9 +1103,23 @@ adminRoutes.post('/trash/:id/restore', async (c) => {
        end = excluded.end,
        page_type = excluded.page_type,
        lect = excluded.lect,
-       page_id = excluded.page_id`,
+       page_id = excluded.page_id,
+       creator = excluded.creator,
+       editors = excluded.editors`,
   )
-    .bind(trashPage.uuid, trashPage.name, trashPage.slug, trashPage.weight, trashPage.start, trashPage.end, trashPage.page_type, trashPage.lect, trashPage.page_id)
+    .bind(
+      trashPage.uuid,
+      trashPage.name,
+      trashPage.slug,
+      trashPage.weight,
+      trashPage.start,
+      trashPage.end,
+      trashPage.page_type,
+      trashPage.lect,
+      trashPage.page_id,
+      trashPage.creator,
+      trashPage.editors,
+    )
     .run();
 
   const draftPage = await c.env.DB.prepare('SELECT id FROM draft_pages WHERE uuid = ?')
