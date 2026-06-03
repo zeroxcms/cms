@@ -1156,52 +1156,13 @@ adminRoutes.get('/tag-types', async (c) => {
       .first<{ avatar_url: string | null }>(),
   ]);
 
-  const rows = tagTypes.results
-    .map(
-      (t) =>
-        `<tr class="hover:bg-gray-50">
-           <td class="px-6 py-3 text-sm font-medium text-gray-900">${escHtml(t.name)}</td>
-           <td class="px-6 py-3 text-sm font-mono text-gray-500">${escHtml(t.slug)}</td>
-           <td class="px-6 py-3 text-right">
-             <a href="/admin/tag-types/${t.id}/edit" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
-           </td>
-         </tr>`,
-    )
-    .join('');
-
-  const body = `
-    <div class="px-8 py-8">
-      <div class="flex items-center justify-between mb-6">
-        <h2 class="text-2xl font-bold text-gray-900">Tag Types</h2>
-        <a href="/admin/tag-types/new" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg">New Tag Type</a>
-      </div>
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <table class="w-full text-left">
-          <thead class="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Slug</th>
-              <th class="px-6 py-3"></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100">
-            ${rows || '<tr><td colspan="3" class="px-6 py-10 text-center text-gray-400">No tag types yet.</td></tr>'}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
-
-  return c.html(
-    layout({
-      title: 'Tags',
-      siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
-      body,
-      admin: true,
-      userName: user.name,
-      userRole: user.role,
-      userAvatar: dbUser?.avatar_url ?? '',
-    }),
-  );
+  return c.html(tagTypesPage({
+    siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
+    userName: user.name,
+    userRole: user.role,
+    userAvatar: dbUser?.avatar_url ?? '',
+    tagTypes: tagTypes.results,
+  }));
 });
 
 adminRoutes.get('/tag-types/new', async (c) => tagTypeForm(c));
@@ -1258,61 +1219,14 @@ adminRoutes.get('/tags', async (c) => {
       .bind(parseInt(user.sub, 10))
       .first<{ avatar_url: string | null }>(),
   ]);
-  const tagTypeMap = new Map(tagTypes.results.map((type) => [type.id, type.name]));
-  const filterOptions = tagTypes.results
-    .map((type) => `<option value="${type.id}" ${filterTagType === type.id ? 'selected' : ''}>${escHtml(type.name)}</option>`)
-    .join('');
-  const rows = tags.results
-    .map((tag) => `
-      <tr class="hover:bg-gray-50">
-        <td class="px-6 py-3 text-sm font-medium text-gray-900">${escHtml(tag.name)}</td>
-        <td class="px-6 py-3 text-sm font-mono text-gray-500">${escHtml(tag.slug)}</td>
-        <td class="px-6 py-3 text-sm text-gray-500">${escHtml(tag.tag_type_id ? tagTypeMap.get(tag.tag_type_id) ?? '' : '')}</td>
-        <td class="px-6 py-3 text-right">
-          <a href="/admin/tags/${tag.id}/edit" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
-        </td>
-      </tr>`)
-    .join('');
-  const body = `
-    <div class="px-8 py-8">
-      <div class="flex items-center justify-between mb-6">
-        <h2 class="text-2xl font-bold text-gray-900">Tags</h2>
-        <div class="flex items-center gap-2">
-          <a href="/admin/tag-types" class="px-4 py-2 bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300">Tag Types</a>
-          <a href="/admin/tags/new" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg">New Tag</a>
-        </div>
-      </div>
-      <form method="GET" class="mb-4 flex items-center gap-2">
-        <select name="filter_tag_type" class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
-          <option value="0">All tag types</option>
-          ${filterOptions}
-        </select>
-        <button type="submit" class="px-3 py-2 border border-gray-300 rounded-lg text-sm font-semibold">Filter</button>
-      </form>
-      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <table class="w-full text-left">
-          <thead class="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Slug</th>
-              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
-              <th class="px-6 py-3"></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100">
-            ${rows || '<tr><td colspan="4" class="px-6 py-10 text-center text-gray-400">No tags yet.</td></tr>'}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
-  return c.html(layout({
-    title: 'Tags',
+  return c.html(tagsPage({
     siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
-    body,
-    admin: true,
     userName: user.name,
     userRole: user.role,
     userAvatar: dbUser?.avatar_url ?? '',
+    tagTypes: tagTypes.results,
+    tags: tags.results,
+    filterTagType,
   }));
 });
 
@@ -1375,39 +1289,12 @@ async function tagTypeForm(c: AdminContext, tagType?: TagType) {
   const dbUser = await c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
     .bind(parseInt(user.sub, 10))
     .first<{ avatar_url: string | null }>();
-  const action = tagType ? `/admin/tag-types/${tagType.id}` : '/admin/tag-types';
-  const deleteButton = tagType
-    ? `<form method="POST" action="/admin/tag-types/${tagType.id}/delete">
-         <button type="submit" class="px-4 py-2 text-sm font-semibold text-red-600">Delete</button>
-       </form>`
-    : '';
-  const body = `
-    <div class="px-8 py-8 max-w-xl">
-      <h2 class="text-2xl font-bold text-gray-900 mb-6">${tagType ? 'Edit' : 'New'} Tag Type</h2>
-      <form method="POST" action="${action}" class="space-y-4">
-        <label class="block">
-          <span class="block text-sm font-medium text-gray-700 mb-1">Name</span>
-          <input name="name" required value="${escHtml(tagType?.name ?? '')}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-        </label>
-        <label class="block">
-          <span class="block text-sm font-medium text-gray-700 mb-1">Slug</span>
-          <input name="slug" value="${escHtml(tagType?.slug ?? '')}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-        </label>
-        <div class="flex items-center gap-3">
-          <button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg">Save</button>
-          <a href="/admin/tag-types" class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-semibold">Cancel</a>
-        </div>
-      </form>
-      ${deleteButton}
-    </div>`;
-  return c.html(layout({
-    title: tagType ? 'Edit Tag Type' : 'New Tag Type',
+  return c.html(tagTypeFormPage({
     siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
-    body,
-    admin: true,
     userName: user.name,
     userRole: user.role,
     userAvatar: dbUser?.avatar_url ?? '',
+    tagType,
   }));
 }
 
@@ -1426,100 +1313,17 @@ async function tagForm(c: AdminContext, tag?: Tag) {
   const translatedName = language === cmsConfig.defaultLanguage ? rawTranslatedName || tag?.name || '' : rawTranslatedName;
   const defaultTranslatedName = getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || tag?.name || '';
   const translatedPlaceholder = language === cmsConfig.defaultLanguage ? '' : defaultTranslatedName;
-  const languageOptions = cmsConfig.languages
-    .map((lang) => `<option value="${escHtml(lang)}" ${lang === language ? 'selected' : ''}>${escHtml(lang)}</option>`)
-    .join('');
-  const tagTypeOptions = tagTypes.results
-    .map((type) => `<option value="${type.id}" ${tag?.tag_type_id === type.id ? 'selected' : ''}>${escHtml(type.name)}</option>`)
-    .join('');
-  const parentOptions = tags.results
-    .filter((candidate) => candidate.id !== tag?.id)
-    .map((candidate) => `<option value="${candidate.id}" ${tag?.parent_tag === candidate.id ? 'selected' : ''}>${escHtml(candidate.name)}</option>`)
-    .join('');
-  const action = tag ? `/admin/tags/${tag.id}` : '/admin/tags';
-  const deleteButton = tag
-    ? `<form method="POST" action="/admin/tags/${tag.id}/delete">
-         <button type="submit" class="px-4 py-2 text-sm font-semibold text-red-600">Delete</button>
-       </form>`
-    : '';
-  const body = `
-    <div class="px-8 py-8 max-w-xl">
-      <h2 class="text-2xl font-bold text-gray-900 mb-6">${tag ? 'Edit' : 'New'} Tag</h2>
-      <form method="POST" action="${action}" class="space-y-4">
-        <label class="block">
-          <span class="block text-sm font-medium text-gray-700 mb-1">Language</span>
-          <select name="_language"
-                  onchange="switchTagLanguage(this.value)"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            ${languageOptions}
-          </select>
-        </label>
-        <label class="block">
-          <span class="block text-sm font-medium text-gray-700 mb-1">Name</span>
-          <input id="tag_name" name="name" required value="${escHtml(tag?.name ?? '')}"
-                 oninput="autoTagSlug(this.value)"
-                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-        </label>
-        <label class="block">
-          <span class="block text-sm font-medium text-gray-700 mb-1">Translated Name</span>
-          <input name=".name|${escHtml(language)}"
-                 value="${escHtml(translatedName)}"
-                 placeholder="${escHtml(translatedPlaceholder)}"
-                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-        </label>
-        <label class="block">
-          <span class="block text-sm font-medium text-gray-700 mb-1">Slug</span>
-          <input id="tag_slug" name="slug" value="${escHtml(tag?.slug ?? '')}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-        </label>
-        <label class="block">
-          <span class="block text-sm font-medium text-gray-700 mb-1">Tag Type</span>
-          <select name="tag_type_id" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            <option value="">None</option>
-            ${tagTypeOptions}
-          </select>
-        </label>
-        <label class="block">
-          <span class="block text-sm font-medium text-gray-700 mb-1">Parent Tag</span>
-          <select name="parent_tag" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-            <option value="">None</option>
-            ${parentOptions}
-          </select>
-        </label>
-        <div class="flex items-center gap-3">
-          <button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg">Save</button>
-          <a href="/admin/tags" class="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-semibold">Cancel</a>
-        </div>
-      </form>
-      ${deleteButton}
-    </div>
-    <script>
-      function switchTagLanguage(language) {
-        const params = new window.URLSearchParams(window.location.search);
-        params.set('language', language);
-        window.location.href = window.location.pathname + '?' + params.toString();
-      }
-
-      let tagSlugEdited = ${tag ? 'true' : 'false'};
-      const tagSlugInput = document.getElementById('tag_slug');
-      if (tagSlugInput) {
-        tagSlugInput.addEventListener('input', () => { tagSlugEdited = true; });
-      }
-
-      function autoTagSlug(name) {
-        if (tagSlugEdited || !tagSlugInput) return;
-        tagSlugInput.value = name.toLowerCase()
-          .trim()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '');
-      }
-    </script>`;
-  return c.html(layout({
-    title: tag ? 'Edit Tag' : 'New Tag',
+  return c.html(tagFormPage({
     siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
-    body,
-    admin: true,
     userName: user.name,
     userRole: user.role,
     userAvatar: dbUser?.avatar_url ?? '',
+    tag,
+    language,
+    languages: cmsConfig.languages,
+    translatedName,
+    translatedPlaceholder,
+    tagTypes: tagTypes.results,
+    parentTags: tags.results,
   }));
 }
