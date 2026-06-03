@@ -218,25 +218,18 @@ function ensureDefaultLectName(lect: Lect, name: string): void {
   };
 }
 
-async function getCurrentVersion(db: D1Database, page: Page): Promise<PageVersion | null> {
-  if (!page.current_page_version_id) return null;
-  return db.prepare('SELECT * FROM draft_page_versions WHERE id = ?')
-    .bind(page.current_page_version_id)
-    .first<PageVersion>();
-}
-
-async function saveDraftVersion(
+async function savePageVersion(
   db: D1Database,
   pageId: number,
   lect: string | null,
   action: string | null,
 ): Promise<number> {
   const result = await db.prepare(
-    `INSERT INTO draft_page_versions (page_id, lect, action) VALUES (?, ?, ?)`,
+    `INSERT INTO page_versions (page_id, lect, action) VALUES (?, ?, ?)`,
   )
     .bind(pageId, lect, action)
     .run();
-  const row = await db.prepare('SELECT id FROM draft_page_versions WHERE rowid = ?')
+  const row = await db.prepare('SELECT id FROM page_versions WHERE rowid = ?')
     .bind(result.meta.last_row_id)
     .first<{ id: number }>();
   return row!.id;
@@ -248,10 +241,9 @@ async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
     .first<Page>();
   if (!page) return false;
 
-  const version = await getCurrentVersion(db, page);
   await db.prepare(
-    `INSERT INTO live_pages (uuid, name, slug, weight, start, end, page_type, current_page_version_id, lect, page_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO live_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
        name = excluded.name,
        slug = excluded.slug,
@@ -262,7 +254,7 @@ async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
        lect = excluded.lect,
        page_id = excluded.page_id`,
   )
-    .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, null, page.lect, page.page_id)
+    .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, page.lect, page.page_id)
     .run();
 
   const livePage = await db.prepare('SELECT id FROM live_pages WHERE uuid = ?')
@@ -270,30 +262,7 @@ async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
     .first<{ id: number }>();
   if (!livePage) return true;
 
-  await Promise.all([
-    db.prepare('DELETE FROM live_page_versions WHERE page_id = ?').bind(livePage.id).run(),
-    db.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run(),
-  ]);
-
-  let liveVersionId: number | null = null;
-  if (version) {
-    const versionResult = await db.prepare(
-      `INSERT INTO live_page_versions (uuid, page_id, lect, action)
-       VALUES (?, ?, ?, ?)`,
-    )
-      .bind(version.uuid, livePage.id, version.lect, 'publish')
-      .run();
-    const liveVersion = await db.prepare('SELECT id FROM live_page_versions WHERE rowid = ?')
-      .bind(versionResult.meta.last_row_id)
-      .first<{ id: number }>();
-    liveVersionId = liveVersion?.id ?? null;
-  }
-
-  if (liveVersionId !== null) {
-    await db.prepare('UPDATE live_pages SET current_page_version_id = ? WHERE id = ?')
-      .bind(liveVersionId, livePage.id)
-      .run();
-  }
+  await db.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run();
 
   const pageTags = await db.prepare('SELECT * FROM draft_page_tags WHERE page_id = ?')
     .bind(pageId)
@@ -434,7 +403,7 @@ adminRoutes.post('/pages/new_post/:pageType', async (c) => {
     .first<{ id: number }>();
   if (!page) return c.notFound();
 
-  const versionId = await saveDraftVersion(c.env.DB, page.id, lect, 'create');
+  const versionId = await savePageVersion(c.env.DB, page.id, lect, 'create');
   await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
     .bind(versionId, page.id)
     .run();
@@ -642,7 +611,7 @@ adminRoutes.post('/pages', async (c) => {
   const pageId = pageRow!.id;
 
   // Insert page version
-  const versionId = await saveDraftVersion(c.env.DB, pageId, lectVal, 'create');
+  const versionId = await savePageVersion(c.env.DB, pageId, lectVal, 'create');
 
   // Link current version
   await c.env.DB.prepare(
@@ -685,15 +654,15 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
 
   const [version, versions, pageTags] = await Promise.all([
     Number.isFinite(requestedVersionId)
-      ? c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE page_id = ? AND id = ?')
+      ? c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? AND id = ?')
           .bind(pageId, requestedVersionId)
           .first<PageVersion>()
       : page.current_page_version_id
-      ? c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE id = ?')
+      ? c.env.DB.prepare('SELECT * FROM page_versions WHERE id = ?')
           .bind(page.current_page_version_id)
           .first<PageVersion>()
       : Promise.resolve(null),
-    c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
+    c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
       .bind(pageId)
       .all<PageVersion>(),
     c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?')
@@ -752,7 +721,7 @@ adminRoutes.post('/pages/:id', async (c) => {
 
   if (action.startsWith('revert:')) {
     const versionId = parseInt(action.split(':')[1], 10);
-    const version = await c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE page_id = ? AND id = ?')
+    const version = await c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? AND id = ?')
       .bind(pageId, versionId)
       .first<PageVersion>();
     if (!version) return c.notFound();
@@ -767,11 +736,11 @@ adminRoutes.post('/pages/:id', async (c) => {
       c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
       c.env.DB.prepare('SELECT id, name, slug FROM tags ORDER BY name ASC').all<Tag>(),
       page.current_page_version_id
-        ? c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE id = ?')
+        ? c.env.DB.prepare('SELECT * FROM page_versions WHERE id = ?')
             .bind(page.current_page_version_id)
             .first<PageVersion>()
         : Promise.resolve(null),
-      c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
+      c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
         .bind(pageId)
         .all<PageVersion>(),
       c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?').bind(pageId).all<{ tag_id: number }>(),
@@ -828,7 +797,7 @@ adminRoutes.post('/pages/:id', async (c) => {
     .bind(name, slug, weightVal, startVal, endVal, pageTypeVal, lectVal, pageIdVal ? parseInt(pageIdVal, 10) : null, pageId)
     .run();
 
-  const newVersionId = await saveDraftVersion(
+  const newVersionId = await savePageVersion(
     c.env.DB,
     pageId,
     lectVal,
@@ -887,10 +856,7 @@ adminRoutes.post('/pages/:id/unpublish', async (c) => {
     .bind(page.uuid)
     .first<{ id: number }>();
   if (livePage) {
-    await Promise.all([
-      c.env.DB.prepare('DELETE FROM live_page_versions WHERE page_id = ?').bind(livePage.id).run(),
-      c.env.DB.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run(),
-    ]);
+    await c.env.DB.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run();
   }
 
   await c.env.DB.prepare('DELETE FROM live_pages WHERE uuid = ?')
@@ -912,8 +878,8 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
 
   // Copy page into trash table (preserve uuid so we can restore)
   await c.env.DB.prepare(
-    `INSERT INTO trash_pages (uuid, name, slug, weight, start, end, page_type, current_page_version_id, lect, page_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO trash_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
        name = excluded.name,
        slug = excluded.slug,
@@ -924,7 +890,7 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
        lect = excluded.lect,
        page_id = excluded.page_id`,
   )
-    .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, page.current_page_version_id, page.lect, page.page_id)
+    .bind(page.uuid, page.name, page.slug, page.weight, page.start, page.end, page.page_type, page.lect, page.page_id)
     .run();
 
   // Fetch the trash page id
@@ -933,20 +899,6 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
     .first<{ id: number }>();
 
   if (trashPage) {
-    // Copy page versions into trash
-    const versions = await c.env.DB.prepare('SELECT * FROM draft_page_versions WHERE page_id = ?')
-      .bind(pageId)
-      .all<PageVersion>();
-    for (const v of versions.results) {
-      await c.env.DB.prepare(
-        `INSERT INTO trash_page_versions (uuid, page_id, lect, action)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(uuid) DO UPDATE SET lect = excluded.lect, action = excluded.action`,
-      )
-        .bind(v.uuid, trashPage.id, v.lect, v.action)
-        .run();
-    }
-
     // Copy page tags into trash
     const pageTags = await c.env.DB.prepare('SELECT * FROM draft_page_tags WHERE page_id = ?')
       .bind(pageId)
@@ -964,10 +916,7 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
     .bind(page.uuid)
     .first<{ id: number }>();
   if (livePage) {
-    await Promise.all([
-      c.env.DB.prepare('DELETE FROM live_page_versions WHERE page_id = ?').bind(livePage.id).run(),
-      c.env.DB.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run(),
-    ]);
+    await c.env.DB.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run();
   }
 
   // Unpublish from live (remove by uuid)
@@ -1087,7 +1036,7 @@ adminRoutes.post('/trash/:id/restore', async (c) => {
     .first<Page>();
   if (!trashPage) return c.notFound();
 
-  // Upsert page back into draft content table (match on uuid)
+  // Upsert page back into draft page table (match on uuid)
   await c.env.DB.prepare(
     `INSERT INTO draft_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1109,25 +1058,12 @@ adminRoutes.post('/trash/:id/restore', async (c) => {
     .first<{ id: number }>();
 
   if (draftPage) {
-    // Restore page versions to draft
-    const trashVersions = await c.env.DB.prepare('SELECT * FROM trash_page_versions WHERE page_id = ?')
-      .bind(trashId)
-      .all<PageVersion>();
-    let lastVersionId: number | null = null;
-    for (const v of trashVersions.results) {
-      await c.env.DB.prepare(
-        `INSERT INTO draft_page_versions (uuid, page_id, lect, action)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(uuid) DO UPDATE SET lect = excluded.lect, action = excluded.action`,
-      )
-        .bind(v.uuid, draftPage.id, v.lect, v.action)
-        .run();
-
-      const restoredVersion = await c.env.DB.prepare('SELECT id FROM draft_page_versions WHERE uuid = ?')
-        .bind(v.uuid)
-        .first<{ id: number }>();
-      lastVersionId = restoredVersion?.id ?? lastVersionId;
-    }
+    const restoredVersionId = await savePageVersion(
+      c.env.DB,
+      draftPage.id,
+      trashPage.lect,
+      'restore',
+    );
 
     // Restore page tags to draft
     const trashTags = await c.env.DB.prepare('SELECT * FROM trash_page_tags WHERE page_id = ?')
@@ -1141,12 +1077,9 @@ adminRoutes.post('/trash/:id/restore', async (c) => {
         .run();
     }
 
-    // Restore current_page_version_id pointer if we have versions
-    if (lastVersionId !== null) {
-      await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
-        .bind(lastVersionId, draftPage.id)
-        .run();
-    }
+    await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
+      .bind(restoredVersionId, draftPage.id)
+      .run();
   }
 
   // Remove from TRASH

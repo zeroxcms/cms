@@ -41,7 +41,7 @@ export interface Page {
   start: string | null;
   end: string | null;
   page_type: string | null;
-  current_page_version_id: number | null;
+  current_page_version_id?: number | null;
   lect: string | null;
   page_id: number | null;
 }

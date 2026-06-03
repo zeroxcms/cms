@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "cms"
-database_id = "09d8b4d1-871e-4bd1-a18d-32a9a734c37f"
+database_id = "a029bb80-f174-464e-bd72-ab49a2e3b400"
 migrations_dir = "migrations"
 
 [vars]

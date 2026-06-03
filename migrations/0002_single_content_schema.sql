@@ -60,13 +60,12 @@ CREATE TABLE IF NOT EXISTS trash_pages(
     start DATETIME ,
     end DATETIME ,
     page_type TEXT ,
-    current_page_version_id INTEGER ,
     lect TEXT ,
     page_id INTEGER ,
     FOREIGN KEY (page_id) REFERENCES trash_pages (id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS draft_page_versions(
+CREATE TABLE IF NOT EXISTS page_versions(
     id INTEGER UNIQUE DEFAULT ((( strftime('%s','now') - 1563741060 ) * 100000) + (RANDOM() & 65535)) NOT NULL ,
     uuid TEXT UNIQUE DEFAULT (lower(hex( randomblob(4)) || '-' || hex( randomblob(2)) || '-' || '4' || substr( hex( randomblob(2)), 2)
     || '-' || substr('AB89', 1 + (abs(random()) % 4) , 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))) ) NOT NULL ,
@@ -74,16 +73,6 @@ CREATE TABLE IF NOT EXISTS draft_page_versions(
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL ,
     page_id INTEGER NOT NULL ,
     FOREIGN KEY (page_id) REFERENCES draft_pages (id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS trash_page_versions(
-    id INTEGER UNIQUE DEFAULT ((( strftime('%s','now') - 1563741060 ) * 100000) + (RANDOM() & 65535)) NOT NULL ,
-    uuid TEXT UNIQUE DEFAULT (lower(hex( randomblob(4)) || '-' || hex( randomblob(2)) || '-' || '4' || substr( hex( randomblob(2)), 2)
-    || '-' || substr('AB89', 1 + (abs(random()) % 4) , 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))) ) NOT NULL ,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL ,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL ,
-    page_id INTEGER NOT NULL ,
-    FOREIGN KEY (page_id) REFERENCES trash_pages (id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS draft_page_tags(
@@ -126,12 +115,8 @@ CREATE TRIGGER IF NOT EXISTS trash_pages_updated_at AFTER UPDATE ON trash_pages 
     UPDATE trash_pages SET updated_at = CURRENT_TIMESTAMP WHERE id = old.id;
 END;
 
-CREATE TRIGGER IF NOT EXISTS draft_page_versions_updated_at AFTER UPDATE ON draft_page_versions WHEN old.updated_at < CURRENT_TIMESTAMP BEGIN
-    UPDATE draft_page_versions SET updated_at = CURRENT_TIMESTAMP WHERE id = old.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS trash_page_versions_updated_at AFTER UPDATE ON trash_page_versions WHEN old.updated_at < CURRENT_TIMESTAMP BEGIN
-    UPDATE trash_page_versions SET updated_at = CURRENT_TIMESTAMP WHERE id = old.id;
+CREATE TRIGGER IF NOT EXISTS page_versions_updated_at AFTER UPDATE ON page_versions WHEN old.updated_at < CURRENT_TIMESTAMP BEGIN
+    UPDATE page_versions SET updated_at = CURRENT_TIMESTAMP WHERE id = old.id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS draft_page_tags_updated_at AFTER UPDATE ON draft_page_tags WHEN old.updated_at < CURRENT_TIMESTAMP BEGIN
