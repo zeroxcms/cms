@@ -10,7 +10,7 @@ const SECURITY_HEADERS: Record<string, string> = {
     "object-src 'none'",
     "frame-ancestors 'none'",
   ].join('; '),
-  'Referrer-Policy': 'no-referrer',
+  'Referrer-Policy': 'same-origin',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
@@ -55,6 +55,10 @@ export function rejectCrossOriginMutation(request: Request, allowedOrigins: stri
     return null;
   }
 
+  if (isAllowedReferer(request.headers.get('Referer'), validOrigins)) {
+    return null;
+  }
+
   if (request.headers.get('Sec-Fetch-Site') === 'cross-site') {
     return new Response('Forbidden', { status: 403 });
   }
@@ -73,6 +77,10 @@ export function rejectCrossSiteRequest(request: Request, allowedOrigins: string[
     return null;
   }
 
+  if (isAllowedReferer(request.headers.get('Referer'), validOrigins)) {
+    return null;
+  }
+
   if (request.headers.get('Sec-Fetch-Site') === 'cross-site') {
     return new Response('Forbidden', { status: 403 });
   }
@@ -81,4 +89,13 @@ export function rejectCrossSiteRequest(request: Request, allowedOrigins: string[
 
 function isLocalHost(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
+}
+
+function isAllowedReferer(referer: string | null, validOrigins: Set<string>): boolean {
+  if (!referer) return false;
+  try {
+    return validOrigins.has(new URL(referer).origin);
+  } catch {
+    return false;
+  }
 }

@@ -244,6 +244,12 @@ export function editorPage(opts: {
     )
     .join('');
 
+  const pageTypeOptions = structured
+    ? Object.keys(structured.config.blueprint)
+        .map((pageType) => `<option value="${escHtml(pageType)}"></option>`)
+        .join('')
+    : '';
+
   const structuredBlock = structured
     ? renderStructuredEditor(structured)
     : '';
@@ -309,10 +315,13 @@ export function editorPage(opts: {
 
             <div>
               <label for="page_type" class="block text-sm font-medium text-gray-700 mb-1">Page Type</label>
-              <input type="text" id="page_type" name="page_type"
+              <input type="text" id="page_type" name="page_type" list="page_type_options"
                      value="${escHtml(page?.page_type ?? defaultPageType)}"
                      placeholder="e.g. blog, product, landing"
                      class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+              <datalist id="page_type_options">
+                ${pageTypeOptions}
+              </datalist>
             </div>
 
             <div>
