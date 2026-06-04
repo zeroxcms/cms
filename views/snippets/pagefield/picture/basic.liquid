@@ -63,10 +63,17 @@
     form.append('file', file);
 
     try {
-      const response = await fetch('/admin/upload', { method: 'POST', body: form });
-      const result = await response.json();
+      const response = await fetch(new URL('/admin/upload', window.location.origin), {
+        method: 'POST',
+        body: form,
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      });
+      const contentType = response.headers.get('content-type') || '';
+      const result = contentType.includes('application/json') ? await response.json() : null;
       const url = result && result.success && Array.isArray(result.files) ? result.files[0] : '';
-      if (!response.ok || !url) throw new Error(result?.error || 'Upload failed');
+      if (!response.ok) throw new Error(result?.error || `Upload failed (${response.status})`);
+      if (!url) throw new Error(result?.error || 'Upload returned no file URL');
 
       urlInput.value = url;
       setPreview(url);

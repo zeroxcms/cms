@@ -180,6 +180,31 @@ describe('admin routes', () => {
     expect(response.headers.get('Location')).toBe('/auth/login');
   });
 
+  it('returns JSON for unauthenticated upload requests', async () => {
+    const response = await fetchWorker('/admin/upload', {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      body: form({ dir: 'pictures' }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ success: false, error: 'Authentication required' });
+  });
+
+  it('returns JSON for forbidden upload requests', async () => {
+    const response = await fetchWorker('/admin/upload', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Cookie: await authCookie('viewer'),
+      },
+      body: form({ dir: 'pictures' }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ success: false, error: 'Editor role required' });
+  });
+
   it('POST /admin/api/page/:pageId/tag/:tagId reports duplicate tag links', async () => {
     await env.DB.prepare('INSERT INTO draft_page_tags (id, page_id, tag_id) VALUES (?, ?, ?)')
       .bind(402, 101, 301)
