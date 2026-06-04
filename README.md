@@ -8,6 +8,7 @@ Content management system on Workers
 - **Role-based access** – users with `admin`, `editor`, or `moderator` in their comma-separated role list can access the CMS; other users are redirected to the login page
 - **Single D1 database** – auth, sessions, draft, live, and trash content live in one CMS database
 - **Page versioning** – every save creates a new `draft_page_versions` row; `draft_pages.current_page_version_id` points to the active version
+- **Private R2 media uploads** – picture fields upload to a private R2 bucket and are served back through the Worker at `/media/...`
 - **Tailwind CSS + VanillaJS** admin UI with inline HTML toolbar for content editing
 
 ---
@@ -41,18 +42,38 @@ npx wrangler d1 migrations apply cms
 The migrations create auth tables plus `draft_*`, `live_*`, and `trash_*`
 content tables. They do not automatically import rows from other D1 databases.
 
-### 4. Configure secrets
+### 4. Create and bind the private R2 media bucket
+
+Picture fields upload files to the `MEDIA_BUCKET` R2 binding. R2 buckets are not public by default; this CMS keeps the bucket private and serves objects through the Worker at `/media/<key>`.
+
+Create the bucket:
+
+```bash
+npx wrangler r2 bucket create cms-media
+```
+
+Bind it in `wrangler.toml`:
+
+```toml
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "cms-media"
+```
+
+The checked-in `wrangler.toml` already contains this binding. If you choose another bucket name, update both the create command and `bucket_name`.
+
+### 5. Configure secrets
 
 ```bash
 # Random 32-byte secret for signing JWTs – e.g. openssl rand -hex 32
 npx wrangler secret put JWT_SECRET
 ```
 
-Then add a secret for each provider you enable (see step 5).
+Then add a secret for each provider you enable (see step 6).
 
 Create a `.dev.vars` file for local development (see `.dev.vars.example`).
 
-### 5. Enable OAuth providers
+### 6. Enable OAuth providers
 
 Set `ENABLED_PROVIDERS` in `wrangler.toml` to a comma-separated list of the
 providers you want to offer on the login page:
@@ -104,9 +125,9 @@ Add the Client ID and secret for every provider you enable.
    ```
 
 > **Note:** GitHub and Google users have their role defaulted from the database.
-> Promote accounts to `admin` / `editor` with the SQL command in step 6.
+> Promote accounts to `admin` / `editor` with the SQL command in step 7.
 
-### 6. Set the first user's role
+### 7. Set the first user's role
 
 After signing in for the first time, update your role to `admin` in the CMS database. Multiple roles can be stored as a comma-separated list, for example `admin,viewer`:
 
@@ -115,7 +136,7 @@ npx wrangler d1 execute cms --remote \
   --command "UPDATE users SET role='admin,viewer' WHERE email='you@example.com'"
 ```
 
-### 7. Run locally
+### 8. Run locally
 
 ```bash
 npm run dev
@@ -123,7 +144,7 @@ npm run dev
 
 Visit **http://localhost:8787** → redirects to the login page.
 
-### 8. Deploy
+### 9. Deploy
 
 ```bash
 npm run deploy
@@ -145,6 +166,7 @@ npm run deploy
 | `draft_page_tags` | Many-to-many draft page ↔ tag relationships |
 | `trash_page_tags` | Many-to-many trash page ↔ tag relationships |
 | `tags` | Shared tag reference table |
+| `media_files` | Metadata for files uploaded to private R2 |
 
 ### Auth tables
 

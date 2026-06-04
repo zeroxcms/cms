@@ -13,8 +13,8 @@ export const cmsConfig: CmsConfig = {
   defaultLanguage: 'en',
   languages: ['en', 'zh-hant'],
   blueprint: {
-    default: ['@date', 'name', 'body', 'link__label', 'link__url', { items: ['name'] }],
-    contact: ['name', { position: ['*company', 'name', 'address', 'title'] }],
+    default: ['@date', 'name', 'body:text', 'link:link', { items: ['name'] }],
+    contact: ['@photo:picture', 'name', { position: ['*company', 'name', 'address', 'title'] }],
     company: ['name', 'address'],
   },
   blocks: {

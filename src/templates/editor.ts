@@ -1,5 +1,5 @@
 import { layout, escHtml } from './layout';
-import { renderLiquid, renderView } from './liquid';
+import { renderLiquid, renderView, templateExists } from './liquid';
 import type { Page, PageVersion, Tag, TagType } from '../types';
 import {
   getLectBlocks,
@@ -37,17 +37,18 @@ async function renderStructuredEditor(views: Fetcher, opts: {
   versions: PageVersion[];
 }): Promise<string> {
   const { config, language, lect, blueprintProps, blockProps, blockNames } = opts;
-  const rootFields = renderLectFields('', lect, blueprintProps, language, config.defaultLanguage);
-  const blocks = getLectBlocks(lect)
+  const rootFields = await renderLectFields(views, '', lect, blueprintProps, language, config.defaultLanguage);
+  const blocks = await Promise.all(getLectBlocks(lect)
     .map((block, index) => ({ block, index }))
     .sort(
       (left, right) =>
         blockWeight(left.block, left.index) - blockWeight(right.block, right.index) || left.index - right.index,
     )
-    .map(({ block, index }) => {
+    .map(async ({ block, index }) => {
       const type = String(block._type || 'default');
       const blockWithDefaults = withImplicitBlockAttributes(block, type, index);
-      const blockFields = renderLectFields(
+      const blockFields = await renderLectFields(
+        views,
         `#${index}`,
         blockWithDefaults,
         withImplicitBlockProps(blockProps[type] ?? blockProps.default),
@@ -66,7 +67,7 @@ async function renderStructuredEditor(views: Fetcher, opts: {
         hasSettings: blockFields.hasSettings,
         hasContent: blockFields.hasContent,
       };
-    });
+    }));
 
   return renderLiquid(views, '/snippets/structured-editor.liquid', {
     languageOptions: config.languages.map((lang) => ({
@@ -133,37 +134,51 @@ function itemWeight(item: LectItem, fallback: number): number {
   return Number.isFinite(weight) ? weight : fallback;
 }
 
-function renderLectFields(
+async function renderLectFields(
+  views: Fetcher,
   prefix: string,
   lect: Lect | LectItem,
   props: BlueprintProps,
   language: string,
   defaultLanguage: string,
-): RenderedLectFields {
-  const attributeFields = props.attributes
-    .map((field) =>
-      renderInput(`${prefix}@${field.name}`, fieldLabel(field.name), getLectScalar(lect, field.name), field.type),
-    )
-    .join('');
-  const pointerFields = props.pointers
-    .map((field) =>
-      renderInput(`${prefix}*${field.name}`, `${fieldLabel(field.name)} reference`, getLectPointer(lect, field.name), field.type),
-    )
-    .join('');
-  const valueFields = props.fields
-    .map((field) =>
-      renderInput(
-        `${prefix}.${field.name}|${language}`,
-        fieldLabel(field.name),
-        getLectLocalizedValue(lect, field.name, language),
-        field.type,
-        language === defaultLanguage ? '' : getLectLocalizedValue(lect, field.name, defaultLanguage),
-      ),
-    )
-    .join('');
-  const itemFields = props.items
-    .map((item) => renderItemGroup(prefix, item, getLectItems(lect, item.name), language, defaultLanguage))
-    .join('');
+): Promise<RenderedLectFields> {
+  const attributeFields = (await Promise.all(props.attributes.map((field) => renderPageField(views, {
+    prefix,
+    field,
+    kind: 'attribute',
+    inputName: `${prefix}@${field.name}`,
+    label: fieldLabel(field.name),
+    value: getLectScalar(lect, field.name),
+    language,
+    defaultLanguage,
+    lect,
+  })))).join('');
+  const pointerFields = (await Promise.all(props.pointers.map((field) => renderPageField(views, {
+    prefix,
+    field,
+    kind: 'pointer',
+    inputName: `${prefix}*${field.name}`,
+    label: `${fieldLabel(field.name)} reference`,
+    value: getLectPointer(lect, field.name),
+    language,
+    defaultLanguage,
+    lect,
+  })))).join('');
+  const valueFields = (await Promise.all(props.fields.map((field) => renderPageField(views, {
+    prefix,
+    field,
+    kind: 'value',
+    inputName: `${prefix}.${field.name}|${language}`,
+    label: fieldLabel(field.name),
+    value: getLectLocalizedValue(lect, field.name, language),
+    placeholder: language === defaultLanguage ? '' : getLectLocalizedValue(lect, field.name, defaultLanguage),
+    language,
+    defaultLanguage,
+    lect,
+  })))).join('');
+  const itemFields = (await Promise.all(
+    props.items.map((item) => renderItemGroup(views, prefix, item, getLectItems(lect, item.name), language, defaultLanguage)),
+  )).join('');
   const settingsHtml = renderFieldGrid(`${attributeFields}${pointerFields}`);
   const contentHtml = `${renderFieldGrid(valueFields)}${itemFields}`;
 
@@ -183,13 +198,14 @@ function renderFieldGrid(fieldsHtml: string): string {
     </div>`;
 }
 
-function renderItemGroup(
+async function renderItemGroup(
+  views: Fetcher,
   prefix: string,
   props: NonNullable<BlueprintProps['items'][number]>,
   items: LectItem[],
   language: string,
   defaultLanguage: string,
-): string {
+): Promise<string> {
   const rows = items.length
     ? items
         .map((item, index) => ({ item, index }))
@@ -203,6 +219,33 @@ function renderItemGroup(
     fields: props.fields,
     items: props.items ?? [],
   });
+  const rowHtml = rows.length
+    ? (await Promise.all(rows.map(async ({ item, index }, displayIndex) => {
+      const itemPrefix = `${prefix}.${props.name}[${index}]`;
+      const deleteAction = blockMatch
+        ? `block-item-delete:${blockMatch[1]}|${props.name}|${index}`
+        : `item-delete:${props.name}|${index}`;
+      const itemWithDefaults = withImplicitItemAttributes(item, index);
+      const itemFields = await renderLectFields(views, itemPrefix, itemWithDefaults, groupProps, language, defaultLanguage);
+      return `<div class="min-w-0 rounded-lg bg-white border border-gray-200 p-4 space-y-3">
+                <div class="flex items-center justify-between gap-3">
+                  <span class="min-w-0 text-xs text-gray-400">Item ${displayIndex + 1}</span>
+                  <button type="submit" name="action" value="${escHtml(deleteAction)}"
+                          class="shrink-0 text-xs font-semibold text-red-600 hover:text-red-700">Delete</button>
+                </div>
+                ${
+                  itemFields.hasSettings
+                    ? `<div class="space-y-3">
+                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">Settings</p>
+                         ${itemFields.settingsHtml}
+                       </div>`
+                    : ''
+                }
+                ${itemFields.contentHtml}
+              </div>`;
+    }))).join('')
+    : '<p class="text-sm text-gray-400">No items yet.</p>';
+
   return `
     <div class="min-w-0 rounded-lg border border-gray-100 bg-gray-50 p-4 space-y-4">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -210,37 +253,76 @@ function renderItemGroup(
         <button type="submit" name="action" value="${escHtml(addAction)}"
                 class="w-full shrink-0 px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-xs font-semibold text-gray-700 sm:w-auto">Add Item</button>
       </div>
-      ${
-        rows.length
-          ? rows
-              .map(({ item, index }, displayIndex) => {
-                const itemPrefix = `${prefix}.${props.name}[${index}]`;
-                const deleteAction = blockMatch
-                  ? `block-item-delete:${blockMatch[1]}|${props.name}|${index}`
-                  : `item-delete:${props.name}|${index}`;
-                const itemWithDefaults = withImplicitItemAttributes(item, index);
-                const itemFields = renderLectFields(itemPrefix, itemWithDefaults, groupProps, language, defaultLanguage);
-                return `<div class="min-w-0 rounded-lg bg-white border border-gray-200 p-4 space-y-3">
-                          <div class="flex items-center justify-between gap-3">
-                            <span class="min-w-0 text-xs text-gray-400">Item ${displayIndex + 1}</span>
-                            <button type="submit" name="action" value="${escHtml(deleteAction)}"
-                                    class="shrink-0 text-xs font-semibold text-red-600 hover:text-red-700">Delete</button>
-                          </div>
-                          ${
-                            itemFields.hasSettings
-                              ? `<div class="space-y-3">
-                                   <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">Settings</p>
-                                   ${itemFields.settingsHtml}
-                                 </div>`
-                              : ''
-                          }
-                          ${itemFields.contentHtml}
-                        </div>`;
-              })
-              .join('')
-          : '<p class="text-sm text-gray-400">No items yet.</p>'
-      }
+      ${rowHtml}
     </div>`;
+}
+
+async function renderPageField(views: Fetcher, opts: {
+  prefix: string;
+  field: FieldProps;
+  kind: 'attribute' | 'pointer' | 'value';
+  inputName: string;
+  label: string;
+  value: string;
+  language: string;
+  defaultLanguage: string;
+  lect: Lect | LectItem;
+  placeholder?: string;
+}): Promise<string> {
+  const templatePath = opts.field.renderer ? pageFieldTemplatePath(opts.field.renderer) : null;
+  if (!templatePath || !(await templateExists(views, templatePath))) {
+    return renderInput(opts.inputName, opts.label, opts.value, opts.field.type, opts.placeholder);
+  }
+
+  return renderLiquid(views, templatePath, {
+    field: {
+      name: opts.field.name,
+      type: opts.field.type,
+      kind: opts.kind,
+      prefix: opts.prefix,
+      inputName: opts.inputName,
+      id: fieldId(opts.inputName),
+      label: opts.label,
+      value: opts.value,
+      placeholder: opts.placeholder ?? '',
+      language: opts.language,
+      defaultLanguage: opts.defaultLanguage,
+    },
+    values: pageFieldValues(opts.lect, opts.field.name, opts.language, opts.defaultLanguage),
+    names: pageFieldNames(opts.prefix, opts.field.name, opts.kind, opts.language),
+  });
+}
+
+function pageFieldTemplatePath(type: string): string | null {
+  const trimmed = type.trim();
+  if (!trimmed) return null;
+  if (!trimmed.split('/').every((part) => /^[A-Za-z0-9_-]+$/.test(part))) return null;
+  const typedPath = trimmed.includes('/') ? trimmed : `${trimmed}/basic`;
+  return `/snippets/pagefield/${typedPath}.liquid`;
+}
+
+function pageFieldValues(lect: Lect | LectItem, name: string, language: string, defaultLanguage: string): Record<string, string> {
+  return {
+    value: getLectLocalizedValue(lect, name, language, defaultLanguage) || getLectScalar(lect, name),
+    label: getLectLocalizedValue(lect, `${name}__label`, language, defaultLanguage),
+    url: getLectLocalizedValue(lect, `${name}__url`, language, defaultLanguage),
+    start: getLectLocalizedValue(lect, `${name}__start`, language, defaultLanguage),
+    end: getLectLocalizedValue(lect, `${name}__end`, language, defaultLanguage),
+    timezone: getLectLocalizedValue(lect, `${name}__timezone`, language, defaultLanguage),
+  };
+}
+
+function pageFieldNames(prefix: string, name: string, kind: 'attribute' | 'pointer' | 'value', language: string): Record<string, string> {
+  if (kind === 'attribute') return { value: `${prefix}@${name}` };
+  if (kind === 'pointer') return { value: `${prefix}*${name}` };
+  return {
+    value: `${prefix}.${name}|${language}`,
+    label: `${prefix}.${name}__label|${language}`,
+    url: `${prefix}.${name}__url|${language}`,
+    start: `${prefix}.${name}__start|${language}`,
+    end: `${prefix}.${name}__end|${language}`,
+    timezone: `${prefix}.${name}__timezone|${language}`,
+  };
 }
 
 function renderInput(name: string, label: string, value: string, type: string, placeholder = ''): string {
@@ -279,11 +361,14 @@ export async function editorPage(views: Fetcher, opts: {
   userAvatar: string;
   page?: Page;
   version?: PageVersion;
+  isVersionPreview?: boolean;
+  liveVersionId?: number;
   parentPages: Page[];
   tags: Tag[];
   tagTypes: TagType[];
   selectedTagIds: number[];
   errors?: string[];
+  flash?: string;
   action: string;
   defaultPageType?: string;
   structured?: {
@@ -302,17 +387,22 @@ export async function editorPage(views: Fetcher, opts: {
     userRole,
     userAvatar,
     page,
+    version,
+    isVersionPreview = false,
+    liveVersionId,
     parentPages,
     tags,
     tagTypes,
     selectedTagIds,
     errors = [],
+    flash,
     action,
     defaultPageType = '',
     structured,
   } = opts;
 
   const isEdit = !!page;
+  const selectedVersion = isVersionPreview && version ? version : undefined;
   const pageTitle = isEdit ? `Edit: ${page.name}` : 'New Page';
   const pageType = (structured ? getLectScalar(structured.lect, '_type') : '') || page?.page_type || defaultPageType || 'default';
   const structuredBlock = structured ? await renderStructuredEditor(views, structured) : '';
@@ -321,15 +411,27 @@ export async function editorPage(views: Fetcher, opts: {
     label: `${version.created_at}${version.action ? ` - ${version.action}` : ''}`,
     href: `${versionHrefBase}?version=${version.id}`,
     revertAction: `revert:${version.id}`,
+    active: selectedVersion?.id === version.id,
+    live: version.id === liveVersionId,
   })) ?? [];
 
   const body = await renderView(views, '/templates/editor.json', {
     pageTitle,
     action,
     isEdit,
+    isVersionPreview: !!selectedVersion,
+    selectedVersion: selectedVersion
+      ? {
+          date: selectedVersion.created_at,
+          restoreAction: `revert:${selectedVersion.id}`,
+          currentHref: page ? `/admin/pages/${page.id}/edit` : action,
+        }
+      : undefined,
     saveLabel: isEdit ? 'Save Changes' : 'Create Page',
     errors,
     hasErrors: errors.length > 0,
+    flash,
+    hasFlash: !!flash,
     page: {
       name: page?.name ?? '',
       slug: page?.slug ?? '',

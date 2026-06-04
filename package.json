@@ -6,7 +6,8 @@
     "dev": "wrangler dev --local",
     "deploy": "wrangler deploy",
     "db:migrate": "wrangler d1 migrations apply cms --local",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "emmet": "^2.4.11",
@@ -14,8 +15,10 @@
     "liquidjs": "^10.27.0"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.16.12",
     "@cloudflare/workers-types": "^4.20260603.1",
     "typescript": "^6.0.3",
+    "vitest": "^4.1.8",
     "wrangler": "^4.97.0"
   }
 }

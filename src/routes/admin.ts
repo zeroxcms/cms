@@ -739,6 +739,7 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
   const language = languageFromRequest(c);
   const requestedVersionId = parseInt(c.req.query('version') ?? '', 10);
+  const flash = c.req.query('flash') ?? '';
 
   const [page, parentPages, taxonomy, dbUser] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(pageId).first<Page>(),
@@ -751,7 +752,7 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
 
   if (!page) return c.notFound();
 
-  const [version, versions, pageTags] = await Promise.all([
+  const [version, versions, livePage, pageTags] = await Promise.all([
     Number.isFinite(requestedVersionId)
       ? c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? AND id = ?')
           .bind(pageId, requestedVersionId)
@@ -764,6 +765,9 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
     c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
       .bind(pageId)
       .all<PageVersion>(),
+    c.env.DB.prepare('SELECT lect FROM live_pages WHERE uuid = ?')
+      .bind(page.uuid)
+      .first<{ lect: string | null }>(),
     c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?')
       .bind(pageId)
       .all<{ tag_id: number }>(),
@@ -780,10 +784,13 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
       userAvatar: dbUser?.avatar_url ?? '',
       page: displayPage,
       version: version ?? undefined,
+      isVersionPreview: Number.isFinite(requestedVersionId) && !!version,
+      liveVersionId: versions.results.find((candidate) => candidate.lect === livePage?.lect)?.id,
       parentPages: parentPages.results,
       tags: taxonomy.tags,
       tagTypes: taxonomy.tagTypes,
       selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
+      flash: flash || undefined,
       action: `/admin/pages/${pageId}`,
       structured: {
         config: cmsConfig,
@@ -848,7 +855,7 @@ adminRoutes.post('/pages/:id', async (c) => {
   }
 
   if (errors.length) {
-    const [parentPages, taxonomy, version, versions, pageTags, dbUser] = await Promise.all([
+    const [parentPages, taxonomy, version, versions, livePage, pageTags, dbUser] = await Promise.all([
       c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
       editorTaxonomy(c.env.DB),
       page.current_page_version_id
@@ -859,6 +866,9 @@ adminRoutes.post('/pages/:id', async (c) => {
       c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
         .bind(pageId)
         .all<PageVersion>(),
+      c.env.DB.prepare('SELECT lect FROM live_pages WHERE uuid = ?')
+        .bind(page.uuid)
+        .first<{ lect: string | null }>(),
       c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?').bind(pageId).all<{ tag_id: number }>(),
       c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
         .bind(parseInt(user.sub, 10))
@@ -874,6 +884,7 @@ adminRoutes.post('/pages/:id', async (c) => {
         userAvatar: dbUser?.avatar_url ?? '',
         page,
         version: version ?? undefined,
+        liveVersionId: versions.results.find((candidate) => candidate.lect === livePage?.lect)?.id,
         parentPages: parentPages.results,
         tags: taxonomy.tags,
         tagTypes: taxonomy.tagTypes,

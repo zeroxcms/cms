@@ -83,7 +83,7 @@ async function loadTemplate(views: Fetcher, path: string): Promise<string> {
   return template;
 }
 
-async function templateExists(views: Fetcher, path: string): Promise<boolean> {
+export async function templateExists(views: Fetcher, path: string): Promise<boolean> {
   try {
     await loadTemplate(views, path);
     return true;

@@ -20,6 +20,7 @@ export type LectItem = Lect;
 export interface FieldProps {
   name: string;
   type: string;
+  renderer?: string;
 }
 
 export interface ItemProps {
@@ -270,14 +271,17 @@ function getProps(rawKey: string, prefix = ''): FieldProps {
   return {
     name: fieldName(keyParts[0], prefix),
     type: keyParts[1] || 'text',
+    renderer: keyParts[1],
   };
 }
 
 function getPointerProps(rawKey: string): FieldProps {
   const keyParts = rawKey.split(':');
+  const defaultType = /[.@]/.test(keyParts[0]) ? 'text' : 'page/basic';
   return {
     name: fieldName(keyParts[0], '*'),
-    type: keyParts[1] || (/[.@]/.test(keyParts[0]) ? 'text' : 'page/basic'),
+    type: keyParts[1] || defaultType,
+    renderer: keyParts[1] || defaultType,
   };
 }
 

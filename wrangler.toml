@@ -14,6 +14,10 @@ database_name = "cms"
 database_id = "036882b7-c7d1-4163-9a40-cba28bc87233"
 migrations_dir = "migrations"
 
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "worker-cms-media"
+
 [vars]
 # Comma-separated list of enabled OAuth providers: "github", "google", "eventuai"
 ENABLED_PROVIDERS = "eventuai,github"
