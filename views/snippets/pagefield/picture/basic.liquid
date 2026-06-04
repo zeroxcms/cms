@@ -38,14 +38,28 @@
   const empty = root.querySelector('[data-picture-empty]');
   const status = root.querySelector('[data-picture-status]');
 
+  function previewUrl(url) {
+    const value = String(url || '').trim();
+    if (!value) return '';
+    try {
+      const source = new URL(value, window.location.origin);
+      if (source.origin !== window.location.origin) return value;
+      return `/cdn-cgi/image/width=100,height=100,fit=cover${source.pathname}${source.search}`;
+    } catch {
+      return value;
+    }
+  }
+
   function setPreview(url) {
     if (!preview) return;
     if (url) {
-      preview.src = url;
+      preview.dataset.originalSrc = url;
+      preview.src = previewUrl(url);
       preview.classList.remove('hidden');
       if (empty) empty.classList.add('hidden');
     } else {
       preview.removeAttribute('src');
+      delete preview.dataset.originalSrc;
       preview.classList.add('hidden');
       if (empty) empty.classList.remove('hidden');
     }
@@ -66,6 +80,14 @@
     return detail ? `${detail} (${response.status})` : `Upload failed (${response.status})`;
   }
 
+  preview?.addEventListener('error', () => {
+    const original = preview.dataset.originalSrc || '';
+    if (original && preview.src !== new URL(original, window.location.origin).href) {
+      preview.src = original;
+    }
+  });
+
+  if (urlInput?.value.trim()) setPreview(urlInput.value.trim());
   urlInput?.addEventListener('input', () => setPreview(urlInput.value.trim()));
 
   fileInput?.addEventListener('change', async () => {

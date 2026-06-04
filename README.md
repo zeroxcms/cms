@@ -49,7 +49,7 @@ Picture fields upload files to the `MEDIA_BUCKET` R2 binding. R2 buckets are not
 Create the bucket:
 
 ```bash
-npx wrangler r2 bucket create cms-media
+npx wrangler r2 bucket create worker-cms-media
 ```
 
 Bind it in `wrangler.toml`:
@@ -57,10 +57,34 @@ Bind it in `wrangler.toml`:
 ```toml
 [[r2_buckets]]
 binding = "MEDIA_BUCKET"
-bucket_name = "cms-media"
+bucket_name = "worker-cms-media"
 ```
 
 The checked-in `wrangler.toml` already contains this binding. If you choose another bucket name, update both the create command and `bucket_name`.
+
+If uploads return a Cloudflare challenge page such as `Just a moment... Enable JavaScript and cookies to continue`, create a narrow Cloudflare skip rule for the authenticated upload endpoint. The Worker still requires a valid CMS session and editor role before writing to R2.
+
+In the Cloudflare dashboard:
+
+1. Go to **Security rules** or **Security > WAF > Custom rules**.
+2. Create a custom rule named `Skip CMS upload challenge`.
+3. Use this expression:
+   ```text
+(http.host eq "cms.eventuai.com" and http.request.uri.path eq "/admin/upload" and http.request.method eq "POST")
+   ```
+4. Set **Action** to **Skip**.
+5. Select the product that appears in **Security > Events** for the failed upload, commonly **All managed rules**, **All Super Bot Fight Mode rules**, **Browser Integrity Check**, or **Security Level**.
+6. Save the rule and retry the upload.
+
+Cloudflare Bot Fight Mode on the Free plan cannot be skipped by a custom rule. If Security Events shows Bot Fight Mode, disable Bot Fight Mode for the zone or move to Super Bot Fight Mode/Bot Management so this endpoint can be exempted.
+
+The page editor uses Cloudflare Image Resizing for picture field previews, requesting only a 100x100 thumbnail:
+
+```text
+/cdn-cgi/image/width=100,height=100,fit=cover/media/<key>
+```
+
+Enable **Images > Transformations** for the zone before relying on this optimization. If transformations are not enabled, the editor falls back to the original `/media/<key>` URL for preview display.
 
 ### 5. Configure secrets
 
