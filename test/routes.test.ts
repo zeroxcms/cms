@@ -188,6 +188,7 @@ describe('admin routes', () => {
     });
 
     expect(response.status).toBe(401);
+    expect(response.headers.get('X-CMS-Error')).toBe('authentication-required');
     expect(await response.json()).toEqual({ success: false, error: 'Authentication required' });
   });
 
@@ -202,6 +203,7 @@ describe('admin routes', () => {
     });
 
     expect(response.status).toBe(403);
+    expect(response.headers.get('X-CMS-Error')).toBe('origin-is-not-allowed');
     expect(await response.json()).toEqual({ success: false, error: 'Origin is not allowed' });
   });
 
@@ -216,6 +218,7 @@ describe('admin routes', () => {
     });
 
     expect(response.status).toBe(403);
+    expect(response.headers.get('X-CMS-Error')).toBe('editor-role-required');
     expect(await response.json()).toEqual({ success: false, error: 'Editor role required' });
   });
 

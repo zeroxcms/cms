@@ -51,6 +51,21 @@
     }
   }
 
+  function cleanResponseText(value) {
+    const text = String(value || '')
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return text.slice(0, 180);
+  }
+
+  function uploadErrorMessage(response, result, cmsError, rawBody) {
+    const detail = (result && result.error) || cmsError || cleanResponseText(rawBody);
+    return detail ? `${detail} (${response.status})` : `Upload failed (${response.status})`;
+  }
+
   urlInput?.addEventListener('input', () => setPreview(urlInput.value.trim()));
 
   fileInput?.addEventListener('change', async () => {
@@ -70,9 +85,18 @@
         headers: { Accept: 'application/json' },
       });
       const contentType = response.headers.get('content-type') || '';
-      const result = contentType.includes('application/json') ? await response.json() : null;
+      const rawBody = await response.text();
+      const cmsError = response.headers.get('x-cms-error') || '';
+      let result = null;
+      if (contentType.includes('application/json') && rawBody) {
+        try {
+          result = JSON.parse(rawBody);
+        } catch {
+          result = null;
+        }
+      }
       const url = result && result.success && Array.isArray(result.files) ? result.files[0] : '';
-      if (!response.ok) throw new Error(result?.error || `Upload failed (${response.status})`);
+      if (!response.ok) throw new Error(uploadErrorMessage(response, result, cmsError, rawBody));
       if (!url) throw new Error(result?.error || 'Upload returned no file URL');
 
       urlInput.value = url;

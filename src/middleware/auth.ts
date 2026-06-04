@@ -32,6 +32,13 @@ function wantsJsonResponse(request: Request): boolean {
     || !!request.headers.get('Accept')?.includes('application/json');
 }
 
+function jsonError(body: { success: false; error: string }, status: number, cmsError: string): Response {
+  return Response.json(body, {
+    status,
+    headers: { 'X-CMS-Error': cmsError },
+  });
+}
+
 export const authMiddleware = createMiddleware<{
   Bindings: Env;
   Variables: Variables;
@@ -140,7 +147,7 @@ export const authMiddleware = createMiddleware<{
     deleteCookie(c, 'access_token', { path: '/' });
     deleteCookie(c, 'refresh_token', { path: '/' });
     if (wantsJsonResponse(c.req.raw)) {
-      return c.json({ success: false, error: 'Authentication required' }, 401);
+      return jsonError({ success: false, error: 'Authentication required' }, 401, 'authentication-required');
     }
     return c.redirect('/auth/login');
   }
@@ -157,7 +164,7 @@ export const editorGuard = createMiddleware<{
   const user = c.get('user');
   if (!hasAnyRole(user.role, EDITOR_ROLES)) {
     if (wantsJsonResponse(c.req.raw)) {
-      return c.json({ success: false, error: 'Editor role required' }, 403);
+      return jsonError({ success: false, error: 'Editor role required' }, 403, 'editor-role-required');
     }
     return c.redirect('/auth/login?error=forbidden');
   }

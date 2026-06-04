@@ -88,10 +88,11 @@ export function rejectCrossSiteRequest(request: Request, allowedOrigins: string[
 }
 
 function forbiddenResponse(request: Request, error: string): Response {
+  const headers = { 'X-CMS-Error': error.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') };
   if (wantsJsonResponse(request)) {
-    return Response.json({ success: false, error }, { status: 403 });
+    return Response.json({ success: false, error }, { status: 403, headers });
   }
-  return new Response('Forbidden', { status: 403 });
+  return new Response('Forbidden', { status: 403, headers });
 }
 
 function wantsJsonResponse(request: Request): boolean {
