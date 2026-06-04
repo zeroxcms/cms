@@ -191,6 +191,20 @@ describe('admin routes', () => {
     expect(await response.json()).toEqual({ success: false, error: 'Authentication required' });
   });
 
+  it('returns JSON for upload requests rejected by origin checks', async () => {
+    const response = await fetchWorker('/admin/upload', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Origin: 'https://evil.example.com',
+      },
+      body: form({ dir: 'pictures' }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ success: false, error: 'Origin is not allowed' });
+  });
+
   it('returns JSON for forbidden upload requests', async () => {
     const response = await fetchWorker('/admin/upload', {
       method: 'POST',

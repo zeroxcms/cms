@@ -50,7 +50,7 @@ export function rejectCrossOriginMutation(request: Request, allowedOrigins: stri
   const origin = request.headers.get('Origin');
   if (origin) {
     if (!validOrigins.has(origin)) {
-      return new Response('Forbidden', { status: 403 });
+      return forbiddenResponse(request, 'Origin is not allowed');
     }
     return null;
   }
@@ -60,7 +60,7 @@ export function rejectCrossOriginMutation(request: Request, allowedOrigins: stri
   }
 
   if (request.headers.get('Sec-Fetch-Site') === 'cross-site') {
-    return new Response('Forbidden', { status: 403 });
+    return forbiddenResponse(request, 'Cross-site request rejected');
   }
 
   return null;
@@ -72,7 +72,7 @@ export function rejectCrossSiteRequest(request: Request, allowedOrigins: string[
   const origin = request.headers.get('Origin');
   if (origin) {
     if (!validOrigins.has(origin)) {
-      return new Response('Forbidden', { status: 403 });
+      return forbiddenResponse(request, 'Origin is not allowed');
     }
     return null;
   }
@@ -82,9 +82,23 @@ export function rejectCrossSiteRequest(request: Request, allowedOrigins: string[
   }
 
   if (request.headers.get('Sec-Fetch-Site') === 'cross-site') {
-    return new Response('Forbidden', { status: 403 });
+    return forbiddenResponse(request, 'Cross-site request rejected');
   }
   return null;
+}
+
+function forbiddenResponse(request: Request, error: string): Response {
+  if (wantsJsonResponse(request)) {
+    return Response.json({ success: false, error }, { status: 403 });
+  }
+  return new Response('Forbidden', { status: 403 });
+}
+
+function wantsJsonResponse(request: Request): boolean {
+  const pathname = new URL(request.url).pathname;
+  return pathname === '/admin/upload'
+    || pathname.startsWith('/admin/api/')
+    || !!request.headers.get('Accept')?.includes('application/json');
 }
 
 function isLocalHost(hostname: string): boolean {
