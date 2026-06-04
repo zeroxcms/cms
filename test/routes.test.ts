@@ -266,6 +266,26 @@ describe('admin routes', () => {
       size: 10,
     });
   });
+
+  it('GET /media-preview/* serves uploaded media for editor thumbnails', async () => {
+    const body = new FormData();
+    body.append('dir', 'pictures');
+    body.append('file', new File(['tiny image'], 'avatar.png', { type: 'image/png' }));
+
+    const upload = await fetchWorker('/admin/upload', {
+      method: 'POST',
+      body,
+      headers: { Cookie: await authCookie() },
+    });
+    const payload = await upload.json<{ files: string[] }>();
+    const previewPath = payload.files[0].replace(/^\/media\//, '/media-preview/');
+
+    const response = await fetchWorker(previewPath);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('image/png');
+    expect(new TextDecoder().decode(await response.arrayBuffer())).toBe('tiny image');
+  });
 });
 
 async function expectRoute(route: RouteCase): Promise<Response> {

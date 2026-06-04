@@ -43,18 +43,51 @@ app.route('/auth', authRoutes);
 app.route('/admin', adminRoutes);
 
 // ── Media files from optional R2 binding ──────────────────────────────────────
+app.get('/media-preview/*', async (c) => {
+  if (!c.env.MEDIA_BUCKET) return c.notFound();
+  const key = c.req.path.replace(/^\/media-preview\//, '');
+  const mediaUrl = new URL(`/media/${key}`, c.req.url);
+
+  if (!isLocalHost(mediaUrl.hostname)) {
+    try {
+      const resized = await fetch(mediaUrl.toString(), {
+        cf: {
+          image: {
+            width: 100,
+            height: 100,
+            fit: 'cover',
+          },
+        },
+      });
+      if (resized.ok) return resized;
+    } catch {
+      // Fall back to the original R2 object when Image Resizing is unavailable.
+    }
+  }
+
+  return await mediaObjectResponse(c.env.MEDIA_BUCKET, key) ?? c.notFound();
+});
+
 app.get('/media/*', async (c) => {
   if (!c.env.MEDIA_BUCKET) return c.notFound();
   const key = c.req.path.replace(/^\/media\//, '');
-  const object = await c.env.MEDIA_BUCKET.get(key);
-  if (!object) return c.notFound();
+  return await mediaObjectResponse(c.env.MEDIA_BUCKET, key) ?? c.notFound();
+});
+
+async function mediaObjectResponse(bucket: R2Bucket, key: string): Promise<Response | null> {
+  const object = await bucket.get(key);
+  if (!object) return null;
 
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set('Cache-Control', 'public, max-age=31536000');
   headers.set('ETag', object.httpEtag);
   return new Response(object.body, { headers });
-});
+}
+
+function isLocalHost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
+}
 
 // ── Login shortcut ────────────────────────────────────────────────────────────
 app.get('/login', (c) => c.redirect('/auth/login'));

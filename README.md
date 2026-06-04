@@ -78,13 +78,19 @@ In the Cloudflare dashboard:
 
 Cloudflare Bot Fight Mode on the Free plan cannot be skipped by a custom rule. If Security Events shows Bot Fight Mode, disable Bot Fight Mode for the zone or move to Super Bot Fight Mode/Bot Management so this endpoint can be exempted.
 
-The page editor uses Cloudflare Image Resizing for picture field previews, requesting only a 100x100 thumbnail:
+The page editor uses a Worker-owned preview route for picture field thumbnails:
 
 ```text
-/cdn-cgi/image/width=100,height=100,fit=cover/media/<key>
+/media-preview/<key>
 ```
 
-Enable **Images > Transformations** for the zone before relying on this optimization. If transformations are not enabled, the editor falls back to the original `/media/<key>` URL for preview display.
+In production, `/media-preview/<key>` fetches the private R2-backed `/media/<key>` URL with Cloudflare Image Resizing options:
+
+```ts
+cf: { image: { width: 100, height: 100, fit: 'cover' } }
+```
+
+Enable **Images > Transformations** for the zone before relying on this optimization. If transformations are not enabled, the route falls back to the original `/media/<key>` object for preview display.
 
 ### 5. Configure secrets
 

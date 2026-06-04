@@ -44,7 +44,8 @@
     try {
       const source = new URL(value, window.location.origin);
       if (source.origin !== window.location.origin) return value;
-      return `/cdn-cgi/image/width=100,height=100,fit=cover${source.pathname}${source.search}`;
+      if (!source.pathname.startsWith('/media/')) return value;
+      return `/media-preview/${source.pathname.replace(/^\/media\//, '')}${source.search}`;
     } catch {
       return value;
     }
