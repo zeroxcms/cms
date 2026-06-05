@@ -6,8 +6,13 @@
     </div>
     <div class="flex w-full flex-col gap-2 sm:flex-row xl:max-w-3xl xl:justify-end">
       <form method="GET" action="{{ searchAction | escape }}" class="flex min-w-0 flex-1 gap-2">
+        <input type="hidden" name="operator" value="AND">
+        <input type="hidden" name="pagesize" value="20">
+        <input type="hidden" name="sort" value="updated_at">
+        <input type="hidden" name="order" value="DESC">
+        <input type="hidden" name="path1" value="">
         <label for="dashboard_search" class="sr-only">Search pages</label>
-        <input id="dashboard_search" type="search" name="search" value="{{ searchValue | escape }}" placeholder="{{ searchPlaceholder | escape }}"
+        <input id="dashboard_search" type="search" name="search1" value="{{ searchValue | escape }}" placeholder="{{ searchPlaceholder | escape }}"
                class="h-10 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
         <button type="submit"
                 title="Search"

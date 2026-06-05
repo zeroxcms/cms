@@ -721,15 +721,13 @@ adminRoutes.get('/', async (c) => {
   const flash = c.req.query('flash') ?? '';
   const search = c.req.query('search')?.trim() ?? '';
 
-  const draftPages = search
-    ? await c.env.DB.prepare(
-        'SELECT * FROM draft_pages WHERE name LIKE ? ORDER BY weight ASC, name ASC',
-      )
-        .bind(`%${search}%`)
-        .all<Page>()
-    : await c.env.DB.prepare(
-        'SELECT * FROM draft_pages ORDER BY weight ASC, name ASC',
-      ).all<Page>();
+  if (search) {
+    return c.redirect(`/admin/advanced-search?operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=${encodeURIComponent(search)}&path1=`);
+  }
+
+  const draftPages = await c.env.DB.prepare(
+    'SELECT * FROM draft_pages ORDER BY weight ASC, name ASC',
+  ).all<Page>();
 
   const livePages = await c.env.DB.prepare('SELECT uuid, lect, weight FROM live_pages').all<{
     uuid: string;
@@ -761,9 +759,8 @@ adminRoutes.get('/', async (c) => {
       userAvatar: dbUser?.avatar_url ?? '',
       pages,
       flash: flash || undefined,
-      returnPath: `/admin${search ? `?search=${encodeURIComponent(search)}` : ''}`,
-      searchValue: search,
-      searchAction: '/admin',
+      returnPath: '/admin',
+      searchAction: '/admin/advanced-search',
       advancedSearchHref: '/admin/advanced-search',
     }),
   );
@@ -784,17 +781,15 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
   const flash = c.req.query('flash') ?? '';
   const search = c.req.query('search')?.trim() ?? '';
 
-  const draftPages = search
-    ? await c.env.DB.prepare(
-        'SELECT * FROM draft_pages WHERE page_type = ? AND name LIKE ? ORDER BY weight ASC, name ASC',
-      )
-        .bind(pageType, `%${search}%`)
-        .all<Page>()
-    : await c.env.DB.prepare(
-        'SELECT * FROM draft_pages WHERE page_type = ? ORDER BY weight ASC, name ASC',
-      )
-        .bind(pageType)
-        .all<Page>();
+  if (search) {
+    return c.redirect(`/admin/advanced-search/${encodeURIComponent(pageType)}?operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=${encodeURIComponent(search)}&path1=`);
+  }
+
+  const draftPages = await c.env.DB.prepare(
+    'SELECT * FROM draft_pages WHERE page_type = ? ORDER BY weight ASC, name ASC',
+  )
+    .bind(pageType)
+    .all<Page>();
   const livePages = await c.env.DB.prepare('SELECT uuid, lect, slug, weight FROM live_pages').all<{
     uuid: string;
     lect: string | null;
@@ -820,10 +815,9 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
         hasLiveLectDrift: liveMap.has(page.uuid) && !lectsMatch(liveMap.get(page.uuid)?.lect, page.lect),
       })),
       flash: flash || undefined,
-      returnPath: `/admin/pages/list/${encodeURIComponent(pageType)}${search ? `?search=${encodeURIComponent(search)}` : ''}`,
+      returnPath: `/admin/pages/list/${encodeURIComponent(pageType)}`,
       pageTypeFilter: pageType,
-      searchValue: search,
-      searchAction: `/admin/pages/list/${encodeURIComponent(pageType)}`,
+      searchAction: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
       advancedSearchHref: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
     }),
   );
@@ -832,7 +826,7 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
 adminRoutes.get('/pages/search/:pageType', async (c) => {
   const pageType = c.req.param('pageType');
   const search = c.req.query('search') ?? '';
-  return c.redirect(`/admin/pages/list/${encodeURIComponent(pageType)}?search=${encodeURIComponent(search)}`);
+  return c.redirect(`/admin/advanced-search/${encodeURIComponent(pageType)}?operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=${encodeURIComponent(search)}&path1=`);
 });
 
 adminRoutes.get('/pages/create_by_type/:pageType', async (c) => {
