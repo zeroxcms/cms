@@ -33,6 +33,8 @@ export async function advancedSearchPage(views: Fetcher, opts: {
   routeBase: string;
   criteria: AdvancedSearchCriterionView[];
   tagGroups: AdvancedSearchTagGroup[];
+  pathOptions: string[];
+  pathOptionsByPageTypeJson: string;
   nextCriterionIndex: number;
   operator: 'AND' | 'OR' | 'NOT';
   pageSize: number;

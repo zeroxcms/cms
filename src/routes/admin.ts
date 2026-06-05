@@ -26,6 +26,7 @@ import { tagTypeFormPage, tagTypesPage } from '../templates/tag-types';
 import { tagFormPage, tagsPage } from '../templates/tags';
 import { trashPage } from '../templates/trash';
 import { cmsConfig } from '../cms-config';
+import type { BlueprintEntry } from '../cms-config';
 import {
   blockToLect,
   blueprintToLect,
@@ -240,6 +241,56 @@ function advancedSearchTargetPageTypes(selectedPageType: string): string[] {
   return selectedPageType === 'all' ? pageTypes : [selectedPageType];
 }
 
+function blueprintFieldPath(raw: string, prefix = ''): string {
+  return raw.replace(prefix, '').split(':')[0].split('__').filter(Boolean).join('.');
+}
+
+function childPath(parent: string, child: string): string {
+  return parent ? `${parent}.${child}` : child;
+}
+
+function collectBlueprintPaths(entries: BlueprintEntry[], parentPath = ''): string[] {
+  const paths: string[] = [];
+
+  for (const entry of entries) {
+    if (typeof entry === 'string') {
+      if (entry.startsWith('@')) {
+        paths.push(childPath(parentPath, blueprintFieldPath(entry, '@')));
+      } else if (entry.startsWith('*')) {
+        paths.push(childPath(parentPath, `_pointers.${blueprintFieldPath(entry, '*')}`));
+      } else {
+        paths.push(childPath(parentPath, blueprintFieldPath(entry)));
+      }
+      continue;
+    }
+
+    for (const [itemName, definitions] of Object.entries(entry)) {
+      const itemPath = childPath(parentPath, `${itemName}[*]`);
+      paths.push(...collectBlueprintPaths(definitions, itemPath));
+    }
+  }
+
+  return paths;
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right));
+}
+
+function advancedSearchPathOptions(pageTypes: string[]): string[] {
+  return uniqueSorted(pageTypes.flatMap((pageType) => collectBlueprintPaths(cmsConfig.blueprint[pageType] ?? [])));
+}
+
+function advancedSearchPathOptionsByPageType(): Record<string, string[]> {
+  const pageTypeOptions = Object.fromEntries(
+    advancedSearchPageTypes().map((pageType) => [pageType, advancedSearchPathOptions([pageType])]),
+  );
+  return {
+    all: uniqueSorted(Object.values(pageTypeOptions).flat()),
+    ...pageTypeOptions,
+  };
+}
+
 function wildcardJsonPathParts(path: string): { beforePath: string; afterPath: string } | null {
   const wildcardMatch = path.match(/(.+?)\[\*\](.+)/i);
   if (!wildcardMatch) return null;
@@ -248,6 +299,17 @@ function wildcardJsonPathParts(path: string): { beforePath: string; afterPath: s
     beforePath: wildcardMatch[1].replace(/^\./, ''),
     afterPath: wildcardMatch[2].replace(/^\./, ''),
   };
+}
+
+function sqliteJsonPath(path: string): string {
+  const normalized = path.replace(/^\$?\.?/, '');
+  if (!normalized) return '$';
+
+  return `$${normalized.split('.').filter(Boolean).map((segment) => {
+    const match = segment.match(/^([A-Za-z_][A-Za-z0-9_]*)(\[\d+])?$/);
+    if (match) return `.${match[1]}${match[2] ?? ''}`;
+    return `.${JSON.stringify(segment)}`;
+  }).join('')}`;
 }
 
 function advancedSearchCondition(
@@ -263,14 +325,13 @@ function advancedSearchCondition(
       const wildcardParts = wildcardJsonPathParts(criterion.path);
       if (wildcardParts) {
         conditions.push(`EXISTS (
-          SELECT 1 FROM json_each(json_extract(${pageAlias}.lect, '$.' || ?))
-          WHERE json_extract(value, '$.' || ?) LIKE ?
+          SELECT 1 FROM json_each(json_extract(${pageAlias}.lect, ?))
+          WHERE json_extract(value, ?) LIKE ?
         )`);
-        params.push(wildcardParts.beforePath, wildcardParts.afterPath, searchTerm);
+        params.push(sqliteJsonPath(wildcardParts.beforePath), sqliteJsonPath(wildcardParts.afterPath), searchTerm);
       } else {
-        const jsonPath = criterion.path.startsWith('.') ? `$${criterion.path}` : `$.${criterion.path}`;
         conditions.push(`json_extract(${pageAlias}.lect, ?) LIKE ?`);
-        params.push(jsonPath, searchTerm);
+        params.push(sqliteJsonPath(criterion.path), searchTerm);
       }
     } else {
       conditions.push(`${pageAlias}.lect LIKE ?`);
@@ -456,6 +517,7 @@ async function renderAdvancedSearch(c: AdminContext, defaultPageType = 'all', ca
     page,
   });
   const maxCriterionIndex = criteria.reduce((max, criterion) => Math.max(max, criterion.index), 0);
+  const pathOptionsByPageType = advancedSearchPathOptionsByPageType();
 
   return c.html(
     await advancedSearchPage(c.env.VIEWS, {
@@ -474,6 +536,8 @@ async function renderAdvancedSearch(c: AdminContext, defaultPageType = 'all', ca
       routeBase,
       criteria: advancedSearchFormCriteria(criteria, taxonomy.tagTypes, taxonomy.tags),
       tagGroups: advancedSearchTagGroups(taxonomy.tagTypes, taxonomy.tags),
+      pathOptions: pathOptionsByPageType[selectedPageType] ?? pathOptionsByPageType.all,
+      pathOptionsByPageTypeJson: JSON.stringify(pathOptionsByPageType),
       nextCriterionIndex: Math.max(2, maxCriterionIndex + 1),
       operator,
       pageSize,

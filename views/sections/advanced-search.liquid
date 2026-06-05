@@ -17,7 +17,7 @@
       <label class="block">
         <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Type</span>
         {% if canSelectPageType %}
-          <select name="page_type" class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <select id="advanced_search_page_type" name="page_type" class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="all" {% if pageType == 'all' %}selected{% endif %}>All Types</option>
             {% for option in pageTypes %}
               <option value="{{ option.value | escape }}" {% if option.selected %}selected{% endif %}>{{ option.label | escape }}</option>
@@ -72,7 +72,7 @@
           </label>
           <label class="block">
             <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Path</span>
-            <input type="text" name="path{{ criterion.index }}" value="{{ criterion.path | escape }}" placeholder="position[*].company"
+            <input type="text" name="path{{ criterion.index }}" value="{{ criterion.path | escape }}" placeholder="position[*].company" list="advanced-search-path-options"
                    class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
           </label>
           <div>
@@ -122,7 +122,7 @@
         </label>
         <label class="block">
           <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Path</span>
-          <input type="text" name="path__INDEX__" value="" placeholder="position[*].company"
+          <input type="text" name="path__INDEX__" value="" placeholder="position[*].company" list="advanced-search-path-options"
                  class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
         </label>
         <div>
@@ -184,6 +184,13 @@
       </div>
     </div>
   </form>
+
+  <datalist id="advanced-search-path-options">
+    {% for pathOption in pathOptions %}
+      <option value="{{ pathOption | escape }}"></option>
+    {% endfor %}
+  </datalist>
+  <script type="application/json" id="advanced-search-path-options-data">{{ pathOptionsByPageTypeJson }}</script>
 
   <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
     <table class="w-full min-w-[760px] text-left">
@@ -343,7 +350,23 @@
     const criteria = document.getElementById('advanced-search-criteria');
     const template = document.getElementById('advanced-search-criterion-template');
     const addButton = document.getElementById('advanced-search-add-criterion');
+    const pageTypeSelect = document.getElementById('advanced_search_page_type');
+    const pathOptionsList = document.getElementById('advanced-search-path-options');
+    const pathOptionsData = document.getElementById('advanced-search-path-options-data');
     let nextIndex = {{ nextCriterionIndex }};
+
+    const pathOptionsByPageType = JSON.parse(pathOptionsData?.textContent || '{}');
+
+    const updatePathOptions = (pageType) => {
+      if (!pathOptionsList) return;
+      const values = pathOptionsByPageType[pageType] || pathOptionsByPageType.all || [];
+      pathOptionsList.replaceChildren();
+      values.forEach((value) => {
+        const option = document.createElement('option');
+        option.value = value;
+        pathOptionsList.appendChild(option);
+      });
+    };
 
     const updateRemoveButtons = () => {
       const rows = criteria.querySelectorAll('[data-criterion-row]');
@@ -357,6 +380,10 @@
       const html = template.innerHTML.replaceAll('__INDEX__', String(nextIndex++));
       criteria.insertAdjacentHTML('beforeend', html);
       updateRemoveButtons();
+    });
+
+    pageTypeSelect?.addEventListener('change', () => {
+      updatePathOptions(pageTypeSelect.value);
     });
 
     criteria?.addEventListener('click', (event) => {
