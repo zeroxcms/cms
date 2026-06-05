@@ -1,0 +1,258 @@
+<div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
+  <div class="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900">{{ pageTitle | escape }}</h2>
+      <p class="mt-1 text-sm text-gray-500">{{ resultCountLabel | escape }}</p>
+    </div>
+    <div class="flex flex-col gap-2 sm:flex-row">
+      <a href="{{ listHref | escape }}"
+         class="inline-flex h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        List
+      </a>
+      <a href="{{ createHref | escape }}"
+         class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+        New
+      </a>
+    </div>
+  </div>
+
+  <form method="GET" action="{{ searchAction | escape }}" class="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+    <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_9rem_8rem_8rem] md:items-end">
+      <label class="block">
+        <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Operator</span>
+        <select name="operator" class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="AND" {% if operator == 'AND' %}selected{% endif %}>AND</option>
+          <option value="OR" {% if operator == 'OR' %}selected{% endif %}>OR</option>
+          <option value="NOT" {% if operator == 'NOT' %}selected{% endif %}>NOT</option>
+        </select>
+      </label>
+      <label class="block">
+        <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Page Size</span>
+        <input type="number" name="pagesize" value="{{ pageSize }}" min="1" max="100"
+               class="h-10 w-full rounded-lg border border-gray-300 px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </label>
+      <label class="block">
+        <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Sort</span>
+        <select name="sort" class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="updated_at" {% if sort == 'updated_at' %}selected{% endif %}>Updated</option>
+          <option value="created_at" {% if sort == 'created_at' %}selected{% endif %}>Created</option>
+          <option value="name" {% if sort == 'name' %}selected{% endif %}>Name</option>
+          <option value="weight" {% if sort == 'weight' %}selected{% endif %}>Weight</option>
+          <option value="id" {% if sort == 'id' %}selected{% endif %}>ID</option>
+        </select>
+      </label>
+      <label class="block">
+        <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Order</span>
+        <select name="order" class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="DESC" {% if order == 'DESC' %}selected{% endif %}>Desc</option>
+          <option value="ASC" {% if order == 'ASC' %}selected{% endif %}>Asc</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="mt-4 grid gap-3">
+      {% for criterion in criteria %}
+        <div class="grid gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 lg:grid-cols-[3rem_minmax(0,1fr)_minmax(12rem,18rem)_minmax(12rem,1fr)] lg:items-start">
+          <div class="flex h-10 items-center text-sm font-semibold text-gray-500">#{{ criterion.index }}</div>
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Search</span>
+            <input type="search" name="search{{ criterion.index }}" value="{{ criterion.term | escape }}" placeholder="name email company"
+                   class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Path</span>
+            <input type="text" name="path{{ criterion.index }}" value="{{ criterion.path | escape }}" placeholder="position[*].company"
+                   class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          </label>
+          <div>
+            <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Tags</span>
+            <details class="rounded-lg border border-gray-300 bg-white">
+              <summary class="flex h-10 cursor-pointer items-center px-3 text-sm font-medium text-gray-700">Select Tags</summary>
+              <div class="max-h-56 overflow-y-auto border-t border-gray-200 p-3">
+                {% if criterion.tagGroups.size > 0 %}
+                  {% for group in criterion.tagGroups %}
+                    <div class="mb-3 last:mb-0">
+                      <div class="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ group.name | escape }}</div>
+                      <div class="grid gap-1">
+                        {% for tag in group.tags %}
+                          <label class="flex min-h-7 items-center gap-2 text-sm text-gray-700">
+                            <input type="checkbox" name="tags{{ criterion.index }}" value="{{ tag.idString | escape }}"
+                                   class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                   {% if tag.selected %}checked{% endif %}>
+                            <span>{{ tag.name | escape }}</span>
+                          </label>
+                        {% endfor %}
+                      </div>
+                    </div>
+                  {% endfor %}
+                {% else %}
+                  <div class="text-sm text-gray-400">No tags</div>
+                {% endif %}
+              </div>
+            </details>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+      <a href="{{ resetHref | escape }}"
+         class="inline-flex h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        Reset
+      </a>
+      <button type="submit"
+              class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M21 21l-4.35-4.35m1.1-5.4a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z"/>
+        </svg>
+        Search
+      </button>
+    </div>
+  </form>
+
+  <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+    <table class="w-full min-w-[760px] text-left">
+      <thead class="border-b border-gray-200 bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Page</th>
+          <th class="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Weight</th>
+          <th class="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
+          <th class="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% if hasResults %}
+          {% for page in pages %}
+            <tr class="transition-colors hover:bg-gray-50">
+              <td class="px-6 py-4">
+                <a href="{{ page.editHref | escape }}" class="flex flex-col gap-1">
+                  <div class="font-medium text-gray-900">{{ page.name | escape }}</div>
+                  <div class="font-mono text-xs text-gray-500">/{{ page.slug | escape }}</div>
+                </a>
+              </td>
+              <td class="px-6 py-4">
+                <form method="POST" action="{{ page.weightAction | escape }}" class="flex min-w-0 flex-wrap items-center gap-2">
+                  <input type="hidden" name="return_to" value="{{ routeBase | escape }}?{{ queryWithoutPage | escape }}&page={{ currentPage }}">
+                  <label for="advanced_weight_{{ page.id }}" class="sr-only">Weight for {{ page.name | escape }}</label>
+                  <input id="advanced_weight_{{ page.id }}" type="number" name="weight" value="{{ page.weight }}" min="0" max="1000"
+                         class="min-w-0 w-20 max-w-full rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <button type="submit"
+                          class="shrink-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                    Save
+                  </button>
+                  {% if page.hasLiveWeightDrift %}
+                    <span title="Live weight is {{ page.liveWeight }}; publish to sync" class="inline-flex items-center text-amber-600">
+                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                      </svg>
+                    </span>
+                  {% endif %}
+                </form>
+              </td>
+              <td class="px-6 py-4">
+                <div class="flex items-center gap-2">
+                  {% if page.isPublished %}
+                    <span class="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+                      <span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>Live
+                    </span>
+                    {% if page.hasLiveLectDrift %}
+                      <span title="Live content differs from draft; publish to sync" class="inline-flex items-center text-amber-600">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                        </svg>
+                        <span class="sr-only">Live content differs from draft</span>
+                      </span>
+                    {% endif %}
+                  {% else %}
+                    <span class="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800">
+                      <span class="h-1.5 w-1.5 rounded-full bg-yellow-500"></span>Draft
+                    </span>
+                  {% endif %}
+                </div>
+              </td>
+              <td class="px-6 py-4">
+                <div class="flex flex-wrap items-center gap-2">
+                  <a href="{{ page.editHref | escape }}" title="Edit" aria-label="Edit {{ page.name | escape }}"
+                     class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-indigo-600 transition-colors hover:bg-indigo-50 hover:text-indigo-800">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/>
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19.5 7.125L16.875 4.5M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/>
+                    </svg>
+                    <span class="sr-only">Edit</span>
+                  </a>
+                  {% if page.isPublished %}
+                    <form method="POST" action="{{ page.unpublishAction | escape }}" class="inline shrink-0" onsubmit="return confirm('Unpublish this page?')">
+                      <button type="submit" title="Unpublish" aria-label="Unpublish {{ page.name | escape }}"
+                              class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-yellow-600 transition-colors hover:bg-yellow-50 hover:text-yellow-800">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c1.927 0 3.733-.52 5.285-1.428"/>
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.5a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.243 4.243L9.88 9.88"/>
+                        </svg>
+                        <span class="sr-only">Unpublish</span>
+                      </button>
+                    </form>
+                  {% else %}
+                    <form method="POST" action="{{ page.publishAction | escape }}" class="inline shrink-0">
+                      <button type="submit" title="Publish" aria-label="Publish {{ page.name | escape }}"
+                              class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-green-600 transition-colors hover:bg-green-50 hover:text-green-800">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 16.5V9.75m0 0l-3 3m3-3l3 3"/>
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.75 19.5a4.5 4.5 0 01-.858-8.917 5.25 5.25 0 0110.233-2.33 3.75 3.75 0 013.125 6.816"/>
+                        </svg>
+                        <span class="sr-only">Publish</span>
+                      </button>
+                    </form>
+                  {% endif %}
+                  <form method="POST" action="{{ page.deleteAction | escape }}" class="inline shrink-0" onsubmit="return confirm('Move this page to trash?')">
+                    <button type="submit" title="Trash" aria-label="Move {{ page.name | escape }} to trash"
+                            class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50 hover:text-red-700">
+                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166M19.228 5.79L18.16 19.673A2.25 2.25 0 0115.916 21H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .563c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
+                      </svg>
+                      <span class="sr-only">Trash</span>
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="4" class="px-6 py-12 text-center text-gray-400">
+              {% if hasSearch %}
+                No matching pages.
+              {% else %}
+                Enter search criteria.
+              {% endif %}
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if showPagination %}
+    <div class="mt-4 flex items-center justify-between gap-3 text-sm">
+      <div class="text-gray-500">Page {{ currentPage }} of {{ totalPages }}</div>
+      <div class="flex gap-2">
+        {% if hasPreviousPage %}
+          <a href="{{ previousHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Previous</a>
+        {% endif %}
+        {% if hasNextPage %}
+          <a href="{{ nextHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Next</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>

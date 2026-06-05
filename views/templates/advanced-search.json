@@ -1,0 +1,10 @@
+{
+  "sections": {
+    "main": {
+      "type": "advanced-search"
+    }
+  },
+  "order": [
+    "main"
+  ]
+}

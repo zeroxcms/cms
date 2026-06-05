@@ -18,13 +18,18 @@ export async function dashboardPage(views: Fetcher, opts: {
   pages: DashboardPage[];
   flash?: string;
   returnPath?: string;
+  pageTypeFilter?: string;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, pages, flash, returnPath = '/admin' } = opts;
+  const { siteTitle, userName, userRole, userAvatar, pages, flash, returnPath = '/admin', pageTypeFilter } = opts;
   const pageCount = pages.length;
+  const showPageTypeColumn = !pageTypeFilter;
   const body = await renderView(views, '/templates/dashboard.json', {
     flash,
     hasFlash: !!flash,
     returnPath,
+    pageTitle: pageTypeFilter ? `Pages: ${pageTypeFilter}` : 'Pages',
+    showPageTypeColumn,
+    emptyColspan: showPageTypeColumn ? 5 : 4,
     pageCount,
     pageCountLabel: `${pageCount} page${pageCount === 1 ? '' : 's'} in draft`,
     hasPages: pageCount > 0,
@@ -33,6 +38,7 @@ export async function dashboardPage(views: Fetcher, opts: {
       name: page.name,
       slug: page.slug,
       pageType: page.page_type ?? '-',
+      pageTypeHref: showPageTypeColumn && page.page_type ? `/admin/pages/list/${encodeURIComponent(page.page_type)}` : '',
       weight: page.weight,
       liveWeight: page.liveWeight,
       hasLiveWeightDrift: !!page.hasLiveWeightDrift,

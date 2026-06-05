@@ -18,6 +18,7 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { authMiddleware, editorGuard } from '../middleware/auth';
+import { advancedSearchPage } from '../templates/advanced-search';
 import { dashboardPage } from '../templates/dashboard';
 import { editorPage } from '../templates/editor';
 import { importPage } from '../templates/import';
@@ -45,6 +46,24 @@ import type { Lect, LectItem } from '../utils/lect';
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 type AdminContext = Context<{ Bindings: Env; Variables: Variables }>;
+type AdvancedSearchOperator = 'AND' | 'OR' | 'NOT';
+
+interface AdvancedSearchCriterion {
+  index: number;
+  term: string;
+  path: string;
+  tags: string[];
+}
+
+interface AdvancedSearchResult {
+  results: Page[];
+  pagination: {
+    total: number;
+    totalPages: number;
+    currentPage: number;
+    limit: number;
+  };
+}
 
 // Apply auth to all admin routes
 adminRoutes.use('*', authMiddleware);
@@ -56,6 +75,10 @@ adminRoutes.use('*', editorGuard);
 type FormValue = File | string | null | undefined;
 
 function str(v: FormValue): string {
+  return typeof v === 'string' ? v.trim() : '';
+}
+
+function strParam(v: string | null | undefined): string {
   return typeof v === 'string' ? v.trim() : '';
 }
 
@@ -128,6 +151,302 @@ async function editorTaxonomy(db: D1Database): Promise<{ tags: Tag[]; tagTypes: 
     tags: tags.results,
     tagTypes: tagTypes.results,
   };
+}
+
+function parseAdvancedSearchCriteria(url: string): AdvancedSearchCriterion[] {
+  const params = new URL(url).searchParams;
+  const criteria: AdvancedSearchCriterion[] = [];
+
+  for (let index = 1; params.has(`search${index}`) || params.has(`path${index}`) || params.has(`tags${index}`); index++) {
+    const term = strParam(params.get(`search${index}`));
+    const path = strParam(params.get(`path${index}`));
+    const tags = params.getAll(`tags${index}`)
+      .flatMap((value) => value.split(','))
+      .map((tag) => tag.trim())
+      .filter((tag) => /^\d+$/.test(tag));
+
+    if (term || tags.length) {
+      criteria.push({
+        index,
+        term,
+        path,
+        tags: Array.from(new Set(tags)),
+      });
+    }
+  }
+
+  return criteria;
+}
+
+function advancedSearchOperator(value: string | null | undefined): AdvancedSearchOperator {
+  const operator = strParam(value).toUpperCase();
+  return operator === 'OR' || operator === 'NOT' ? operator : 'AND';
+}
+
+function advancedSearchPageSize(value: string | null | undefined): number {
+  return Math.min(Math.max(num(value, 20), 1), 100);
+}
+
+function advancedSearchSort(value: string | null | undefined): string {
+  const sort = strParam(value);
+  return ['id', 'name', 'slug', 'weight', 'created_at', 'updated_at'].includes(sort) ? sort : 'updated_at';
+}
+
+function advancedSearchOrder(value: string | null | undefined): 'ASC' | 'DESC' {
+  return strParam(value).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+}
+
+function advancedSearchQueryString(
+  criteria: AdvancedSearchCriterion[],
+  operator: AdvancedSearchOperator,
+  pageSize: number,
+  extras: Record<string, string | number | undefined> = {},
+): string {
+  const params = new URLSearchParams();
+  params.set('operator', operator);
+  params.set('pagesize', String(pageSize));
+
+  for (const criterion of criteria) {
+    params.set(`search${criterion.index}`, criterion.term);
+    params.set(`path${criterion.index}`, criterion.path);
+    for (const tag of criterion.tags) params.append(`tags${criterion.index}`, tag);
+  }
+
+  for (const [key, value] of Object.entries(extras)) {
+    if (value !== undefined && String(value) !== '') params.set(key, String(value));
+  }
+
+  return params.toString();
+}
+
+function wildcardJsonPathParts(path: string): { beforePath: string; afterPath: string } | null {
+  const wildcardMatch = path.match(/(.+?)\[\*\](.+)/i);
+  if (!wildcardMatch) return null;
+
+  return {
+    beforePath: wildcardMatch[1].replace(/^\./, ''),
+    afterPath: wildcardMatch[2].replace(/^\./, ''),
+  };
+}
+
+function advancedSearchCondition(
+  criterion: AdvancedSearchCriterion,
+  pageAlias: string,
+): { conditions: string[]; params: unknown[] } {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (criterion.term) {
+    const searchTerm = `%${criterion.term.replaceAll(' ', '%')}%`;
+    if (criterion.path) {
+      const wildcardParts = wildcardJsonPathParts(criterion.path);
+      if (wildcardParts) {
+        conditions.push(`EXISTS (
+          SELECT 1 FROM json_each(json_extract(${pageAlias}.lect, '$.' || ?))
+          WHERE json_extract(value, '$.' || ?) LIKE ?
+        )`);
+        params.push(wildcardParts.beforePath, wildcardParts.afterPath, searchTerm);
+      } else {
+        const jsonPath = criterion.path.startsWith('.') ? `$${criterion.path}` : `$.${criterion.path}`;
+        conditions.push(`json_extract(${pageAlias}.lect, ?) LIKE ?`);
+        params.push(jsonPath, searchTerm);
+      }
+    } else {
+      conditions.push(`${pageAlias}.lect LIKE ?`);
+      params.push(searchTerm);
+    }
+  }
+
+  if (criterion.tags.length > 0) {
+    const placeholders = criterion.tags.map(() => '?').join(',');
+    conditions.push(`${pageAlias}.id IN (
+      SELECT page_id FROM draft_page_tags
+      WHERE tag_id IN (${placeholders})
+      GROUP BY page_id
+      HAVING COUNT(DISTINCT tag_id) = ?
+    )`);
+    params.push(...criterion.tags, criterion.tags.length);
+  }
+
+  return { conditions, params };
+}
+
+async function performAdvancedSearch(
+  db: D1Database,
+  pageType: string,
+  criteria: AdvancedSearchCriterion[],
+  operator: AdvancedSearchOperator,
+  options: {
+    limit: number;
+    page: number;
+    sort: string;
+    order: 'ASC' | 'DESC';
+  },
+): Promise<AdvancedSearchResult> {
+  let searchCondition = '1=0';
+  let searchParams: unknown[] = [];
+
+  if (criteria.length > 0 && operator === 'NOT') {
+    const base = advancedSearchCondition(criteria[0], 'p');
+    const baseCondition = base.conditions.length ? `(${base.conditions.join(' AND ')})` : '1=1';
+    const excludeConditions: string[] = [];
+    const excludeParams: unknown[] = [];
+
+    for (const criterion of criteria.slice(1)) {
+      const exclusion = advancedSearchCondition(criterion, 'excluded');
+      if (!exclusion.conditions.length) continue;
+      excludeConditions.push(`(${exclusion.conditions.join(' AND ')})`);
+      excludeParams.push(...exclusion.params);
+    }
+
+    searchCondition = baseCondition;
+    searchParams = base.params;
+    if (excludeConditions.length) {
+      searchCondition += ` AND p.id NOT IN (
+        SELECT excluded.id FROM draft_pages excluded
+        WHERE excluded.page_type = ? AND (${excludeConditions.join(' OR ')})
+      )`;
+      searchParams.push(pageType, ...excludeParams);
+    }
+  } else if (criteria.length > 0) {
+    const criterionConditions: string[] = [];
+    for (const criterion of criteria) {
+      const condition = advancedSearchCondition(criterion, 'p');
+      if (!condition.conditions.length) continue;
+      criterionConditions.push(`(${condition.conditions.join(' AND ')})`);
+      searchParams.push(...condition.params);
+    }
+    searchCondition = criterionConditions.length ? `(${criterionConditions.join(` ${operator} `)})` : '1=0';
+  }
+
+  const whereSql = `p.page_type = ? AND ${searchCondition}`;
+  const baseParams = [pageType, ...searchParams];
+  const countRow = await db.prepare(`SELECT COUNT(*) as total FROM draft_pages p WHERE ${whereSql}`)
+    .bind(...baseParams)
+    .first<{ total: number }>();
+  const total = countRow?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / options.limit));
+  const currentPage = Math.min(options.page, totalPages);
+  const currentOffset = (currentPage - 1) * options.limit;
+
+  const pages = await db.prepare(
+    `SELECT * FROM draft_pages p
+     WHERE ${whereSql}
+     ORDER BY ${options.sort} ${options.order}, id DESC
+     LIMIT ? OFFSET ?`,
+  )
+    .bind(...baseParams, options.limit, currentOffset)
+    .all<Page>();
+
+  return {
+    results: pages.results,
+    pagination: {
+      total,
+      totalPages,
+      currentPage,
+      limit: options.limit,
+    },
+  };
+}
+
+function advancedSearchFormCriteria(criteria: AdvancedSearchCriterion[], tagTypes: TagType[], tags: Tag[]) {
+  const maxIndex = criteria.reduce((max, criterion) => Math.max(max, criterion.index), 0);
+  const criteriaByIndex = new Map(criteria.map((criterion) => [criterion.index, criterion]));
+  const formCriteria = [];
+  const rowCount = Math.max(3, maxIndex + 1);
+
+  for (let index = 1; index <= rowCount; index++) {
+    formCriteria.push(criteriaByIndex.get(index) ?? { index, term: '', path: '', tags: [] });
+  }
+
+  return formCriteria.map((criterion) => ({
+    ...criterion,
+    tagGroups: tagTypes.map((tagType) => ({
+      name: tagType.name,
+      tags: tags
+        .filter((tag) => tag.tag_type_id === tagType.id)
+        .map((tag) => ({
+          id: tag.id,
+          idString: String(tag.id),
+          name: tag.name,
+          selected: criterion.tags.includes(String(tag.id)),
+        })),
+    })).filter((group) => group.tags.length > 0),
+  }));
+}
+
+async function renderAdvancedSearch(c: AdminContext, pageType: string, routeBase: string) {
+  const user = c.get('user');
+  const criteria = parseAdvancedSearchCriteria(c.req.url);
+  const operator = advancedSearchOperator(c.req.query('operator'));
+  const pageSize = advancedSearchPageSize(c.req.query('pagesize'));
+  const requestedPage = Math.max(num(c.req.query('page'), 1), 1);
+  const sort = advancedSearchSort(c.req.query('sort'));
+  const order = advancedSearchOrder(c.req.query('order'));
+  const hasSearch = criteria.length > 0;
+
+  const [taxonomy, dbUser] = await Promise.all([
+    editorTaxonomy(c.env.DB),
+    c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+      .bind(parseInt(user.sub, 10))
+      .first<{ avatar_url: string | null }>(),
+  ]);
+
+  const result = hasSearch
+    ? await performAdvancedSearch(c.env.DB, pageType, criteria, operator, {
+        limit: pageSize,
+        page: requestedPage,
+        sort,
+        order,
+      })
+    : {
+        results: [],
+        pagination: {
+          total: 0,
+          totalPages: 1,
+          currentPage: requestedPage,
+          limit: pageSize,
+        },
+      };
+
+  const livePages = await c.env.DB.prepare('SELECT uuid, lect, weight FROM live_pages WHERE page_type = ?')
+    .bind(pageType)
+    .all<{ uuid: string; lect: string | null; weight: number }>();
+  const liveMap = new Map(livePages.results.map((page) => [page.uuid, page]));
+  const queryWithoutPage = advancedSearchQueryString(criteria, operator, pageSize, { sort, order });
+  const pageQuery = (page: number) => advancedSearchQueryString(criteria, operator, pageSize, { sort, order, page });
+
+  return c.html(
+    await advancedSearchPage(c.env.VIEWS, {
+      siteTitle: `${c.env.SITE_TITLE ?? 'Worker CMS'} · ${pageType} search`,
+      userName: user.name,
+      userRole: user.role,
+      userAvatar: dbUser?.avatar_url ?? '',
+      pageTitle: `Advanced Search: ${pageType}`,
+      pageType,
+      routeBase,
+      criteria: advancedSearchFormCriteria(criteria, taxonomy.tagTypes, taxonomy.tags),
+      operator,
+      pageSize,
+      sort,
+      order,
+      hasSearch,
+      count: result.pagination.total,
+      currentPage: result.pagination.currentPage,
+      totalPages: result.pagination.totalPages,
+      previousHref: result.pagination.currentPage > 1 ? `${routeBase}?${pageQuery(result.pagination.currentPage - 1)}` : '',
+      nextHref: result.pagination.currentPage < result.pagination.totalPages ? `${routeBase}?${pageQuery(result.pagination.currentPage + 1)}` : '',
+      resetHref: routeBase,
+      queryWithoutPage,
+      pages: result.results.map((page) => ({
+        ...page,
+        isPublished: liveMap.has(page.uuid),
+        liveWeight: liveMap.get(page.uuid)?.weight,
+        hasLiveWeightDrift: liveMap.has(page.uuid) && liveMap.get(page.uuid)?.weight !== page.weight,
+        hasLiveLectDrift: liveMap.has(page.uuid) && !lectsMatch(liveMap.get(page.uuid)?.lect, page.lect),
+      })),
+    }),
+  );
 }
 
 function lectForPage(pageType: string, stored: string | null | undefined): Lect {
@@ -393,6 +712,13 @@ adminRoutes.get('/', async (c) => {
 
 // ── Page type workflows ──────────────────────────────────────────────────────
 
+adminRoutes.get('/contacts/advanced-search', (c) => renderAdvancedSearch(c, 'contact', '/admin/contacts/advanced-search'));
+
+adminRoutes.get('/pages/advanced-search/:pageType', (c) => {
+  const pageType = c.req.param('pageType');
+  return renderAdvancedSearch(c, pageType, `/admin/pages/advanced-search/${encodeURIComponent(pageType)}`);
+});
+
 adminRoutes.get('/pages/list/:pageType', async (c) => {
   const user = c.get('user');
   const pageType = c.req.param('pageType');
@@ -436,6 +762,7 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
       })),
       flash: flash || undefined,
       returnPath: `/admin/pages/list/${encodeURIComponent(pageType)}${search ? `?search=${encodeURIComponent(search)}` : ''}`,
+      pageTypeFilter: pageType,
     }),
   );
 });

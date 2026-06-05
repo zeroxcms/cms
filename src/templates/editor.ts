@@ -354,6 +354,13 @@ function fieldLabel(name: string): string {
   return name.replace(/__/g, '.');
 }
 
+function editorChips(editors: string | null | undefined): string[] {
+  return (editors ?? '')
+    .split(',')
+    .map((editor) => editor.trim())
+    .filter(Boolean);
+}
+
 export async function editorPage(views: Fetcher, opts: {
   siteTitle: string;
   userName: string;
@@ -407,6 +414,7 @@ export async function editorPage(views: Fetcher, opts: {
   const pageType = (structured ? getLectScalar(structured.lect, '_type') : '') || page?.page_type || defaultPageType || 'default';
   const structuredBlock = structured ? await renderStructuredEditor(views, structured) : '';
   const versionHrefBase = page ? `/admin/pages/${page.id}/edit` : action;
+  const pageEditorChips = editorChips(page?.editors);
   const versions = structured?.versions.map((version) => ({
     label: `${version.created_at}${version.action ? ` - ${version.action}` : ''}`,
     href: `${versionHrefBase}?version=${version.id}`,
@@ -441,6 +449,8 @@ export async function editorPage(views: Fetcher, opts: {
       end: page?.end ? page.end.replace(' ', 'T').slice(0, 16) : '',
       creator: page?.creator ?? '',
       editors: page?.editors ?? '',
+      editorChips: pageEditorChips,
+      hasEditorChips: pageEditorChips.length > 0,
       lect: page?.lect ?? '',
     },
     parentOptions: parentPages
@@ -448,6 +458,7 @@ export async function editorPage(views: Fetcher, opts: {
       .map((parent) => ({
         id: parent.id,
         name: parent.name,
+        slug: parent.slug,
         selected: page?.page_id === parent.id,
       })),
     pageTypeOptions: structured
