@@ -444,10 +444,11 @@ async function renderAdvancedSearch(c: AdminContext, defaultPageType = 'all') {
     .bind(...pageTypes)
     .all<{ uuid: string; lect: string | null; weight: number }>();
   const liveMap = new Map(livePages.results.map((page) => [page.uuid, page]));
-  const routeBase = '/admin/advanced-search';
-  const queryWithoutPage = advancedSearchQueryString(criteria, operator, pageSize, { page_type: selectedPageType, sort, order });
+  const routeBase = selectedPageType === 'all'
+    ? '/admin/advanced-search'
+    : `/admin/advanced-search/${encodeURIComponent(selectedPageType)}`;
+  const queryWithoutPage = advancedSearchQueryString(criteria, operator, pageSize, { sort, order });
   const pageQuery = (page: number) => advancedSearchQueryString(criteria, operator, pageSize, {
-    page_type: selectedPageType,
     sort,
     order,
     page,
@@ -759,9 +760,7 @@ adminRoutes.get('/', async (c) => {
 
 adminRoutes.get('/advanced-search', (c) => renderAdvancedSearch(c));
 
-adminRoutes.get('/contacts/advanced-search', (c) => renderAdvancedSearch(c, 'contact'));
-
-adminRoutes.get('/pages/advanced-search/:pageType', (c) => {
+adminRoutes.get('/advanced-search/:pageType', (c) => {
   const pageType = c.req.param('pageType');
   return renderAdvancedSearch(c, pageType);
 });
