@@ -156,8 +156,14 @@ async function editorTaxonomy(db: D1Database): Promise<{ tags: Tag[]; tagTypes: 
 function parseAdvancedSearchCriteria(url: string): AdvancedSearchCriterion[] {
   const params = new URL(url).searchParams;
   const criteria: AdvancedSearchCriterion[] = [];
+  const indexes = new Set<number>();
 
-  for (let index = 1; params.has(`search${index}`) || params.has(`path${index}`) || params.has(`tags${index}`); index++) {
+  for (const key of params.keys()) {
+    const match = key.match(/^(?:search|path|tags)(\d+)$/);
+    if (match) indexes.add(parseInt(match[1], 10));
+  }
+
+  for (const index of [...indexes].sort((left, right) => left - right)) {
     const term = strParam(params.get(`search${index}`));
     const path = strParam(params.get(`path${index}`));
     const tags = params.getAll(`tags${index}`)
@@ -219,6 +225,21 @@ function advancedSearchQueryString(
   return params.toString();
 }
 
+function advancedSearchPageTypes(): string[] {
+  return Object.keys(cmsConfig.blueprint);
+}
+
+function advancedSearchSelectedPageType(value: string | null | undefined, fallback = 'all'): string {
+  const pageTypes = advancedSearchPageTypes();
+  const requested = strParam(value || fallback);
+  return pageTypes.includes(requested) ? requested : 'all';
+}
+
+function advancedSearchTargetPageTypes(selectedPageType: string): string[] {
+  const pageTypes = advancedSearchPageTypes();
+  return selectedPageType === 'all' ? pageTypes : [selectedPageType];
+}
+
 function wildcardJsonPathParts(path: string): { beforePath: string; afterPath: string } | null {
   const wildcardMatch = path.match(/(.+?)\[\*\](.+)/i);
   if (!wildcardMatch) return null;
@@ -273,7 +294,7 @@ function advancedSearchCondition(
 
 async function performAdvancedSearch(
   db: D1Database,
-  pageType: string,
+  pageTypes: string[],
   criteria: AdvancedSearchCriterion[],
   operator: AdvancedSearchOperator,
   options: {
@@ -285,6 +306,7 @@ async function performAdvancedSearch(
 ): Promise<AdvancedSearchResult> {
   let searchCondition = '1=0';
   let searchParams: unknown[] = [];
+  const pageTypePlaceholders = pageTypes.map(() => '?').join(',');
 
   if (criteria.length > 0 && operator === 'NOT') {
     const base = advancedSearchCondition(criteria[0], 'p');
@@ -304,9 +326,9 @@ async function performAdvancedSearch(
     if (excludeConditions.length) {
       searchCondition += ` AND p.id NOT IN (
         SELECT excluded.id FROM draft_pages excluded
-        WHERE excluded.page_type = ? AND (${excludeConditions.join(' OR ')})
+        WHERE excluded.page_type IN (${pageTypePlaceholders}) AND (${excludeConditions.join(' OR ')})
       )`;
-      searchParams.push(pageType, ...excludeParams);
+      searchParams.push(...pageTypes, ...excludeParams);
     }
   } else if (criteria.length > 0) {
     const criterionConditions: string[] = [];
@@ -319,8 +341,8 @@ async function performAdvancedSearch(
     searchCondition = criterionConditions.length ? `(${criterionConditions.join(` ${operator} `)})` : '1=0';
   }
 
-  const whereSql = `p.page_type = ? AND ${searchCondition}`;
-  const baseParams = [pageType, ...searchParams];
+  const whereSql = `p.page_type IN (${pageTypePlaceholders}) AND ${searchCondition}`;
+  const baseParams = [...pageTypes, ...searchParams];
   const countRow = await db.prepare(`SELECT COUNT(*) as total FROM draft_pages p WHERE ${whereSql}`)
     .bind(...baseParams)
     .first<{ total: number }>();
@@ -350,14 +372,7 @@ async function performAdvancedSearch(
 }
 
 function advancedSearchFormCriteria(criteria: AdvancedSearchCriterion[], tagTypes: TagType[], tags: Tag[]) {
-  const maxIndex = criteria.reduce((max, criterion) => Math.max(max, criterion.index), 0);
-  const criteriaByIndex = new Map(criteria.map((criterion) => [criterion.index, criterion]));
-  const formCriteria = [];
-  const rowCount = Math.max(3, maxIndex + 1);
-
-  for (let index = 1; index <= rowCount; index++) {
-    formCriteria.push(criteriaByIndex.get(index) ?? { index, term: '', path: '', tags: [] });
-  }
+  const formCriteria = criteria.length ? criteria : [{ index: 1, term: '', path: '', tags: [] }];
 
   return formCriteria.map((criterion) => ({
     ...criterion,
@@ -375,9 +390,24 @@ function advancedSearchFormCriteria(criteria: AdvancedSearchCriterion[], tagType
   }));
 }
 
-async function renderAdvancedSearch(c: AdminContext, pageType: string, routeBase: string) {
+function advancedSearchTagGroups(tagTypes: TagType[], tags: Tag[]) {
+  return tagTypes.map((tagType) => ({
+    name: tagType.name,
+    tags: tags
+      .filter((tag) => tag.tag_type_id === tagType.id)
+      .map((tag) => ({
+        id: tag.id,
+        idString: String(tag.id),
+        name: tag.name,
+      })),
+  })).filter((group) => group.tags.length > 0);
+}
+
+async function renderAdvancedSearch(c: AdminContext, defaultPageType = 'all') {
   const user = c.get('user');
   const criteria = parseAdvancedSearchCriteria(c.req.url);
+  const selectedPageType = advancedSearchSelectedPageType(c.req.query('page_type'), defaultPageType);
+  const pageTypes = advancedSearchTargetPageTypes(selectedPageType);
   const operator = advancedSearchOperator(c.req.query('operator'));
   const pageSize = advancedSearchPageSize(c.req.query('pagesize'));
   const requestedPage = Math.max(num(c.req.query('page'), 1), 1);
@@ -393,7 +423,7 @@ async function renderAdvancedSearch(c: AdminContext, pageType: string, routeBase
   ]);
 
   const result = hasSearch
-    ? await performAdvancedSearch(c.env.DB, pageType, criteria, operator, {
+    ? await performAdvancedSearch(c.env.DB, pageTypes, criteria, operator, {
         limit: pageSize,
         page: requestedPage,
         sort,
@@ -409,23 +439,38 @@ async function renderAdvancedSearch(c: AdminContext, pageType: string, routeBase
         },
       };
 
-  const livePages = await c.env.DB.prepare('SELECT uuid, lect, weight FROM live_pages WHERE page_type = ?')
-    .bind(pageType)
+  const pageTypePlaceholders = pageTypes.map(() => '?').join(',');
+  const livePages = await c.env.DB.prepare(`SELECT uuid, lect, weight FROM live_pages WHERE page_type IN (${pageTypePlaceholders})`)
+    .bind(...pageTypes)
     .all<{ uuid: string; lect: string | null; weight: number }>();
   const liveMap = new Map(livePages.results.map((page) => [page.uuid, page]));
-  const queryWithoutPage = advancedSearchQueryString(criteria, operator, pageSize, { sort, order });
-  const pageQuery = (page: number) => advancedSearchQueryString(criteria, operator, pageSize, { sort, order, page });
+  const routeBase = '/admin/advanced-search';
+  const queryWithoutPage = advancedSearchQueryString(criteria, operator, pageSize, { page_type: selectedPageType, sort, order });
+  const pageQuery = (page: number) => advancedSearchQueryString(criteria, operator, pageSize, {
+    page_type: selectedPageType,
+    sort,
+    order,
+    page,
+  });
+  const maxCriterionIndex = criteria.reduce((max, criterion) => Math.max(max, criterion.index), 0);
 
   return c.html(
     await advancedSearchPage(c.env.VIEWS, {
-      siteTitle: `${c.env.SITE_TITLE ?? 'Worker CMS'} · ${pageType} search`,
+      siteTitle: `${c.env.SITE_TITLE ?? 'Worker CMS'} · Advanced Search`,
       userName: user.name,
       userRole: user.role,
       userAvatar: dbUser?.avatar_url ?? '',
-      pageTitle: `Advanced Search: ${pageType}`,
-      pageType,
+      pageTitle: 'Advanced Search',
+      pageType: selectedPageType,
+      pageTypes: advancedSearchPageTypes().map((pageType) => ({
+        value: pageType,
+        label: pageType,
+        selected: pageType === selectedPageType,
+      })),
       routeBase,
       criteria: advancedSearchFormCriteria(criteria, taxonomy.tagTypes, taxonomy.tags),
+      tagGroups: advancedSearchTagGroups(taxonomy.tagTypes, taxonomy.tags),
+      nextCriterionIndex: Math.max(2, maxCriterionIndex + 1),
       operator,
       pageSize,
       sort,
@@ -712,11 +757,13 @@ adminRoutes.get('/', async (c) => {
 
 // ── Page type workflows ──────────────────────────────────────────────────────
 
-adminRoutes.get('/contacts/advanced-search', (c) => renderAdvancedSearch(c, 'contact', '/admin/contacts/advanced-search'));
+adminRoutes.get('/advanced-search', (c) => renderAdvancedSearch(c));
+
+adminRoutes.get('/contacts/advanced-search', (c) => renderAdvancedSearch(c, 'contact'));
 
 adminRoutes.get('/pages/advanced-search/:pageType', (c) => {
   const pageType = c.req.param('pageType');
-  return renderAdvancedSearch(c, pageType, `/admin/pages/advanced-search/${encodeURIComponent(pageType)}`);
+  return renderAdvancedSearch(c, pageType);
 });
 
 adminRoutes.get('/pages/list/:pageType', async (c) => {

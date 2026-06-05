@@ -9,18 +9,20 @@
          class="inline-flex h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
         List
       </a>
-      <a href="{{ createHref | escape }}"
-         class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-        </svg>
-        New
-      </a>
     </div>
   </div>
 
   <form method="GET" action="{{ searchAction | escape }}" class="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-    <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_9rem_8rem_8rem] md:items-end">
+    <div class="grid gap-3 md:grid-cols-[minmax(10rem,1fr)_minmax(0,1fr)_9rem_8rem_8rem] md:items-end">
+      <label class="block">
+        <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Type</span>
+        <select name="page_type" class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="all" {% if pageType == 'all' %}selected{% endif %}>All Types</option>
+          {% for option in pageTypes %}
+            <option value="{{ option.value | escape }}" {% if option.selected %}selected{% endif %}>{{ option.label | escape }}</option>
+          {% endfor %}
+        </select>
+      </label>
       <label class="block">
         <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Operator</span>
         <select name="operator" class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
@@ -53,10 +55,10 @@
       </label>
     </div>
 
-    <div class="mt-4 grid gap-3">
+    <div id="advanced-search-criteria" class="mt-4 grid gap-3">
       {% for criterion in criteria %}
-        <div class="grid gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 lg:grid-cols-[3rem_minmax(0,1fr)_minmax(12rem,18rem)_minmax(12rem,1fr)] lg:items-start">
-          <div class="flex h-10 items-center text-sm font-semibold text-gray-500">#{{ criterion.index }}</div>
+        <div data-criterion-row class="grid gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 lg:grid-cols-[3rem_minmax(0,1fr)_minmax(12rem,18rem)_minmax(12rem,1fr)_2.5rem] lg:items-start">
+          <div data-criterion-number class="flex h-10 items-center text-sm font-semibold text-gray-500">#{{ criterion.index }}</div>
           <label class="block">
             <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Search</span>
             <input type="search" name="search{{ criterion.index }}" value="{{ criterion.term | escape }}" placeholder="name email company"
@@ -94,11 +96,73 @@
               </div>
             </details>
           </div>
+          <button type="button" data-remove-criterion title="Remove criterion" aria-label="Remove criterion"
+                  class="mt-6 inline-flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-red-600">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
         </div>
       {% endfor %}
     </div>
 
-    <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+    <template id="advanced-search-criterion-template">
+      <div data-criterion-row class="grid gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 lg:grid-cols-[3rem_minmax(0,1fr)_minmax(12rem,18rem)_minmax(12rem,1fr)_2.5rem] lg:items-start">
+        <div data-criterion-number class="flex h-10 items-center text-sm font-semibold text-gray-500">#__INDEX__</div>
+        <label class="block">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Search</span>
+          <input type="search" name="search__INDEX__" value="" placeholder="name email company"
+                 class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Path</span>
+          <input type="text" name="path__INDEX__" value="" placeholder="position[*].company"
+                 class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </label>
+        <div>
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Tags</span>
+          <details class="rounded-lg border border-gray-300 bg-white">
+            <summary class="flex h-10 cursor-pointer items-center px-3 text-sm font-medium text-gray-700">Select Tags</summary>
+            <div class="max-h-56 overflow-y-auto border-t border-gray-200 p-3">
+              {% if tagGroups.size > 0 %}
+                {% for group in tagGroups %}
+                  <div class="mb-3 last:mb-0">
+                    <div class="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ group.name | escape }}</div>
+                    <div class="grid gap-1">
+                      {% for tag in group.tags %}
+                        <label class="flex min-h-7 items-center gap-2 text-sm text-gray-700">
+                          <input type="checkbox" name="tags__INDEX__" value="{{ tag.idString | escape }}"
+                                 class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                          <span>{{ tag.name | escape }}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endfor %}
+              {% else %}
+                <div class="text-sm text-gray-400">No tags</div>
+              {% endif %}
+            </div>
+          </details>
+        </div>
+        <button type="button" data-remove-criterion title="Remove criterion" aria-label="Remove criterion"
+                class="mt-6 inline-flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-red-600">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+    </template>
+
+    <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-between">
+      <button type="button" id="advanced-search-add-criterion"
+              class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+        Add Criterion
+      </button>
+      <div class="flex flex-col gap-2 sm:flex-row">
       <a href="{{ resetHref | escape }}"
          class="inline-flex h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
         Reset
@@ -111,6 +175,7 @@
         </svg>
         Search
       </button>
+      </div>
     </div>
   </form>
 
@@ -119,6 +184,7 @@
       <thead class="border-b border-gray-200 bg-gray-50">
         <tr>
           <th class="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Page</th>
+          <th class="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Type</th>
           <th class="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Weight</th>
           <th class="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
           <th class="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
@@ -133,6 +199,15 @@
                   <div class="font-medium text-gray-900">{{ page.name | escape }}</div>
                   <div class="font-mono text-xs text-gray-500">/{{ page.slug | escape }}</div>
                 </a>
+              </td>
+              <td class="px-6 py-4 text-sm text-gray-500">
+                {% if page.pageTypeHref %}
+                  <a href="{{ page.pageTypeHref | escape }}" class="font-medium text-indigo-600 hover:text-indigo-800 hover:underline">
+                    {{ page.pageType | escape }}
+                  </a>
+                {% else %}
+                  {{ page.pageType | escape }}
+                {% endif %}
               </td>
               <td class="px-6 py-4">
                 <form method="POST" action="{{ page.weightAction | escape }}" class="flex min-w-0 flex-wrap items-center gap-2">
@@ -229,7 +304,7 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="4" class="px-6 py-12 text-center text-gray-400">
+            <td colspan="5" class="px-6 py-12 text-center text-gray-400">
               {% if hasSearch %}
                 No matching pages.
               {% else %}
@@ -256,3 +331,38 @@
     </div>
   {% endif %}
 </div>
+
+<script>
+  (() => {
+    const criteria = document.getElementById('advanced-search-criteria');
+    const template = document.getElementById('advanced-search-criterion-template');
+    const addButton = document.getElementById('advanced-search-add-criterion');
+    let nextIndex = {{ nextCriterionIndex }};
+
+    const updateRemoveButtons = () => {
+      const rows = criteria.querySelectorAll('[data-criterion-row]');
+      rows.forEach((row) => {
+        const button = row.querySelector('[data-remove-criterion]');
+        if (button) button.disabled = rows.length <= 1;
+      });
+    };
+
+    addButton?.addEventListener('click', () => {
+      const html = template.innerHTML.replaceAll('__INDEX__', String(nextIndex++));
+      criteria.insertAdjacentHTML('beforeend', html);
+      updateRemoveButtons();
+    });
+
+    criteria?.addEventListener('click', (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const button = target?.closest('[data-remove-criterion]');
+      if (!button) return;
+      const rows = criteria.querySelectorAll('[data-criterion-row]');
+      if (rows.length <= 1) return;
+      button.closest('[data-criterion-row]')?.remove();
+      updateRemoveButtons();
+    });
+
+    updateRemoveButtons();
+  })();
+</script>

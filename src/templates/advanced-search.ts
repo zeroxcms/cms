@@ -11,7 +11,7 @@ interface AdvancedSearchTagOption {
 
 interface AdvancedSearchTagGroup {
   name: string;
-  tags: AdvancedSearchTagOption[];
+  tags: Array<AdvancedSearchTagOption | Omit<AdvancedSearchTagOption, 'selected'>>;
 }
 
 interface AdvancedSearchCriterionView {
@@ -28,8 +28,11 @@ export async function advancedSearchPage(views: Fetcher, opts: {
   userAvatar: string;
   pageTitle: string;
   pageType: string;
+  pageTypes: Array<{ value: string; label: string; selected: boolean }>;
   routeBase: string;
   criteria: AdvancedSearchCriterionView[];
+  tagGroups: AdvancedSearchTagGroup[];
+  nextCriterionIndex: number;
   operator: 'AND' | 'OR' | 'NOT';
   pageSize: number;
   sort: string;
@@ -52,13 +55,14 @@ export async function advancedSearchPage(views: Fetcher, opts: {
     hasNextPage: !!opts.nextHref,
     showPagination: opts.totalPages > 1,
     searchAction: opts.routeBase,
-    listHref: `/admin/pages/list/${encodeURIComponent(opts.pageType)}`,
-    createHref: `/admin/pages/new?page_type=${encodeURIComponent(opts.pageType)}`,
+    listHref: opts.pageType === 'all' ? '/admin' : `/admin/pages/list/${encodeURIComponent(opts.pageType)}`,
     sortHref: `${opts.routeBase}?${opts.queryWithoutPage}`,
     pages: opts.pages.map((page) => ({
       id: page.id,
       name: page.name,
       slug: page.slug,
+      pageType: page.page_type ?? '-',
+      pageTypeHref: page.page_type ? `/admin/pages/list/${encodeURIComponent(page.page_type)}` : '',
       weight: page.weight,
       liveWeight: page.liveWeight,
       hasLiveWeightDrift: !!page.hasLiveWeightDrift,
