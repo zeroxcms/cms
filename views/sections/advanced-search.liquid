@@ -16,12 +16,18 @@
     <div class="grid gap-3 md:grid-cols-[minmax(10rem,1fr)_minmax(0,1fr)_9rem_8rem_8rem] md:items-end">
       <label class="block">
         <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Type</span>
-        <select name="page_type" class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
-          <option value="all" {% if pageType == 'all' %}selected{% endif %}>All Types</option>
-          {% for option in pageTypes %}
-            <option value="{{ option.value | escape }}" {% if option.selected %}selected{% endif %}>{{ option.label | escape }}</option>
-          {% endfor %}
-        </select>
+        {% if canSelectPageType %}
+          <select name="page_type" class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="all" {% if pageType == 'all' %}selected{% endif %}>All Types</option>
+            {% for option in pageTypes %}
+              <option value="{{ option.value | escape }}" {% if option.selected %}selected{% endif %}>{{ option.label | escape }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <div class="flex h-10 w-full items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-700">
+            {{ pageType | escape }}
+          </div>
+        {% endif %}
       </label>
       <label class="block">
         <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Operator</span>

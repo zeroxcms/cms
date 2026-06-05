@@ -19,8 +19,23 @@ export async function dashboardPage(views: Fetcher, opts: {
   flash?: string;
   returnPath?: string;
   pageTypeFilter?: string;
+  searchValue?: string;
+  searchAction?: string;
+  advancedSearchHref?: string;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, pages, flash, returnPath = '/admin', pageTypeFilter } = opts;
+  const {
+    siteTitle,
+    userName,
+    userRole,
+    userAvatar,
+    pages,
+    flash,
+    returnPath = '/admin',
+    pageTypeFilter,
+    searchValue = '',
+    searchAction = '/admin',
+    advancedSearchHref = pageTypeFilter ? `/admin/advanced-search/${encodeURIComponent(pageTypeFilter)}` : '/admin/advanced-search',
+  } = opts;
   const pageCount = pages.length;
   const showPageTypeColumn = !pageTypeFilter;
   const body = await renderView(views, '/templates/dashboard.json', {
@@ -30,6 +45,10 @@ export async function dashboardPage(views: Fetcher, opts: {
     pageTitle: pageTypeFilter ? `Pages: ${pageTypeFilter}` : 'Pages',
     showPageTypeColumn,
     emptyColspan: showPageTypeColumn ? 5 : 4,
+    searchValue,
+    searchAction,
+    searchPlaceholder: pageTypeFilter ? `Search ${pageTypeFilter} pages` : 'Search pages',
+    advancedSearchHref,
     pageCount,
     pageCountLabel: `${pageCount} page${pageCount === 1 ? '' : 's'} in draft`,
     hasPages: pageCount > 0,

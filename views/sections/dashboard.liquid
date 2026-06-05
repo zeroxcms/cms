@@ -1,16 +1,40 @@
 <div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
-  <div class="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
+  <div class="flex flex-col gap-4 mb-6 xl:flex-row xl:items-center xl:justify-between">
     <div>
       <h2 class="text-2xl font-bold text-gray-900">{{ pageTitle | escape }}</h2>
       <p class="text-sm text-gray-500 mt-1">{{ pageCountLabel | escape }}</p>
     </div>
-    <a href="/admin/pages/new"
-       class="inline-flex w-full items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm sm:w-auto">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-      </svg>
-      New Page
-    </a>
+    <div class="flex w-full flex-col gap-2 sm:flex-row xl:max-w-3xl xl:justify-end">
+      <form method="GET" action="{{ searchAction | escape }}" class="flex min-w-0 flex-1 gap-2">
+        <label for="dashboard_search" class="sr-only">Search pages</label>
+        <input id="dashboard_search" type="search" name="search" value="{{ searchValue | escape }}" placeholder="{{ searchPlaceholder | escape }}"
+               class="h-10 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <button type="submit"
+                title="Search"
+                aria-label="Search pages"
+                class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M21 21l-4.35-4.35m1.1-5.4a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z"/>
+          </svg>
+        </button>
+      </form>
+      <a href="{{ advancedSearchHref | escape }}"
+         class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.097v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013l-2.5 1.25A.75.75 0 019.5 19.95v-5.517a2.25 2.25 0 00-.659-1.591L3.409 7.41A2.25 2.25 0 012.75 5.819V4.775c0-.541.384-1.006.917-1.097A49.42 49.42 0 0112 3z"/>
+        </svg>
+        Advanced Search
+      </a>
+      <a href="/admin/pages/new"
+         class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+        New Page
+      </a>
+    </div>
   </div>
 
   {% if hasFlash %}

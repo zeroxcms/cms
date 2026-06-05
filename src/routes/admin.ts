@@ -403,10 +403,12 @@ function advancedSearchTagGroups(tagTypes: TagType[], tags: Tag[]) {
   })).filter((group) => group.tags.length > 0);
 }
 
-async function renderAdvancedSearch(c: AdminContext, defaultPageType = 'all') {
+async function renderAdvancedSearch(c: AdminContext, defaultPageType = 'all', canSelectPageType = true) {
   const user = c.get('user');
   const criteria = parseAdvancedSearchCriteria(c.req.url);
-  const selectedPageType = advancedSearchSelectedPageType(c.req.query('page_type'), defaultPageType);
+  const selectedPageType = canSelectPageType
+    ? advancedSearchSelectedPageType(c.req.query('page_type'), defaultPageType)
+    : advancedSearchSelectedPageType(undefined, defaultPageType);
   const pageTypes = advancedSearchTargetPageTypes(selectedPageType);
   const operator = advancedSearchOperator(c.req.query('operator'));
   const pageSize = advancedSearchPageSize(c.req.query('pagesize'));
@@ -461,8 +463,9 @@ async function renderAdvancedSearch(c: AdminContext, defaultPageType = 'all') {
       userName: user.name,
       userRole: user.role,
       userAvatar: dbUser?.avatar_url ?? '',
-      pageTitle: 'Advanced Search',
+      pageTitle: selectedPageType === 'all' ? 'Advanced Search' : `Advanced Search: ${selectedPageType}`,
       pageType: selectedPageType,
+      canSelectPageType,
       pageTypes: advancedSearchPageTypes().map((pageType) => ({
         value: pageType,
         label: pageType,
@@ -716,10 +719,17 @@ async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
 adminRoutes.get('/', async (c) => {
   const user = c.get('user');
   const flash = c.req.query('flash') ?? '';
+  const search = c.req.query('search')?.trim() ?? '';
 
-  const draftPages = await c.env.DB.prepare(
-    'SELECT * FROM draft_pages ORDER BY weight ASC, name ASC',
-  ).all<Page>();
+  const draftPages = search
+    ? await c.env.DB.prepare(
+        'SELECT * FROM draft_pages WHERE name LIKE ? ORDER BY weight ASC, name ASC',
+      )
+        .bind(`%${search}%`)
+        .all<Page>()
+    : await c.env.DB.prepare(
+        'SELECT * FROM draft_pages ORDER BY weight ASC, name ASC',
+      ).all<Page>();
 
   const livePages = await c.env.DB.prepare('SELECT uuid, lect, weight FROM live_pages').all<{
     uuid: string;
@@ -751,7 +761,10 @@ adminRoutes.get('/', async (c) => {
       userAvatar: dbUser?.avatar_url ?? '',
       pages,
       flash: flash || undefined,
-      returnPath: '/admin',
+      returnPath: `/admin${search ? `?search=${encodeURIComponent(search)}` : ''}`,
+      searchValue: search,
+      searchAction: '/admin',
+      advancedSearchHref: '/admin/advanced-search',
     }),
   );
 });
@@ -762,7 +775,7 @@ adminRoutes.get('/advanced-search', (c) => renderAdvancedSearch(c));
 
 adminRoutes.get('/advanced-search/:pageType', (c) => {
   const pageType = c.req.param('pageType');
-  return renderAdvancedSearch(c, pageType);
+  return renderAdvancedSearch(c, pageType, false);
 });
 
 adminRoutes.get('/pages/list/:pageType', async (c) => {
@@ -809,6 +822,9 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
       flash: flash || undefined,
       returnPath: `/admin/pages/list/${encodeURIComponent(pageType)}${search ? `?search=${encodeURIComponent(search)}` : ''}`,
       pageTypeFilter: pageType,
+      searchValue: search,
+      searchAction: `/admin/pages/list/${encodeURIComponent(pageType)}`,
+      advancedSearchHref: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
     }),
   );
 });

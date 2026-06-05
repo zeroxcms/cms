@@ -28,6 +28,7 @@ export async function advancedSearchPage(views: Fetcher, opts: {
   userAvatar: string;
   pageTitle: string;
   pageType: string;
+  canSelectPageType: boolean;
   pageTypes: Array<{ value: string; label: string; selected: boolean }>;
   routeBase: string;
   criteria: AdvancedSearchCriterionView[];
