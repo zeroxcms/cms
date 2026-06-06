@@ -680,6 +680,42 @@ async function exportPagesCsv(db: D1Database, pages: Page[], pageTypes: string[]
   return `\uFEFF${rows.map((row) => row.map(csvFormatValue).join(',')).join('\n')}`;
 }
 
+function csvDownloadResponse(csv: string, filename: string): Response {
+  return new Response(csv, {
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Expires': '0',
+      'Pragma': 'no-cache',
+    },
+  });
+}
+
+async function exportPageList(c: AdminContext, pageType?: string): Promise<Response> {
+  const selectedPageType = strParam(pageType);
+  const pages = selectedPageType
+    ? await c.env.DB.prepare(
+        'SELECT * FROM draft_pages WHERE page_type = ? ORDER BY weight ASC, name ASC',
+      )
+        .bind(selectedPageType)
+        .all<Page>()
+    : await c.env.DB.prepare(
+        'SELECT * FROM draft_pages ORDER BY page_type ASC, weight ASC, name ASC',
+      ).all<Page>();
+  const pageTypes = selectedPageType
+    ? [selectedPageType]
+    : uniqueSorted([
+        ...advancedSearchPageTypes(),
+        ...pages.results.map((page) => page.page_type ?? ''),
+      ]);
+  const csv = await exportPagesCsv(c.env.DB, pages.results, pageTypes);
+  const stamp = c.req.query('r') || new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `${selectedPageType || 'pages'}-export-${stamp}.csv`;
+
+  return csvDownloadResponse(csv, filename);
+}
+
 async function readImportCsvText(form: FormData): Promise<string> {
   const file = form.get('file') as unknown;
   if (file && typeof file === 'object' && 'text' in file && 'size' in file) {
@@ -1021,15 +1057,7 @@ async function exportAdvancedSearch(c: AdminContext, defaultPageType = 'all', ca
   const stamp = c.req.query('r') || new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `${selectedPageType === 'all' ? 'pages' : selectedPageType}-export-${stamp}.csv`;
 
-  return new Response(csv, {
-    headers: {
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Content-Disposition': `attachment; filename="${filename}"`,
-      'Content-Type': 'text/csv; charset=utf-8',
-      'Expires': '0',
-      'Pragma': 'no-cache',
-    },
-  });
+  return csvDownloadResponse(csv, filename);
 }
 
 function advancedSearchCondition(
@@ -1550,6 +1578,7 @@ adminRoutes.get('/', async (c) => {
       returnPath: '/admin',
       searchAction: '/admin/advanced-search',
       advancedSearchHref: '/admin/advanced-search',
+      exportHref: '/admin/pages/export',
     }),
   );
 });
@@ -1563,6 +1592,13 @@ adminRoutes.get('/advanced-search-export', (c) => exportAdvancedSearch(c));
 adminRoutes.get('/advanced-search-export/:pageType', (c) => {
   const pageType = c.req.param('pageType');
   return exportAdvancedSearch(c, pageType, false);
+});
+
+adminRoutes.get('/pages/export', (c) => exportPageList(c));
+
+adminRoutes.get('/pages/export/:pageType', (c) => {
+  const pageType = c.req.param('pageType');
+  return exportPageList(c, pageType);
 });
 
 adminRoutes.get('/advanced-search/:pageType', (c) => {
@@ -1615,6 +1651,7 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
       searchAction: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
       advancedSearchHref: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
       importHref: `/admin/pages/import-v2/${encodeURIComponent(pageType)}`,
+      exportHref: `/admin/pages/export/${encodeURIComponent(pageType)}`,
     }),
   );
 });

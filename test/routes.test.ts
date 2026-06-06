@@ -269,6 +269,59 @@ describe('admin routes', () => {
     }
   });
 
+  it('GET /admin/pages/export exports all draft pages', async () => {
+    const companyLect = blueprintToLect('company', cmsConfig.blueprint, cmsConfig.defaultLanguage);
+    companyLect.name = localizedFixture('Acme');
+    companyLect.address = localizedFixture('Acme Address');
+    await env.DB.prepare(
+      `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(103, 'page-uuid-103', 'Acme', 'acme', 6, 'company', stringifyLect(companyLect), 1, '1')
+      .run();
+
+    const response = await fetchWorker('/admin/pages/export?r=test', {
+      headers: { Cookie: await authCookie() },
+    });
+    const csv = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="pages-export-test.csv"');
+    expect(csv).toContain('About');
+    expect(csv).toContain('Acme');
+  });
+
+  it('GET /admin/pages/export/:pageType exports one draft page type', async () => {
+    const companyLect = blueprintToLect('company', cmsConfig.blueprint, cmsConfig.defaultLanguage);
+    companyLect.name = localizedFixture('Acme');
+    await env.DB.prepare(
+      `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(103, 'page-uuid-103', 'Acme', 'acme', 6, 'company', stringifyLect(companyLect), 1, '1')
+      .run();
+
+    const response = await fetchWorker('/admin/pages/export/default?r=test', {
+      headers: { Cookie: await authCookie() },
+    });
+    const csv = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="default-export-test.csv"');
+    expect(csv).toContain('About');
+    expect(csv).not.toContain('Acme');
+  });
+
+  it('shows CSV export links on the dashboard and page-type list', async () => {
+    const [dashboard, pageTypeList] = await Promise.all([
+      fetchWorker('/admin', { headers: { Cookie: await authCookie() } }),
+      fetchWorker('/admin/pages/list/default', { headers: { Cookie: await authCookie() } }),
+    ]);
+
+    expect(await dashboard.text()).toContain('href="/admin/pages/export"');
+    expect(await pageTypeList.text()).toContain('href="/admin/pages/export/default"');
+  });
+
   it('POST /admin/pages/import-v2/:pageType/confirm imports explicit localized CSV columns', async () => {
     const nameHeaders = cmsConfig.languages.map((language) => `name.${language}`);
     const bodyHeaders = cmsConfig.languages.map((language) => `body.${language}`);
