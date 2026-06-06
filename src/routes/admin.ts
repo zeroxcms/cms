@@ -79,6 +79,15 @@ interface CsvImportResult {
   skipped: number;
 }
 
+type CsvImportMode = 'new' | 'append' | 'new-append' | 'overwrite' | 'new-overwrite' | 'force-new';
+
+interface CsvImportModeOption {
+  value: CsvImportMode;
+  label: string;
+  description: string;
+  destructive: boolean;
+}
+
 interface CsvImportPreviewRow {
   rowNumber: number;
   action: 'create' | 'update';
@@ -94,6 +103,45 @@ interface CsvImportPreview {
   skipped: number;
 }
 
+const CSV_IMPORT_MODE_OPTIONS: CsvImportModeOption[] = [
+  {
+    value: 'new-append',
+    label: 'New + Add Missing Fields',
+    description: 'Create new pages and fill empty fields or add tags on existing pages.',
+    destructive: false,
+  },
+  {
+    value: 'new',
+    label: 'New Pages Only',
+    description: 'Create only rows that do not match an existing draft page.',
+    destructive: false,
+  },
+  {
+    value: 'new-overwrite',
+    label: 'New + Replace Existing Fields',
+    description: 'Create new pages and replace matching fields on existing pages.',
+    destructive: true,
+  },
+  {
+    value: 'append',
+    label: 'Existing Pages: Add Missing Fields',
+    description: 'Only fill empty fields or add tags on existing pages.',
+    destructive: false,
+  },
+  {
+    value: 'overwrite',
+    label: 'Existing Pages: Replace Fields',
+    description: 'Only replace matching fields on existing pages.',
+    destructive: true,
+  },
+  {
+    value: 'force-new',
+    label: 'Treat All Rows As New Pages',
+    description: 'Create every CSV row as a new draft page, even when it matches an existing page.',
+    destructive: false,
+  },
+];
+
 // Apply auth to all admin routes
 adminRoutes.use('*', authMiddleware);
 adminRoutes.use('*', editorGuard);
@@ -105,6 +153,20 @@ type FormValue = File | string | null | undefined;
 
 function str(v: FormValue): string {
   return typeof v === 'string' ? v.trim() : '';
+}
+
+function csvImportMode(v: FormValue): CsvImportMode {
+  const value = str(v);
+  return CSV_IMPORT_MODE_OPTIONS.some((option) => option.value === value)
+    ? value as CsvImportMode
+    : 'new-append';
+}
+
+function csvImportModeOptions(selected: CsvImportMode = 'new-append') {
+  return CSV_IMPORT_MODE_OPTIONS.map((option) => ({
+    ...option,
+    checked: option.value === selected,
+  }));
 }
 
 function strParam(v: string | null | undefined): string {
@@ -432,6 +494,18 @@ function splitListValue(value: string): string[] {
   return value.split(';').map((entry) => entry.trim()).filter(Boolean);
 }
 
+function hasCsvColumn(row: Record<string, string>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(row, key);
+}
+
+function csvCellHasValue(value: string | null | undefined): boolean {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+function csvRowHasValues(row: Record<string, string>): boolean {
+  return Object.values(row).some(csvCellHasValue);
+}
+
 function lectValueToCsvCell(value: unknown): string {
   if (value === undefined || value === null) return '';
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
@@ -621,18 +695,28 @@ async function ensureTag(db: D1Database, tagType: TagType, name: string): Promis
   return tag!.id;
 }
 
-async function importPageTags(db: D1Database, pageId: number, row: Record<string, string>, tagTypes: TagType[]): Promise<void> {
+async function importPageTags(
+  db: D1Database,
+  pageId: number,
+  row: Record<string, string>,
+  tagTypes: TagType[],
+  mode: 'replace' | 'append' = 'replace',
+): Promise<boolean> {
+  let changed = false;
   for (const tagType of tagTypes) {
     const header = `tag:${tagType.name}`;
     const value = row[header] ?? row[tagType.name];
     if (value === undefined) continue;
 
-    await db.prepare(
-      `DELETE FROM draft_page_tags
-       WHERE page_id = ? AND tag_id IN (SELECT id FROM tags WHERE tag_type_id = ?)`,
-    )
-      .bind(pageId, tagType.id)
-      .run();
+    if (mode === 'replace') {
+      await db.prepare(
+        `DELETE FROM draft_page_tags
+         WHERE page_id = ? AND tag_id IN (SELECT id FROM tags WHERE tag_type_id = ?)`,
+      )
+        .bind(pageId, tagType.id)
+        .run();
+      changed = true;
+    }
 
     for (const tagName of splitListValue(value)) {
       const tagId = await ensureTag(db, tagType, tagName);
@@ -643,8 +727,10 @@ async function importPageTags(db: D1Database, pageId: number, row: Record<string
       await db.prepare('INSERT INTO draft_page_tags (page_id, tag_id) VALUES (?, ?)')
         .bind(pageId, tagId)
         .run();
+      changed = true;
     }
   }
+  return changed;
 }
 
 async function previewPagesCsv(db: D1Database, pageType: string, csvText: string): Promise<CsvImportPreview> {
@@ -653,7 +739,7 @@ async function previewPagesCsv(db: D1Database, pageType: string, csvText: string
   const preview: CsvImportPreview = { rows: [], skipped: 0 };
 
   for (const [index, row] of rows.entries()) {
-    if (!Object.values(row).some((value) => value.trim() !== '')) {
+    if (!csvRowHasValues(row)) {
       preview.skipped++;
       continue;
     }
@@ -685,64 +771,186 @@ async function previewPagesCsv(db: D1Database, pageType: string, csvText: string
   return preview;
 }
 
-async function importPagesCsv(db: D1Database, pageType: string, csvText: string, userId: number): Promise<CsvImportResult> {
+function applyCsvLectValues(
+  lect: Lect,
+  row: Record<string, string>,
+  pathKinds: Map<string, BlueprintPathKind>,
+  mode: 'replace' | 'append',
+): boolean {
+  let changed = false;
+  for (const [path, kind] of pathKinds) {
+    if (!hasCsvColumn(row, path)) continue;
+    const value = row[path] ?? '';
+    if (mode === 'append') {
+      if (!csvCellHasValue(value)) continue;
+      if (getLectValueByPath(lect, path).trim() !== '') continue;
+    }
+    setLectPathValue(lect, path, kind, value);
+    changed = true;
+  }
+  return changed;
+}
+
+async function createImportedPage(
+  db: D1Database,
+  pageType: string,
+  row: Record<string, string>,
+  userId: number,
+  taxonomy: { tagTypes: TagType[] },
+  pathKinds: Map<string, BlueprintPathKind>,
+): Promise<boolean> {
+  const lect = normalizeLect(blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage));
+  applyCsvLectValues(lect, row, pathKinds, 'replace');
+
+  lect._type = pageType;
+  const name = row.name?.trim() || getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || `Untitled ${pageType}`;
+  const slug = row.slug?.trim() || slugify(name);
+  const lectValue = stringifyLect(withDraftMetadata(lect, userId));
+  const weight = row.weight ? num(row.weight) : 5;
+  const start = row.start?.trim() || null;
+  const end = row.end?.trim() || null;
+
+  const insert = await db.prepare(
+    `INSERT INTO draft_pages (name, slug, weight, start, end, page_type, lect, creator)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(name, slug, weight, start, end, pageType, lectValue, userId || null)
+    .run();
+  const page = await db.prepare('SELECT id FROM draft_pages WHERE rowid = ?')
+    .bind(insert.meta.last_row_id)
+    .first<{ id: number }>();
+  if (!page) return false;
+
+  const versionId = await savePageVersion(db, page.id, lectValue, 'import');
+  await db.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
+    .bind(versionId, page.id)
+    .run();
+  await importPageTags(db, page.id, row, taxonomy.tagTypes, 'replace');
+  return true;
+}
+
+async function updateImportedPage(
+  db: D1Database,
+  pageType: string,
+  row: Record<string, string>,
+  existing: Page,
+  userId: number,
+  taxonomy: { tagTypes: TagType[] },
+  pathKinds: Map<string, BlueprintPathKind>,
+  mode: 'replace' | 'append',
+): Promise<boolean> {
+  const lect = normalizeLect(lectForPage(pageType, existing.lect));
+  let changed = applyCsvLectValues(lect, row, pathKinds, mode);
+  let name = existing.name;
+  let slug = existing.slug;
+  let weight = existing.weight ?? 5;
+  let start = existing.start;
+  let end = existing.end;
+
+  if (mode === 'append') {
+    if (csvCellHasValue(row.name) && !existing.name?.trim()) {
+      name = row.name.trim();
+      changed = true;
+    }
+    if (csvCellHasValue(row.slug) && !existing.slug?.trim()) {
+      slug = row.slug.trim();
+      changed = true;
+    }
+    if (csvCellHasValue(row.weight) && existing.weight === null) {
+      weight = num(row.weight);
+      changed = true;
+    }
+    if (csvCellHasValue(row.start) && !existing.start) {
+      start = row.start.trim();
+      changed = true;
+    }
+    if (csvCellHasValue(row.end) && !existing.end) {
+      end = row.end.trim();
+      changed = true;
+    }
+  } else {
+    if (hasCsvColumn(row, 'name')) {
+      name = row.name?.trim() || getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || existing.name || `Untitled ${pageType}`;
+      changed = true;
+    }
+    if (hasCsvColumn(row, 'slug')) {
+      slug = row.slug?.trim() || existing.slug || slugify(name);
+      changed = true;
+    }
+    if (hasCsvColumn(row, 'weight') && csvCellHasValue(row.weight)) {
+      weight = num(row.weight);
+      changed = true;
+    }
+    if (hasCsvColumn(row, 'start')) {
+      start = row.start?.trim() || null;
+      changed = true;
+    }
+    if (hasCsvColumn(row, 'end')) {
+      end = row.end?.trim() || null;
+      changed = true;
+    }
+  }
+
+  lect._type = pageType;
+  const lectValue = stringifyLect(withDraftMetadata(lect, userId));
+  const tagsChanged = await importPageTags(db, existing.id, row, taxonomy.tagTypes, mode);
+  if (!changed && !tagsChanged) return false;
+
+  if (changed) {
+    await db.prepare(
+      `UPDATE draft_pages SET name = ?, slug = ?, weight = ?, start = ?, end = ?, lect = ? WHERE id = ?`,
+    )
+      .bind(name, slug, weight, start, end, lectValue, existing.id)
+      .run();
+    const versionId = await savePageVersion(db, existing.id, lectValue, 'import');
+    await db.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
+      .bind(versionId, existing.id)
+      .run();
+  }
+
+  return true;
+}
+
+async function importPagesCsv(
+  db: D1Database,
+  pageType: string,
+  csvText: string,
+  userId: number,
+  mode: CsvImportMode = 'new-append',
+): Promise<CsvImportResult> {
   const rows = csvRowsToObjects(parseCsv(csvText));
   const pathKinds = advancedSearchPathKindMap([pageType]);
   const taxonomy = await editorTaxonomy(db);
   const result: CsvImportResult = { created: 0, updated: 0, skipped: 0 };
 
   for (const row of rows) {
-    const existing = await findImportTarget(db, pageType, row);
-    const baseLect = existing ? lectForPage(pageType, existing.lect) : blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
-    const lect = normalizeLect(baseLect);
-
-    for (const [path, kind] of pathKinds) {
-      if (!(path in row)) continue;
-      setLectPathValue(lect, path, kind, row[path] ?? '');
-    }
-
-    lect._type = pageType;
-    const name = row.name?.trim() || getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || existing?.name || `Untitled ${pageType}`;
-    const slug = row.slug?.trim() || existing?.slug || slugify(name);
-    const lectValue = stringifyLect(withDraftMetadata(lect, userId));
-    const weight = row.weight ? num(row.weight) : existing?.weight ?? 5;
-    const start = row.start?.trim() || existing?.start || null;
-    const end = row.end?.trim() || existing?.end || null;
-
-    if (existing) {
-      await db.prepare(
-        `UPDATE draft_pages SET name = ?, slug = ?, weight = ?, start = ?, end = ?, lect = ? WHERE id = ?`,
-      )
-        .bind(name, slug, weight, start, end, lectValue, existing.id)
-        .run();
-      const versionId = await savePageVersion(db, existing.id, lectValue, 'import');
-      await db.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
-        .bind(versionId, existing.id)
-        .run();
-      await importPageTags(db, existing.id, row, taxonomy.tagTypes);
-      result.updated++;
-      continue;
-    }
-
-    const insert = await db.prepare(
-      `INSERT INTO draft_pages (name, slug, weight, start, end, page_type, lect, creator)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(name, slug, weight, start, end, pageType, lectValue, userId || null)
-      .run();
-    const page = await db.prepare('SELECT id FROM draft_pages WHERE rowid = ?')
-      .bind(insert.meta.last_row_id)
-      .first<{ id: number }>();
-    if (!page) {
+    if (!csvRowHasValues(row)) {
       result.skipped++;
       continue;
     }
-    const versionId = await savePageVersion(db, page.id, lectValue, 'import');
-    await db.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
-      .bind(versionId, page.id)
-      .run();
-    await importPageTags(db, page.id, row, taxonomy.tagTypes);
-    result.created++;
+
+    const existing = mode === 'force-new' ? null : await findImportTarget(db, pageType, row);
+    if (!existing) {
+      if (mode === 'append' || mode === 'overwrite') {
+        result.skipped++;
+        continue;
+      }
+      if (await createImportedPage(db, pageType, row, userId, taxonomy, pathKinds)) result.created++;
+      else result.skipped++;
+      continue;
+    }
+
+    if (mode === 'new') {
+      result.skipped++;
+      continue;
+    }
+
+    const updateMode = mode === 'append' || mode === 'new-append' ? 'append' : 'replace';
+    if (await updateImportedPage(db, pageType, row, existing, userId, taxonomy, pathKinds, updateMode)) {
+      result.updated++;
+    } else {
+      result.skipped++;
+    }
   }
 
   return result;
@@ -1473,6 +1681,7 @@ adminRoutes.post('/pages/import-v2/:pageType', async (c) => {
     csvText,
     previewRows: preview.rows,
     skippedCount: preview.skipped,
+    importModeOptions: csvImportModeOptions(),
   }));
 });
 
@@ -1480,11 +1689,12 @@ adminRoutes.post('/pages/import-v2/:pageType/confirm', async (c) => {
   const pageType = c.req.param('pageType');
   const form = await c.req.formData();
   const csvText = str(form.get('csv'));
+  const mode = csvImportMode(form.get('action'));
   if (!csvText.trim()) {
     return c.redirect(`/admin/pages/list/${encodeURIComponent(pageType)}?flash=No+CSV+content+provided`);
   }
 
-  const result = await importPagesCsv(c.env.DB, pageType, csvText, userIdFromContext(c));
+  const result = await importPagesCsv(c.env.DB, pageType, csvText, userIdFromContext(c), mode);
   return c.redirect(
     `/admin/pages/list/${encodeURIComponent(pageType)}?flash=${result.created}+created,+${result.updated}+updated,+${result.skipped}+skipped`,
   );

@@ -11,6 +11,14 @@ interface ImportPreviewRow {
   existingSlug: string;
 }
 
+interface ImportModeOption {
+  value: string;
+  label: string;
+  description: string;
+  destructive: boolean;
+  checked: boolean;
+}
+
 export async function importPage(views: Fetcher, opts: {
   siteTitle: string;
   userName: string;
@@ -23,6 +31,7 @@ export async function importPage(views: Fetcher, opts: {
   csvText?: string;
   previewRows?: ImportPreviewRow[];
   skippedCount?: number;
+  importModeOptions?: ImportModeOption[];
 }): Promise<string> {
   const {
     siteTitle,
@@ -36,6 +45,7 @@ export async function importPage(views: Fetcher, opts: {
     csvText = '',
     previewRows = [],
     skippedCount = 0,
+    importModeOptions = [],
   } = opts;
   const newRows = previewRows.filter((row) => row.action === 'create');
   const existingRows = previewRows.filter((row) => row.action === 'update');
@@ -57,6 +67,8 @@ export async function importPage(views: Fetcher, opts: {
     newCount: newRows.length,
     existingCount: existingRows.length,
     skippedCount,
+    importModeOptions,
+    hasImportModeOptions: importModeOptions.length > 0,
   });
 
   return layout(views, {

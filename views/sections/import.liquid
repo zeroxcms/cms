@@ -32,6 +32,30 @@
     <form method="POST" action="{{ action | escape }}" class="min-w-0">
       <textarea name="csv" class="hidden">{{ csvText | escape }}</textarea>
 
+      {% if hasImportModeOptions %}
+        <fieldset class="mb-6 min-w-0">
+          <legend class="mb-2 text-sm font-semibold uppercase tracking-wider text-gray-500">Import Action</legend>
+          <div class="grid gap-2 lg:grid-cols-2">
+            {% for option in importModeOptions %}
+              <label class="flex min-w-0 cursor-pointer gap-3 rounded-lg border border-gray-200 bg-white p-3 hover:bg-gray-50">
+                <input type="radio" name="action" value="{{ option.value | escape }}"
+                       {% if option.checked %}checked{% endif %}
+                       class="mt-1 h-4 w-4 shrink-0 border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                <span class="min-w-0">
+                  <span class="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-900">
+                    {{ option.label | escape }}
+                    {% if option.destructive %}
+                      <span class="rounded bg-red-50 px-1.5 py-0.5 text-xs font-semibold text-red-700">Destructive</span>
+                    {% endif %}
+                  </span>
+                  <span class="mt-1 block text-sm text-gray-500">{{ option.description | escape }}</span>
+                </span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+      {% endif %}
+
       <div class="space-y-6">
         <section class="min-w-0">
           <div class="mb-2 flex items-center justify-between">

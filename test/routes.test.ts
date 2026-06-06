@@ -184,6 +184,8 @@ describe('admin routes', () => {
 
     expect(response.status).toBe(200);
     expect(html).toContain('Confirm Import');
+    expect(html).toContain('New + Add Missing Fields');
+    expect(html).toContain('Treat All Rows As New Pages');
     expect(html).toContain('Fresh CSV');
     expect(html).toContain('#101 About');
     expect(await env.DB.prepare('SELECT id FROM draft_pages WHERE slug = ?')
@@ -194,7 +196,7 @@ describe('admin routes', () => {
   it('POST /admin/pages/import-v2/:pageType/confirm imports confirmed CSV rows', async () => {
     const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
       method: 'POST',
-      body: form({ csv: 'name,slug\nFresh CSV,fresh-csv\nAbout Updated,about' }),
+      body: form({ action: 'new-overwrite', csv: 'name,slug\nFresh CSV,fresh-csv\nAbout Updated,about' }),
       headers: { Cookie: await authCookie() },
     });
 
@@ -206,6 +208,55 @@ describe('admin routes', () => {
     expect(await env.DB.prepare('SELECT name FROM draft_pages WHERE id = ?')
       .bind(101)
       .first<{ name: string }>()).toEqual({ name: 'About Updated' });
+  });
+
+  it('POST /admin/pages/import-v2/:pageType/confirm can import new rows only', async () => {
+    const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
+      method: 'POST',
+      body: form({ action: 'new', csv: 'name,slug\nFresh CSV,fresh-csv\nAbout Updated,about' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=1+created,+0+updated,+1+skipped');
+    expect(await env.DB.prepare('SELECT name FROM draft_pages WHERE slug = ?')
+      .bind('fresh-csv')
+      .first<{ name: string }>()).toEqual({ name: 'Fresh CSV' });
+    expect(await env.DB.prepare('SELECT name FROM draft_pages WHERE id = ?')
+      .bind(101)
+      .first<{ name: string }>()).toEqual({ name: 'About' });
+  });
+
+  it('POST /admin/pages/import-v2/:pageType/confirm can append missing fields without replacing existing values', async () => {
+    const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
+      method: 'POST',
+      body: form({ action: 'new-append', csv: 'name,slug,body,link\nAbout Updated,about,Replacement body,Homepage' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=0+created,+1+updated,+0+skipped');
+    const page = await env.DB.prepare('SELECT name, lect FROM draft_pages WHERE id = ?')
+      .bind(101)
+      .first<{ name: string; lect: string }>();
+    const lect = JSON.parse(page?.lect ?? '{}') as { body?: { en?: string }; link?: { en?: string } };
+    expect(page?.name).toBe('About');
+    expect(lect.body?.en).toBe('About body');
+    expect(lect.link?.en).toBe('Homepage');
+  });
+
+  it('POST /admin/pages/import-v2/:pageType/confirm can treat matching rows as new pages', async () => {
+    const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
+      method: 'POST',
+      body: form({ action: 'force-new', csv: 'name,slug\nAbout Copy,about' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=1+created,+0+updated,+0+skipped');
+    expect((await env.DB.prepare('SELECT id FROM draft_pages WHERE slug = ? ORDER BY id ASC')
+      .bind('about')
+      .all()).results).toHaveLength(2);
   });
 
   it('redirects anonymous admin requests to login', async () => {
