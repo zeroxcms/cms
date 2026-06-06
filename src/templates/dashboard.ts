@@ -22,6 +22,7 @@ export async function dashboardPage(views: Fetcher, opts: {
   searchValue?: string;
   searchAction?: string;
   advancedSearchHref?: string;
+  importHref?: string;
 }): Promise<string> {
   const {
     siteTitle,
@@ -35,6 +36,7 @@ export async function dashboardPage(views: Fetcher, opts: {
     searchValue = '',
     searchAction = '/admin',
     advancedSearchHref = pageTypeFilter ? `/admin/advanced-search/${encodeURIComponent(pageTypeFilter)}` : '/admin/advanced-search',
+    importHref = pageTypeFilter ? `/admin/pages/import-v2/${encodeURIComponent(pageTypeFilter)}` : '',
   } = opts;
   const pageCount = pages.length;
   const showPageTypeColumn = !pageTypeFilter;
@@ -49,6 +51,8 @@ export async function dashboardPage(views: Fetcher, opts: {
     searchAction,
     searchPlaceholder: pageTypeFilter ? `Search ${pageTypeFilter} pages` : 'Search pages',
     advancedSearchHref,
+    importHref,
+    hasImportHref: !!importHref,
     pageCount,
     pageCountLabel: `${pageCount} page${pageCount === 1 ? '' : 's'} in draft`,
     hasPages: pageCount > 0,

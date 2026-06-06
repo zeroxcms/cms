@@ -66,6 +66,19 @@ interface AdvancedSearchResult {
   };
 }
 
+type BlueprintPathKind = 'scalar' | 'localized' | 'pointer';
+
+interface BlueprintPathSpec {
+  path: string;
+  kind: BlueprintPathKind;
+}
+
+interface CsvImportResult {
+  created: number;
+  updated: number;
+  skipped: number;
+}
+
 // Apply auth to all admin routes
 adminRoutes.use('*', authMiddleware);
 adminRoutes.use('*', editorGuard);
@@ -249,36 +262,47 @@ function childPath(parent: string, child: string): string {
   return parent ? `${parent}.${child}` : child;
 }
 
-function collectBlueprintPaths(entries: BlueprintEntry[], parentPath = ''): string[] {
-  const paths: string[] = [];
+function collectBlueprintPathSpecs(entries: BlueprintEntry[], parentPath = ''): BlueprintPathSpec[] {
+  const specs: BlueprintPathSpec[] = [];
 
   for (const entry of entries) {
     if (typeof entry === 'string') {
       if (entry.startsWith('@')) {
-        paths.push(childPath(parentPath, blueprintFieldPath(entry, '@')));
+        specs.push({ path: childPath(parentPath, blueprintFieldPath(entry, '@')), kind: 'scalar' });
       } else if (entry.startsWith('*')) {
-        paths.push(childPath(parentPath, `_pointers.${blueprintFieldPath(entry, '*')}`));
+        specs.push({ path: childPath(parentPath, `_pointers.${blueprintFieldPath(entry, '*')}`), kind: 'pointer' });
       } else {
-        paths.push(childPath(parentPath, blueprintFieldPath(entry)));
+        specs.push({ path: childPath(parentPath, blueprintFieldPath(entry)), kind: 'localized' });
       }
       continue;
     }
 
     for (const [itemName, definitions] of Object.entries(entry)) {
       const itemPath = childPath(parentPath, `${itemName}[*]`);
-      paths.push(...collectBlueprintPaths(definitions, itemPath));
+      specs.push(...collectBlueprintPathSpecs(definitions, itemPath));
     }
   }
 
-  return paths;
+  return specs;
 }
 
 function uniqueSorted(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right));
 }
 
+function advancedSearchPathSpecs(pageTypes: string[]): BlueprintPathSpec[] {
+  const specs = pageTypes.flatMap((pageType) => collectBlueprintPathSpecs(cmsConfig.blueprint[pageType] ?? []));
+  const byPath = new Map<string, BlueprintPathSpec>();
+  for (const spec of specs) byPath.set(spec.path, spec);
+  return Array.from(byPath.values()).sort((left, right) => left.path.localeCompare(right.path));
+}
+
 function advancedSearchPathOptions(pageTypes: string[]): string[] {
-  return uniqueSorted(pageTypes.flatMap((pageType) => collectBlueprintPaths(cmsConfig.blueprint[pageType] ?? [])));
+  return advancedSearchPathSpecs(pageTypes).map((spec) => spec.path);
+}
+
+function advancedSearchPathKindMap(pageTypes: string[]): Map<string, BlueprintPathKind> {
+  return new Map(advancedSearchPathSpecs(pageTypes).map((spec) => [spec.path, spec.kind]));
 }
 
 function advancedSearchPathOptionsByPageType(): Record<string, string[]> {
@@ -310,6 +334,396 @@ function sqliteJsonPath(path: string): string {
     if (match) return `.${match[1]}${match[2] ?? ''}`;
     return `.${JSON.stringify(segment)}`;
   }).join('')}`;
+}
+
+function csvFormatValue(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  const text = String(value).trim();
+  const escaped = text.replace(/"/g, '""');
+  if (/[",\r\n]/.test(text)) return `"${escaped}"`;
+  if (/^[\d\s\-+()]+$/.test(text) && /\d/.test(text)) return `="${escaped}"`;
+  return escaped;
+}
+
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (quoted) {
+      if (char === '"' && next === '"') {
+        cell += '"';
+        index++;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        cell += char;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      quoted = true;
+    } else if (char === ',') {
+      row.push(normalizeCsvCell(cell));
+      cell = '';
+    } else if (char === '\n') {
+      row.push(normalizeCsvCell(cell));
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else if (char !== '\r') {
+      cell += char;
+    }
+  }
+
+  if (cell || row.length) {
+    row.push(normalizeCsvCell(cell));
+    rows.push(row);
+  }
+
+  return rows.filter((cells) => cells.some((value) => value.trim() !== ''));
+}
+
+function normalizeCsvCell(value: string): string {
+  const trimmed = value.trim();
+  const formulaMatch = trimmed.match(/^="(.*)"$/);
+  return formulaMatch ? formulaMatch[1].replace(/""/g, '"') : trimmed;
+}
+
+function csvRowsToObjects(rows: string[][]): Array<Record<string, string>> {
+  const [headers = [], ...dataRows] = rows;
+  return dataRows.map((row) => Object.fromEntries(headers.map((header, index) => [
+    header.trim().replace(/^\uFEFF/, ''),
+    row[index] ?? '',
+  ])));
+}
+
+function splitListValue(value: string): string[] {
+  return value.split(';').map((entry) => entry.trim()).filter(Boolean);
+}
+
+function lectValueToCsvCell(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(lectValueToCsvCell).filter(Boolean).join('; ');
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const defaultValue = record[cmsConfig.defaultLanguage];
+    if (defaultValue !== undefined) return lectValueToCsvCell(defaultValue);
+    const firstScalar = Object.values(record).find((entry) => (
+      typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean'
+    ));
+    if (firstScalar !== undefined) return String(firstScalar);
+    return JSON.stringify(record);
+  }
+  return String(value);
+}
+
+function getLectValueByPath(lect: Lect, path: string): string {
+  const wildcardMatch = path.match(/^(.+?)\[\*\]\.(.+)$/);
+  if (wildcardMatch) {
+    const items = getPathValue(lect, wildcardMatch[1]);
+    if (!Array.isArray(items)) return '';
+    return items.map((item) => getLectValueByPath(item as Lect, wildcardMatch[2])).filter(Boolean).join('; ');
+  }
+
+  return lectValueToCsvCell(getPathValue(lect, path));
+}
+
+function getPathValue(source: unknown, path: string): unknown {
+  const segments = path.split('.').filter(Boolean);
+  let current = source as Record<string, unknown> | undefined;
+  for (const segment of segments) {
+    if (!current || typeof current !== 'object') return undefined;
+    current = current[segment] as Record<string, unknown> | undefined;
+  }
+  return current;
+}
+
+function ensureRecordPath(source: Record<string, unknown>, path: string): Record<string, unknown> {
+  const segments = path.split('.').filter(Boolean);
+  let current = source;
+  for (const segment of segments) {
+    if (!current[segment] || typeof current[segment] !== 'object' || Array.isArray(current[segment])) {
+      current[segment] = {};
+    }
+    current = current[segment] as Record<string, unknown>;
+  }
+  return current;
+}
+
+function setLectPathValue(lect: Lect, path: string, kind: BlueprintPathKind, value: string): void {
+  const wildcardMatch = path.match(/^(.+?)\[\*\]\.(.+)$/);
+  if (wildcardMatch) {
+    const [itemName, childPath] = [wildcardMatch[1], wildcardMatch[2]];
+    const values = splitListValue(value);
+    if (!Array.isArray(lect[itemName])) lect[itemName] = [];
+    const items = lect[itemName] as LectItem[];
+    values.forEach((entry, index) => {
+      items[index] ||= {};
+      setLectPathValue(items[index], childPath, kind, entry);
+    });
+    return;
+  }
+
+  if (kind === 'pointer') {
+    const pointerPath = path.replace(/^_pointers\.?/, '');
+    lect._pointers ||= {};
+    lect._pointers[pointerPath] = value;
+    return;
+  }
+
+  const segments = path.split('.').filter(Boolean);
+  const field = segments.pop();
+  if (!field) return;
+  const target = ensureRecordPath(lect as Record<string, unknown>, segments.join('.'));
+  target[field] = kind === 'localized' ? { [cmsConfig.defaultLanguage]: value } : value;
+}
+
+function exportHeaders(pageTypes: string[], tagTypes: TagType[]): string[] {
+  return [
+    'id',
+    'uuid',
+    'name',
+    'slug',
+    'weight',
+    'start',
+    'end',
+    'page_type',
+    ...advancedSearchPathOptions(pageTypes),
+    ...tagTypes.map((tagType) => `tag:${tagType.name}`),
+  ];
+}
+
+async function pageTagsForExport(db: D1Database): Promise<Map<number, Record<string, string[]>>> {
+  const rows = await db.prepare(
+    `SELECT dpt.page_id, t.name as tag_name, tt.name as tag_type_name
+     FROM draft_page_tags dpt
+     JOIN tags t ON t.id = dpt.tag_id
+     LEFT JOIN tag_types tt ON tt.id = t.tag_type_id`,
+  ).all<{ page_id: number; tag_name: string; tag_type_name: string | null }>();
+  const result = new Map<number, Record<string, string[]>>();
+  for (const row of rows.results) {
+    if (!row.tag_type_name) continue;
+    const pageTags = result.get(row.page_id) ?? {};
+    pageTags[row.tag_type_name] ||= [];
+    pageTags[row.tag_type_name].push(row.tag_name);
+    result.set(row.page_id, pageTags);
+  }
+  return result;
+}
+
+async function exportPagesCsv(db: D1Database, pages: Page[], pageTypes: string[]): Promise<string> {
+  const taxonomy = await editorTaxonomy(db);
+  const headers = exportHeaders(pageTypes, taxonomy.tagTypes);
+  const pathColumns = advancedSearchPathOptions(pageTypes);
+  const tagsByPage = await pageTagsForExport(db);
+  const rows = [headers];
+
+  for (const page of pages) {
+    const lect = lectForPage(page.page_type ?? 'default', page.lect);
+    const tagGroups = tagsByPage.get(page.id) ?? {};
+    rows.push([
+      String(page.id),
+      page.uuid,
+      page.name,
+      page.slug,
+      String(page.weight ?? ''),
+      page.start ?? '',
+      page.end ?? '',
+      page.page_type ?? '',
+      ...pathColumns.map((path) => getLectValueByPath(lect, path)),
+      ...taxonomy.tagTypes.map((tagType) => (tagGroups[tagType.name] ?? []).join('; ')),
+    ]);
+  }
+
+  return `\uFEFF${rows.map((row) => row.map(csvFormatValue).join(',')).join('\n')}`;
+}
+
+async function readImportCsvText(form: FormData): Promise<string> {
+  const file = form.get('file') as unknown;
+  if (file && typeof file === 'object' && 'text' in file && 'size' in file) {
+    const upload = file as { size: number; text: () => Promise<string> };
+    if (upload.size > 0) return upload.text();
+  }
+  return str(form.get('csv'));
+}
+
+async function findImportTarget(db: D1Database, pageType: string, row: Record<string, string>): Promise<Page | null> {
+  const id = row.id?.trim();
+  if (id) {
+    const page = await db.prepare('SELECT * FROM draft_pages WHERE id = ? AND page_type = ?')
+      .bind(id, pageType)
+      .first<Page>();
+    if (page) return page;
+  }
+
+  const slug = row.slug?.trim();
+  if (!slug) return null;
+  return db.prepare('SELECT * FROM draft_pages WHERE slug = ? AND page_type = ?')
+    .bind(slug, pageType)
+    .first<Page>();
+}
+
+async function uniqueTagSlug(db: D1Database, baseSlug: string): Promise<string> {
+  let slug = baseSlug || 'tag';
+  let suffix = 1;
+  while (await db.prepare('SELECT id FROM tags WHERE slug = ?').bind(slug).first<{ id: number }>()) {
+    suffix++;
+    slug = `${baseSlug}-${suffix}`;
+  }
+  return slug;
+}
+
+async function ensureTag(db: D1Database, tagType: TagType, name: string): Promise<number> {
+  const existing = await db.prepare('SELECT id FROM tags WHERE tag_type_id = ? AND name = ?')
+    .bind(tagType.id, name)
+    .first<{ id: number }>();
+  if (existing) return existing.id;
+
+  const slug = await uniqueTagSlug(db, slugify(`${tagType.slug || tagType.name}-${name}`));
+  const insert = await db.prepare('INSERT INTO tags (name, slug, tag_type_id) VALUES (?, ?, ?)')
+    .bind(name, slug, tagType.id)
+    .run();
+  const tag = await db.prepare('SELECT id FROM tags WHERE rowid = ?')
+    .bind(insert.meta.last_row_id)
+    .first<{ id: number }>();
+  return tag!.id;
+}
+
+async function importPageTags(db: D1Database, pageId: number, row: Record<string, string>, tagTypes: TagType[]): Promise<void> {
+  for (const tagType of tagTypes) {
+    const header = `tag:${tagType.name}`;
+    const value = row[header] ?? row[tagType.name];
+    if (value === undefined) continue;
+
+    await db.prepare(
+      `DELETE FROM draft_page_tags
+       WHERE page_id = ? AND tag_id IN (SELECT id FROM tags WHERE tag_type_id = ?)`,
+    )
+      .bind(pageId, tagType.id)
+      .run();
+
+    for (const tagName of splitListValue(value)) {
+      const tagId = await ensureTag(db, tagType, tagName);
+      const existing = await db.prepare('SELECT id FROM draft_page_tags WHERE page_id = ? AND tag_id = ?')
+        .bind(pageId, tagId)
+        .first<{ id: number }>();
+      if (existing) continue;
+      await db.prepare('INSERT INTO draft_page_tags (page_id, tag_id) VALUES (?, ?)')
+        .bind(pageId, tagId)
+        .run();
+    }
+  }
+}
+
+async function importPagesCsv(db: D1Database, pageType: string, csvText: string, userId: number): Promise<CsvImportResult> {
+  const rows = csvRowsToObjects(parseCsv(csvText));
+  const pathKinds = advancedSearchPathKindMap([pageType]);
+  const taxonomy = await editorTaxonomy(db);
+  const result: CsvImportResult = { created: 0, updated: 0, skipped: 0 };
+
+  for (const row of rows) {
+    const existing = await findImportTarget(db, pageType, row);
+    const baseLect = existing ? lectForPage(pageType, existing.lect) : blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
+    const lect = normalizeLect(baseLect);
+
+    for (const [path, kind] of pathKinds) {
+      if (!(path in row)) continue;
+      setLectPathValue(lect, path, kind, row[path] ?? '');
+    }
+
+    lect._type = pageType;
+    const name = row.name?.trim() || getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || existing?.name || `Untitled ${pageType}`;
+    const slug = row.slug?.trim() || existing?.slug || slugify(name);
+    const lectValue = stringifyLect(withDraftMetadata(lect, userId));
+    const weight = row.weight ? num(row.weight) : existing?.weight ?? 5;
+    const start = row.start?.trim() || existing?.start || null;
+    const end = row.end?.trim() || existing?.end || null;
+
+    if (existing) {
+      await db.prepare(
+        `UPDATE draft_pages SET name = ?, slug = ?, weight = ?, start = ?, end = ?, lect = ? WHERE id = ?`,
+      )
+        .bind(name, slug, weight, start, end, lectValue, existing.id)
+        .run();
+      const versionId = await savePageVersion(db, existing.id, lectValue, 'import');
+      await db.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
+        .bind(versionId, existing.id)
+        .run();
+      await importPageTags(db, existing.id, row, taxonomy.tagTypes);
+      result.updated++;
+      continue;
+    }
+
+    const insert = await db.prepare(
+      `INSERT INTO draft_pages (name, slug, weight, start, end, page_type, lect, creator)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(name, slug, weight, start, end, pageType, lectValue, userId || null)
+      .run();
+    const page = await db.prepare('SELECT id FROM draft_pages WHERE rowid = ?')
+      .bind(insert.meta.last_row_id)
+      .first<{ id: number }>();
+    if (!page) {
+      result.skipped++;
+      continue;
+    }
+    const versionId = await savePageVersion(db, page.id, lectValue, 'import');
+    await db.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
+      .bind(versionId, page.id)
+      .run();
+    await importPageTags(db, page.id, row, taxonomy.tagTypes);
+    result.created++;
+  }
+
+  return result;
+}
+
+async function exportAdvancedSearch(c: AdminContext, defaultPageType = 'all', canSelectPageType = true): Promise<Response> {
+  const criteria = parseAdvancedSearchCriteria(c.req.url);
+  const selectedPageType = canSelectPageType
+    ? advancedSearchSelectedPageType(c.req.query('page_type'), defaultPageType)
+    : advancedSearchSelectedPageType(undefined, defaultPageType);
+  const pageTypes = advancedSearchTargetPageTypes(selectedPageType);
+  const operator = advancedSearchOperator(c.req.query('operator'));
+  const sort = advancedSearchSort(c.req.query('sort'));
+  const order = advancedSearchOrder(c.req.query('order'));
+  const result = criteria.length
+    ? await performAdvancedSearch(c.env.DB, pageTypes, criteria, operator, {
+        limit: 10000,
+        page: 1,
+        sort,
+        order,
+      })
+    : {
+        results: [],
+        pagination: {
+          total: 0,
+          totalPages: 1,
+          currentPage: 1,
+          limit: 10000,
+        },
+      };
+  const csv = await exportPagesCsv(c.env.DB, result.results, pageTypes);
+  const stamp = c.req.query('r') || new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `${selectedPageType === 'all' ? 'pages' : selectedPageType}-export-${stamp}.csv`;
+
+  return new Response(csv, {
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Expires': '0',
+      'Pragma': 'no-cache',
+    },
+  });
 }
 
 function advancedSearchCondition(
@@ -510,6 +924,9 @@ async function renderAdvancedSearch(c: AdminContext, defaultPageType = 'all', ca
   const routeBase = selectedPageType === 'all'
     ? '/admin/advanced-search'
     : `/admin/advanced-search/${encodeURIComponent(selectedPageType)}`;
+  const exportBase = selectedPageType === 'all'
+    ? '/admin/advanced-search-export'
+    : `/admin/advanced-search-export/${encodeURIComponent(selectedPageType)}`;
   const queryWithoutPage = advancedSearchQueryString(criteria, operator, pageSize, { sort, order });
   const pageQuery = (page: number) => advancedSearchQueryString(criteria, operator, pageSize, {
     sort,
@@ -550,6 +967,7 @@ async function renderAdvancedSearch(c: AdminContext, defaultPageType = 'all', ca
       previousHref: result.pagination.currentPage > 1 ? `${routeBase}?${pageQuery(result.pagination.currentPage - 1)}` : '',
       nextHref: result.pagination.currentPage < result.pagination.totalPages ? `${routeBase}?${pageQuery(result.pagination.currentPage + 1)}` : '',
       resetHref: routeBase,
+      exportHref: `${exportBase}?${queryWithoutPage}`,
       queryWithoutPage,
       pages: result.results.map((page) => ({
         ...page,
@@ -834,6 +1252,13 @@ adminRoutes.get('/', async (c) => {
 
 adminRoutes.get('/advanced-search', (c) => renderAdvancedSearch(c));
 
+adminRoutes.get('/advanced-search-export', (c) => exportAdvancedSearch(c));
+
+adminRoutes.get('/advanced-search-export/:pageType', (c) => {
+  const pageType = c.req.param('pageType');
+  return exportAdvancedSearch(c, pageType, false);
+});
+
 adminRoutes.get('/advanced-search/:pageType', (c) => {
   const pageType = c.req.param('pageType');
   return renderAdvancedSearch(c, pageType, false);
@@ -934,6 +1359,42 @@ adminRoutes.post('/pages/new_post/:pageType', async (c) => {
     .run();
 
   return c.redirect(`/admin/pages/${page.id}/edit`);
+});
+
+adminRoutes.get('/pages/import-v2/:pageType', async (c) => {
+  const user = c.get('user');
+  const pageType = c.req.param('pageType');
+  const [dbUser, taxonomy] = await Promise.all([
+    c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+      .bind(parseInt(user.sub, 10))
+      .first<{ avatar_url: string | null }>(),
+    editorTaxonomy(c.env.DB),
+  ]);
+
+  return c.html(await importPage(c.env.VIEWS, {
+    siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
+    userName: user.name,
+    userRole: user.role,
+    userAvatar: dbUser?.avatar_url ?? '',
+    pageType,
+    mode: 'csv',
+    action: `/admin/pages/import-v2/${encodeURIComponent(pageType)}`,
+    sampleHeaders: exportHeaders([pageType], taxonomy.tagTypes),
+  }));
+});
+
+adminRoutes.post('/pages/import-v2/:pageType', async (c) => {
+  const pageType = c.req.param('pageType');
+  const form = await c.req.formData();
+  const csvText = await readImportCsvText(form);
+  if (!csvText.trim()) {
+    return c.redirect(`/admin/pages/list/${encodeURIComponent(pageType)}?flash=No+CSV+content+provided`);
+  }
+
+  const result = await importPagesCsv(c.env.DB, pageType, csvText, userIdFromContext(c));
+  return c.redirect(
+    `/admin/pages/list/${encodeURIComponent(pageType)}?flash=${result.created}+created,+${result.updated}+updated,+${result.skipped}+skipped`,
+  );
 });
 
 adminRoutes.get('/pages/import/:pageType', async (c) => {

@@ -47,6 +47,7 @@ export async function advancedSearchPage(views: Fetcher, opts: {
   previousHref: string;
   nextHref: string;
   resetHref: string;
+  exportHref: string;
   queryWithoutPage: string;
   pages: DashboardPage[];
 }): Promise<string> {

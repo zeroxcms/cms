@@ -415,6 +415,16 @@ export async function editorPage(views: Fetcher, opts: {
   const structuredBlock = structured ? await renderStructuredEditor(views, structured) : '';
   const versionHrefBase = page ? `/admin/pages/${page.id}/edit` : action;
   const pageEditorChips = editorChips(page?.editors);
+  const parentOptions = parentPages
+    .filter((parent) => parent.id !== page?.id)
+    .map((parent) => ({
+      id: parent.id,
+      name: parent.name,
+      slug: parent.slug,
+      label: `/${parent.slug}`,
+      selected: page?.page_id === parent.id,
+    }));
+  const selectedParent = parentOptions.find((parent) => parent.selected);
   const versions = structured?.versions.map((version) => ({
     label: `${version.created_at}${version.action ? ` - ${version.action}` : ''}`,
     href: `${versionHrefBase}?version=${version.id}`,
@@ -453,14 +463,11 @@ export async function editorPage(views: Fetcher, opts: {
       hasEditorChips: pageEditorChips.length > 0,
       lect: page?.lect ?? '',
     },
-    parentOptions: parentPages
-      .filter((parent) => parent.id !== page?.id)
-      .map((parent) => ({
-        id: parent.id,
-        name: parent.name,
-        slug: parent.slug,
-        selected: page?.page_id === parent.id,
-      })),
+    parentOptions,
+    selectedParent: {
+      id: selectedParent?.id ?? '',
+      label: selectedParent?.label ?? '/',
+    },
     pageTypeOptions: structured
       ? Object.keys(structured.config.blueprint).map((pageType) => ({ value: pageType }))
       : [],

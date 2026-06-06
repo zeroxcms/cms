@@ -7,11 +7,17 @@ export async function importPage(views: Fetcher, opts: {
   userRole: string;
   userAvatar: string;
   pageType: string;
+  mode?: 'json' | 'csv';
+  action?: string;
+  sampleHeaders?: string[];
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, pageType } = opts;
+  const { siteTitle, userName, userRole, userAvatar, pageType, mode = 'json', action = '', sampleHeaders = [] } = opts;
   const body = await renderView(views, '/templates/import.json', {
     pageType,
+    action,
     backHref: `/admin/pages/list/${encodeURIComponent(pageType)}`,
+    isCsvImport: mode === 'csv',
+    sampleCsvHeader: sampleHeaders.join(','),
   });
 
   return layout(views, {

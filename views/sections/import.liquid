@@ -3,11 +3,28 @@
     <h2 class="text-2xl font-bold text-gray-900">Import {{ pageType | escape }}</h2>
     <a href="{{ backHref | escape }}" class="text-sm text-indigo-600 hover:underline">Back</a>
   </div>
-  <form method="POST" class="min-w-0 space-y-4">
-    <label for="items" class="sr-only">Items JSON</label>
-    <textarea id="items" name="items" rows="18"
-              placeholder='[{"name":"Example","slug":"example","values":{"en":{"name":"Example"}}}]'
-              class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"></textarea>
+  <form method="POST" action="{{ action | escape }}" enctype="multipart/form-data" class="min-w-0 space-y-4">
+    {% if isCsvImport %}
+      <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+        <div class="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">CSV Header</div>
+        <code class="block whitespace-pre-wrap break-words text-xs text-gray-600">{{ sampleCsvHeader | escape }}</code>
+      </div>
+      <label class="block">
+        <span class="mb-1 block text-sm font-medium text-gray-700">CSV File</span>
+        <input type="file" name="file" accept=".csv,text/csv"
+               class="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700">
+      </label>
+      <label for="csv" class="block">
+        <span class="mb-1 block text-sm font-medium text-gray-700">Or Paste CSV</span>
+        <textarea id="csv" name="csv" rows="14"
+                  class="block min-w-0 w-full max-w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm"></textarea>
+      </label>
+    {% else %}
+      <label for="items" class="sr-only">Items JSON</label>
+      <textarea id="items" name="items" rows="18"
+                placeholder='[{"name":"Example","slug":"example","values":{"en":{"name":"Example"}}}]'
+                class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"></textarea>
+    {% endif %}
     <button type="submit" class="w-full shrink-0 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg sm:w-auto">Import</button>
   </form>
 </div>

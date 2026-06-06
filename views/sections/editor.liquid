@@ -44,19 +44,52 @@
           <h3 class="min-w-0 truncate text-lg font-bold text-gray-900">Page Metadata</h3>
         </div>
         <div class="flex min-w-0 flex-wrap items-center gap-3 text-xs text-gray-600">
-          <label for="page_id" class="sr-only">Parent Page</label>
-          <div class="flex min-w-0 items-center gap-1">
+          <label for="parent_page_search" class="sr-only">Parent Page</label>
+          <div class="relative flex min-w-0 items-center gap-1" data-parent-combobox>
             <svg class="h-3.5 w-3.5 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
             </svg>
-            <select id="page_id" name="page_id"
-                    class="max-w-[10rem] truncate border-0 bg-transparent p-0 text-xs text-gray-700 focus:outline-none focus:ring-0">
-              <option value="">/</option>
+            <input type="hidden" id="page_id" name="page_id" value="{{ selectedParent.id | escape }}">
+            <input type="text" id="parent_page_search"
+                   value="{{ selectedParent.label | escape }}"
+                   autocomplete="off"
+                   role="combobox"
+                   aria-controls="parent_page_results"
+                   aria-expanded="false"
+                   aria-autocomplete="list"
+                   class="w-28 max-w-[10rem] truncate border-0 bg-transparent p-0 text-xs text-gray-700 focus:outline-none focus:ring-0"
+                   data-parent-search>
+            <button type="button" class="shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700" data-parent-toggle aria-label="Search parent pages">
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <div id="parent_page_results"
+                 class="absolute right-0 top-6 z-20 hidden w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+                 data-parent-results>
+              <button type="button"
+                      class="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+                      data-parent-option
+                      data-parent-id=""
+                      data-parent-label="/"
+                      data-parent-search="/ none top level">
+                <span class="block font-medium">/</span>
+                <span class="block text-[11px] text-gray-400">No parent</span>
+              </button>
               {% for option in parentOptions %}
-                <option value="{{ option.id }}" {% if option.selected %}selected{% endif %}>/{{ option.slug | escape }}</option>
+                <button type="button"
+                        class="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+                        data-parent-option
+                        data-parent-id="{{ option.id }}"
+                        data-parent-label="{{ option.label | escape }}"
+                        data-parent-search="{{ option.name | append: ' /' | append: option.slug | escape }}">
+                  <span class="block truncate font-medium">{{ option.label | escape }}</span>
+                  <span class="block truncate text-[11px] text-gray-400">{{ option.name | escape }}</span>
+                </button>
               {% endfor %}
-            </select>
+              <p class="hidden px-3 py-2 text-xs text-gray-400" data-parent-empty>No matching pages</p>
+            </div>
           </div>
           <div class="flex min-w-0 items-center gap-1">
             <svg class="h-3.5 w-3.5 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -79,7 +112,7 @@
               <input type="text" id="name" name="name" required
                      value="{{ page.name | escape }}"
                      placeholder="My Awesome Page"
-                     style="width: max(9rem, {{ page.name | size | plus: 2 }}ch);"
+                     style="width: max(16rem, {{ page.name | size | plus: 2 }}ch);"
                      class="max-w-full border-b border-transparent bg-transparent p-0 text-lg font-bold text-gray-900 focus:border-indigo-500 focus:outline-none"
                      oninput="autoSlug(this.value)">
               <span class="text-sm text-gray-500">(</span>
@@ -261,6 +294,76 @@
 <script>
   const flash = document.getElementById('flash');
   if (flash) setTimeout(() => flash.remove(), 4000);
+
+  const parentCombobox = document.querySelector('[data-parent-combobox]');
+  if (parentCombobox) {
+    const parentInput = parentCombobox.querySelector('[data-parent-search]');
+    const parentHidden = parentCombobox.querySelector('#page_id');
+    const parentResults = parentCombobox.querySelector('[data-parent-results]');
+    const parentEmpty = parentCombobox.querySelector('[data-parent-empty]');
+    const parentToggle = parentCombobox.querySelector('[data-parent-toggle]');
+    const parentOptions = Array.from(parentCombobox.querySelectorAll('[data-parent-option]'));
+
+    function filterParentOptions() {
+      const query = parentInput.value.trim().toLowerCase();
+      let visibleCount = 0;
+      parentOptions.forEach((option) => {
+        const text = `${option.dataset.parentSearch || ''} ${option.dataset.parentLabel || ''}`.toLowerCase();
+        const visible = !query || text.includes(query);
+        option.classList.toggle('hidden', !visible);
+        if (visible) visibleCount++;
+      });
+      parentEmpty.classList.toggle('hidden', visibleCount > 0);
+    }
+
+    function openParentResults() {
+      filterParentOptions();
+      parentResults.classList.remove('hidden');
+      parentInput.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeParentResults() {
+      parentResults.classList.add('hidden');
+      parentInput.setAttribute('aria-expanded', 'false');
+    }
+
+    function selectParentOption(option) {
+      parentHidden.value = option.dataset.parentId || '';
+      parentInput.value = option.dataset.parentLabel || '/';
+      closeParentResults();
+    }
+
+    parentInput.addEventListener('focus', openParentResults);
+    parentInput.addEventListener('input', () => {
+      if (!parentInput.value.trim()) parentHidden.value = '';
+      openParentResults();
+    });
+    parentInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeParentResults();
+        return;
+      }
+      if (event.key !== 'Enter') return;
+      const firstVisible = parentOptions.find((option) => !option.classList.contains('hidden'));
+      if (!firstVisible) return;
+      event.preventDefault();
+      selectParentOption(firstVisible);
+    });
+    parentToggle.addEventListener('click', () => {
+      if (parentResults.classList.contains('hidden')) {
+        parentInput.focus();
+        openParentResults();
+      } else {
+        closeParentResults();
+      }
+    });
+    parentOptions.forEach((option) => {
+      option.addEventListener('click', () => selectParentOption(option));
+    });
+    document.addEventListener('click', (event) => {
+      if (!parentCombobox.contains(event.target)) closeParentResults();
+    });
+  }
 
   const editorScrollKey = 'cms-editor-scroll:' + window.location.pathname;
   const savedEditorScroll = window.sessionStorage.getItem(editorScrollKey);
