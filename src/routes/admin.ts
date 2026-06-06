@@ -413,6 +413,79 @@ function csvPathSpecs(pageTypes: string[], includeLegacyLocalized = false): CsvP
   });
 }
 
+function exportCsvPathSpecs(pageTypes: string[], lects: Lect[]): CsvPathSpec[] {
+  const specs = new Map<string, CsvPathSpec>();
+  for (const spec of csvPathSpecs(pageTypes)) specs.set(spec.header, spec);
+  for (const spec of dataCsvPathSpecs(lects)) {
+    if (!specs.has(spec.header)) specs.set(spec.header, spec);
+  }
+  return Array.from(specs.values());
+}
+
+function dataCsvPathSpecs(lects: Lect[]): CsvPathSpec[] {
+  const specs = new Map<string, CsvPathSpec>();
+  for (const lect of lects) collectDataCsvPathSpecs(lect, '', specs);
+  return Array.from(specs.values());
+}
+
+function collectDataCsvPathSpecs(value: unknown, path: string, specs: Map<string, CsvPathSpec>): void {
+  if (isCsvScalar(value)) {
+    if (path) addDataCsvPathSpec(specs, { header: path, sourcePath: path, kind: dataCsvPathKind(path) });
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.some(isCsvScalar)) {
+      addDataCsvPathSpec(specs, { header: path, sourcePath: path, kind: dataCsvPathKind(path) });
+    }
+    for (const item of value) {
+      if (isPlainRecord(item)) collectDataCsvPathSpecs(item, `${path}[*]`, specs);
+    }
+    return;
+  }
+
+  if (!isPlainRecord(value)) return;
+
+  const languageEntries = cmsConfig.languages.filter((language) => isCsvScalar(value[language]));
+  if (path && languageEntries.length > 0) {
+    for (const language of cmsConfig.languages) {
+      addDataCsvPathSpec(specs, {
+        header: `${path}.${language}`,
+        sourcePath: path,
+        kind: 'localized',
+        language,
+      });
+    }
+  }
+
+  for (const [key, entry] of Object.entries(value)) {
+    if (languageEntries.length > 0 && cmsConfig.languages.includes(key) && isCsvScalar(entry)) continue;
+    if (shouldSkipDataCsvPath(key, path)) continue;
+    collectDataCsvPathSpecs(entry, childPath(path, key), specs);
+  }
+}
+
+function addDataCsvPathSpec(specs: Map<string, CsvPathSpec>, spec: CsvPathSpec): void {
+  if (!spec.header || specs.has(spec.header)) return;
+  specs.set(spec.header, spec);
+}
+
+function dataCsvPathKind(path: string): BlueprintPathKind {
+  return path.startsWith('_pointers.') ? 'pointer' : 'scalar';
+}
+
+function isCsvScalar(value: unknown): value is string | number | boolean | null {
+  return value === null || ['string', 'number', 'boolean'].includes(typeof value);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function shouldSkipDataCsvPath(key: string, parentPath: string): boolean {
+  return !parentPath && ['_modifier', '_type', '_updated_at'].includes(key);
+}
+
 function advancedSearchPathOptionsByPageType(): Record<string, string[]> {
   const pageTypeOptions = Object.fromEntries(
     advancedSearchPageTypes().map((pageType) => [pageType, advancedSearchPathOptions([pageType])]),
@@ -620,7 +693,7 @@ function setLectPathValue(lect: Lect, path: string, kind: BlueprintPathKind, val
   target[field] = value;
 }
 
-function exportHeaders(pageTypes: string[], tagTypes: TagType[]): string[] {
+function exportHeaders(pathColumns: CsvPathSpec[], tagTypes: TagType[]): string[] {
   return [
     'id',
     'uuid',
@@ -630,7 +703,7 @@ function exportHeaders(pageTypes: string[], tagTypes: TagType[]): string[] {
     'start',
     'end',
     'page_type',
-    ...csvPathSpecs(pageTypes).map((spec) => spec.header),
+    ...pathColumns.map((spec) => spec.header),
     ...tagTypes.map((tagType) => `tag:${tagType.name}`),
   ];
 }
@@ -655,13 +728,16 @@ async function pageTagsForExport(db: D1Database): Promise<Map<number, Record<str
 
 async function exportPagesCsv(db: D1Database, pages: Page[], pageTypes: string[]): Promise<string> {
   const taxonomy = await editorTaxonomy(db);
-  const headers = exportHeaders(pageTypes, taxonomy.tagTypes);
-  const pathColumns = csvPathSpecs(pageTypes);
+  const pageLects = pages.map((page) => ({
+    page,
+    lect: lectForPage(page.page_type ?? 'default', page.lect),
+  }));
+  const pathColumns = exportCsvPathSpecs(pageTypes, pageLects.map(({ lect }) => lect));
+  const headers = exportHeaders(pathColumns, taxonomy.tagTypes);
   const tagsByPage = await pageTagsForExport(db);
   const rows = [headers];
 
-  for (const page of pages) {
-    const lect = lectForPage(page.page_type ?? 'default', page.lect);
+  for (const { page, lect } of pageLects) {
     const tagGroups = tagsByPage.get(page.id) ?? {};
     rows.push([
       String(page.id),
@@ -1723,7 +1799,7 @@ adminRoutes.get('/pages/import-v2/:pageType', async (c) => {
     pageType,
     mode: 'csv',
     action: `/admin/pages/import-v2/${encodeURIComponent(pageType)}`,
-    sampleHeaders: exportHeaders([pageType], taxonomy.tagTypes),
+    sampleHeaders: exportHeaders(csvPathSpecs([pageType]), taxonomy.tagTypes),
   }));
 });
 

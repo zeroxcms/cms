@@ -27,9 +27,21 @@ function localizedFixture(base: string): Record<string, string> {
   ]));
 }
 
+function defaultLanguageFixture(base: string): Record<string, string> {
+  return Object.fromEntries(cmsConfig.languages.map((language) => [
+    language,
+    language === cmsConfig.defaultLanguage ? base : '',
+  ]));
+}
+
 const basePageLectObject = blueprintToLect('default', cmsConfig.blueprint, cmsConfig.defaultLanguage);
 basePageLectObject.name = localizedFixture('About');
 basePageLectObject.body = localizedFixture('About body');
+basePageLectObject.link = {
+  [cmsConfig.defaultLanguage]: '',
+  label: localizedFixture('Click Now'),
+  url: defaultLanguageFixture('https://example.com'),
+};
 const basePageLect = stringifyLect(basePageLectObject);
 
 beforeEach(async () => {
@@ -264,9 +276,15 @@ describe('admin routes', () => {
     expect(response.headers.get('Content-Type')).toContain('text/csv');
     expect(header).toContain(cmsConfig.languages.map((language) => `name.${language}`).join(','));
     expect(header).toContain(cmsConfig.languages.map((language) => `body.${language}`).join(','));
+    for (const language of cmsConfig.languages) {
+      expect(header).toContain(`link.label.${language}`);
+      expect(header).toContain(`link.url.${language}`);
+    }
     for (const value of Object.values(localizedFixture('About body'))) {
       expect(csv).toContain(value);
     }
+    expect(csv).toContain('Click Now');
+    expect(csv).toContain('https://example.com');
   });
 
   it('GET /admin/pages/export exports all draft pages', async () => {
