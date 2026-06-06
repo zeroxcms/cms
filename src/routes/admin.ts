@@ -73,6 +73,13 @@ interface BlueprintPathSpec {
   kind: BlueprintPathKind;
 }
 
+interface CsvPathSpec {
+  header: string;
+  sourcePath: string;
+  kind: BlueprintPathKind;
+  language?: string;
+}
+
 interface CsvImportResult {
   created: number;
   updated: number;
@@ -387,8 +394,23 @@ function advancedSearchPathOptions(pageTypes: string[]): string[] {
   return advancedSearchPathSpecs(pageTypes).map((spec) => spec.path);
 }
 
-function advancedSearchPathKindMap(pageTypes: string[]): Map<string, BlueprintPathKind> {
-  return new Map(advancedSearchPathSpecs(pageTypes).map((spec) => [spec.path, spec.kind]));
+function csvPathSpecs(pageTypes: string[], includeLegacyLocalized = false): CsvPathSpec[] {
+  return advancedSearchPathSpecs(pageTypes).flatMap<CsvPathSpec>((spec) => {
+    if (spec.kind !== 'localized') {
+      return [{ header: spec.path, sourcePath: spec.path, kind: spec.kind }];
+    }
+
+    const localized = cmsConfig.languages.map((language) => ({
+      header: `${spec.path}.${language}`,
+      sourcePath: spec.path,
+      kind: spec.kind,
+      language,
+    }));
+
+    return includeLegacyLocalized
+      ? [{ header: spec.path, sourcePath: spec.path, kind: spec.kind, language: cmsConfig.defaultLanguage }, ...localized]
+      : localized;
+  });
 }
 
 function advancedSearchPathOptionsByPageType(): Record<string, string[]> {
@@ -534,6 +556,11 @@ function getLectValueByPath(lect: Lect, path: string): string {
   return lectValueToCsvCell(getPathValue(lect, path));
 }
 
+function getCsvLectValue(lect: Lect, spec: CsvPathSpec): string {
+  const path = spec.language ? `${spec.sourcePath}.${spec.language}` : spec.sourcePath;
+  return getLectValueByPath(lect, path);
+}
+
 function getPathValue(source: unknown, path: string): unknown {
   const segments = path.split('.').filter(Boolean);
   let current = source as Record<string, unknown> | undefined;
@@ -556,7 +583,7 @@ function ensureRecordPath(source: Record<string, unknown>, path: string): Record
   return current;
 }
 
-function setLectPathValue(lect: Lect, path: string, kind: BlueprintPathKind, value: string): void {
+function setLectPathValue(lect: Lect, path: string, kind: BlueprintPathKind, value: string, language = cmsConfig.defaultLanguage): void {
   const wildcardMatch = path.match(/^(.+?)\[\*\]\.(.+)$/);
   if (wildcardMatch) {
     const [itemName, childPath] = [wildcardMatch[1], wildcardMatch[2]];
@@ -565,7 +592,7 @@ function setLectPathValue(lect: Lect, path: string, kind: BlueprintPathKind, val
     const items = lect[itemName] as LectItem[];
     values.forEach((entry, index) => {
       items[index] ||= {};
-      setLectPathValue(items[index], childPath, kind, entry);
+      setLectPathValue(items[index], childPath, kind, entry, language);
     });
     return;
   }
@@ -581,7 +608,16 @@ function setLectPathValue(lect: Lect, path: string, kind: BlueprintPathKind, val
   const field = segments.pop();
   if (!field) return;
   const target = ensureRecordPath(lect as Record<string, unknown>, segments.join('.'));
-  target[field] = kind === 'localized' ? { [cmsConfig.defaultLanguage]: value } : value;
+  if (kind === 'localized') {
+    const current = target[field];
+    const values = current && typeof current === 'object' && !Array.isArray(current)
+      ? current as Record<string, unknown>
+      : {};
+    target[field] = { ...values, [language]: value };
+    return;
+  }
+
+  target[field] = value;
 }
 
 function exportHeaders(pageTypes: string[], tagTypes: TagType[]): string[] {
@@ -594,7 +630,7 @@ function exportHeaders(pageTypes: string[], tagTypes: TagType[]): string[] {
     'start',
     'end',
     'page_type',
-    ...advancedSearchPathOptions(pageTypes),
+    ...csvPathSpecs(pageTypes).map((spec) => spec.header),
     ...tagTypes.map((tagType) => `tag:${tagType.name}`),
   ];
 }
@@ -620,7 +656,7 @@ async function pageTagsForExport(db: D1Database): Promise<Map<number, Record<str
 async function exportPagesCsv(db: D1Database, pages: Page[], pageTypes: string[]): Promise<string> {
   const taxonomy = await editorTaxonomy(db);
   const headers = exportHeaders(pageTypes, taxonomy.tagTypes);
-  const pathColumns = advancedSearchPathOptions(pageTypes);
+  const pathColumns = csvPathSpecs(pageTypes);
   const tagsByPage = await pageTagsForExport(db);
   const rows = [headers];
 
@@ -636,7 +672,7 @@ async function exportPagesCsv(db: D1Database, pages: Page[], pageTypes: string[]
       page.start ?? '',
       page.end ?? '',
       page.page_type ?? '',
-      ...pathColumns.map((path) => getLectValueByPath(lect, path)),
+      ...pathColumns.map((spec) => getCsvLectValue(lect, spec)),
       ...taxonomy.tagTypes.map((tagType) => (tagGroups[tagType.name] ?? []).join('; ')),
     ]);
   }
@@ -735,7 +771,7 @@ async function importPageTags(
 
 async function previewPagesCsv(db: D1Database, pageType: string, csvText: string): Promise<CsvImportPreview> {
   const rows = csvRowsToObjects(parseCsv(csvText));
-  const pathKinds = advancedSearchPathKindMap([pageType]);
+  const pathSpecs = csvPathSpecs([pageType], true);
   const preview: CsvImportPreview = { rows: [], skipped: 0 };
 
   for (const [index, row] of rows.entries()) {
@@ -748,9 +784,9 @@ async function previewPagesCsv(db: D1Database, pageType: string, csvText: string
     const baseLect = existing ? lectForPage(pageType, existing.lect) : blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
     const lect = normalizeLect(baseLect);
 
-    for (const [path, kind] of pathKinds) {
-      if (!(path in row)) continue;
-      setLectPathValue(lect, path, kind, row[path] ?? '');
+    for (const spec of pathSpecs) {
+      if (!(spec.header in row)) continue;
+      setLectPathValue(lect, spec.sourcePath, spec.kind, row[spec.header] ?? '', spec.language);
     }
 
     const name = row.name?.trim() || getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || existing?.name || `Untitled ${pageType}`;
@@ -774,18 +810,18 @@ async function previewPagesCsv(db: D1Database, pageType: string, csvText: string
 function applyCsvLectValues(
   lect: Lect,
   row: Record<string, string>,
-  pathKinds: Map<string, BlueprintPathKind>,
+  pathSpecs: CsvPathSpec[],
   mode: 'replace' | 'append',
 ): boolean {
   let changed = false;
-  for (const [path, kind] of pathKinds) {
-    if (!hasCsvColumn(row, path)) continue;
-    const value = row[path] ?? '';
+  for (const spec of pathSpecs) {
+    if (!hasCsvColumn(row, spec.header)) continue;
+    const value = row[spec.header] ?? '';
     if (mode === 'append') {
       if (!csvCellHasValue(value)) continue;
-      if (getLectValueByPath(lect, path).trim() !== '') continue;
+      if (getCsvLectValue(lect, spec).trim() !== '') continue;
     }
-    setLectPathValue(lect, path, kind, value);
+    setLectPathValue(lect, spec.sourcePath, spec.kind, value, spec.language);
     changed = true;
   }
   return changed;
@@ -797,10 +833,10 @@ async function createImportedPage(
   row: Record<string, string>,
   userId: number,
   taxonomy: { tagTypes: TagType[] },
-  pathKinds: Map<string, BlueprintPathKind>,
+  pathSpecs: CsvPathSpec[],
 ): Promise<boolean> {
   const lect = normalizeLect(blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage));
-  applyCsvLectValues(lect, row, pathKinds, 'replace');
+  applyCsvLectValues(lect, row, pathSpecs, 'replace');
 
   lect._type = pageType;
   const name = row.name?.trim() || getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || `Untitled ${pageType}`;
@@ -836,11 +872,11 @@ async function updateImportedPage(
   existing: Page,
   userId: number,
   taxonomy: { tagTypes: TagType[] },
-  pathKinds: Map<string, BlueprintPathKind>,
+  pathSpecs: CsvPathSpec[],
   mode: 'replace' | 'append',
 ): Promise<boolean> {
   const lect = normalizeLect(lectForPage(pageType, existing.lect));
-  let changed = applyCsvLectValues(lect, row, pathKinds, mode);
+  let changed = applyCsvLectValues(lect, row, pathSpecs, mode);
   let name = existing.name;
   let slug = existing.slug;
   let weight = existing.weight ?? 5;
@@ -919,7 +955,7 @@ async function importPagesCsv(
   mode: CsvImportMode = 'new-append',
 ): Promise<CsvImportResult> {
   const rows = csvRowsToObjects(parseCsv(csvText));
-  const pathKinds = advancedSearchPathKindMap([pageType]);
+  const pathSpecs = csvPathSpecs([pageType], true);
   const taxonomy = await editorTaxonomy(db);
   const result: CsvImportResult = { created: 0, updated: 0, skipped: 0 };
 
@@ -935,7 +971,7 @@ async function importPagesCsv(
         result.skipped++;
         continue;
       }
-      if (await createImportedPage(db, pageType, row, userId, taxonomy, pathKinds)) result.created++;
+      if (await createImportedPage(db, pageType, row, userId, taxonomy, pathSpecs)) result.created++;
       else result.skipped++;
       continue;
     }
@@ -946,7 +982,7 @@ async function importPagesCsv(
     }
 
     const updateMode = mode === 'append' || mode === 'new-append' ? 'append' : 'replace';
-    if (await updateImportedPage(db, pageType, row, existing, userId, taxonomy, pathKinds, updateMode)) {
+    if (await updateImportedPage(db, pageType, row, existing, userId, taxonomy, pathSpecs, updateMode)) {
       result.updated++;
     } else {
       result.skipped++;

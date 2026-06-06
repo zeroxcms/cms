@@ -1,6 +1,8 @@
 import { env, exports } from 'cloudflare:workers';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cmsConfig } from '../src/cms-config';
 import { hashToken, signJWT } from '../src/utils/jwt';
+import { blueprintToLect, stringifyLect } from '../src/utils/lect';
 import type { JWTPayload } from '../src/types';
 
 const IncomingRequest = Request;
@@ -18,11 +20,17 @@ interface RouteCase {
   json?: unknown;
 }
 
-const basePageLect = JSON.stringify({
-  _type: 'default',
-  name: { en: 'About' },
-  body: { en: 'About body' },
-});
+function localizedFixture(base: string): Record<string, string> {
+  return Object.fromEntries(cmsConfig.languages.map((language) => [
+    language,
+    language === cmsConfig.defaultLanguage ? base : `${base} ${language}`,
+  ]));
+}
+
+const basePageLectObject = blueprintToLect('default', cmsConfig.blueprint, cmsConfig.defaultLanguage);
+basePageLectObject.name = localizedFixture('About');
+basePageLectObject.body = localizedFixture('About body');
+const basePageLect = stringifyLect(basePageLectObject);
 
 beforeEach(async () => {
   vi.unstubAllGlobals();
@@ -239,10 +247,62 @@ describe('admin routes', () => {
     const page = await env.DB.prepare('SELECT name, lect FROM draft_pages WHERE id = ?')
       .bind(101)
       .first<{ name: string; lect: string }>();
-    const lect = JSON.parse(page?.lect ?? '{}') as { body?: { en?: string }; link?: { en?: string } };
+    const lect = JSON.parse(page?.lect ?? '{}') as { body?: Record<string, string>; link?: Record<string, string> };
     expect(page?.name).toBe('About');
-    expect(lect.body?.en).toBe('About body');
-    expect(lect.link?.en).toBe('Homepage');
+    expect(lect.body?.[cmsConfig.defaultLanguage]).toBe('About body');
+    expect(lect.link?.[cmsConfig.defaultLanguage]).toBe('Homepage');
+  });
+
+  it('GET /admin/advanced-search-export/:pageType exports localized fields for every language', async () => {
+    const response = await fetchWorker('/admin/advanced-search-export/default?operator=AND&sort=updated_at&order=DESC&search1=About&path1=', {
+      headers: { Cookie: await authCookie() },
+    });
+    const csv = await response.text();
+    const [header] = csv.replace(/^\uFEFF/, '').split('\n');
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toContain('text/csv');
+    expect(header).toContain(cmsConfig.languages.map((language) => `name.${language}`).join(','));
+    expect(header).toContain(cmsConfig.languages.map((language) => `body.${language}`).join(','));
+    for (const value of Object.values(localizedFixture('About body'))) {
+      expect(csv).toContain(value);
+    }
+  });
+
+  it('POST /admin/pages/import-v2/:pageType/confirm imports explicit localized CSV columns', async () => {
+    const nameHeaders = cmsConfig.languages.map((language) => `name.${language}`);
+    const bodyHeaders = cmsConfig.languages.map((language) => `body.${language}`);
+    const importedNames = localizedFixture('Localized');
+    const importedBodies = localizedFixture('Body');
+    const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
+      method: 'POST',
+      body: form({
+        action: 'new',
+        csv: [
+          ['name', 'slug', ...nameHeaders, ...bodyHeaders].join(','),
+          [
+            'Localized',
+            'localized',
+            ...cmsConfig.languages.map((language) => importedNames[language]),
+            ...cmsConfig.languages.map((language) => importedBodies[language]),
+          ].join(','),
+        ].join('\n'),
+      }),
+      headers: { Cookie: await authCookie() },
+    });
+    const page = await env.DB.prepare('SELECT lect FROM draft_pages WHERE slug = ?')
+      .bind('localized')
+      .first<{ lect: string }>();
+    const lect = JSON.parse(page?.lect ?? '{}') as {
+      name?: Record<string, string>;
+      body?: Record<string, string>;
+    };
+
+    expect(response.status).toBe(302);
+    for (const language of cmsConfig.languages) {
+      expect(lect.name?.[language]).toBe(importedNames[language]);
+      expect(lect.body?.[language]).toBe(importedBodies[language]);
+    }
   });
 
   it('POST /admin/pages/import-v2/:pageType/confirm can treat matching rows as new pages', async () => {
