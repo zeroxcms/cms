@@ -10,6 +10,17 @@ export interface DashboardPage extends Page {
   hasLiveLectDrift?: boolean;
 }
 
+interface DashboardPagination {
+  total: number;
+  totalPages: number;
+  currentPage: number;
+  pageSize: number;
+  firstHref: string;
+  previousHref: string;
+  nextHref: string;
+  lastHref: string;
+}
+
 export async function dashboardPage(views: Fetcher, opts: {
   siteTitle: string;
   userName: string;
@@ -24,6 +35,7 @@ export async function dashboardPage(views: Fetcher, opts: {
   advancedSearchHref?: string;
   importHref?: string;
   exportHref?: string;
+  pagination?: DashboardPagination;
 }): Promise<string> {
   const {
     siteTitle,
@@ -39,8 +51,15 @@ export async function dashboardPage(views: Fetcher, opts: {
     advancedSearchHref = pageTypeFilter ? `/admin/advanced-search/${encodeURIComponent(pageTypeFilter)}` : '/admin/advanced-search',
     importHref = pageTypeFilter ? `/admin/pages/import-v2/${encodeURIComponent(pageTypeFilter)}` : '',
     exportHref = pageTypeFilter ? `/admin/pages/export/${encodeURIComponent(pageTypeFilter)}` : '/admin/pages/export',
+    pagination,
   } = opts;
-  const pageCount = pages.length;
+  const pageCount = pagination?.total ?? pages.length;
+  const paginationStart = pagination && pageCount > 0
+    ? ((pagination.currentPage - 1) * pagination.pageSize) + 1
+    : pages.length ? 1 : 0;
+  const paginationEnd = pagination
+    ? Math.min(pageCount, paginationStart + pages.length - 1)
+    : pages.length;
   const showPageTypeColumn = !pageTypeFilter;
   const body = await renderView(views, '/templates/dashboard.json', {
     flash,
@@ -58,8 +77,21 @@ export async function dashboardPage(views: Fetcher, opts: {
     exportHref,
     hasExportHref: !!exportHref,
     pageCount,
-    pageCountLabel: `${pageCount} page${pageCount === 1 ? '' : 's'} in draft`,
-    hasPages: pageCount > 0,
+    pageCountLabel: pagination && pageCount > 0
+      ? `Showing ${paginationStart}-${paginationEnd} of ${pageCount} page${pageCount === 1 ? '' : 's'} in draft`
+      : `${pageCount} page${pageCount === 1 ? '' : 's'} in draft`,
+    hasPages: pages.length > 0,
+    showPagination: !!pagination && pagination.totalPages > 1,
+    currentPage: pagination?.currentPage ?? 1,
+    totalPages: pagination?.totalPages ?? 1,
+    hasFirstPage: !!pagination?.firstHref,
+    hasPreviousPage: !!pagination?.previousHref,
+    hasNextPage: !!pagination?.nextHref,
+    hasLastPage: !!pagination?.lastHref,
+    firstHref: pagination?.firstHref ?? '',
+    previousHref: pagination?.previousHref ?? '',
+    nextHref: pagination?.nextHref ?? '',
+    lastHref: pagination?.lastHref ?? '',
     pages: pages.map((page) => ({
       id: page.id,
       name: page.name,

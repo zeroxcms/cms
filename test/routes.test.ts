@@ -340,6 +340,45 @@ describe('admin routes', () => {
     expect(await pageTypeList.text()).toContain('href="/admin/pages/export/default"');
   });
 
+  it('GET /admin paginates draft pages', async () => {
+    await seedDraftPages('default', 105, 1000, 'Bulk Default');
+
+    const firstPage = await fetchWorker('/admin', { headers: { Cookie: await authCookie() } });
+    const firstHtml = await firstPage.text();
+
+    expect(firstPage.status).toBe(200);
+    expect(firstHtml).toContain('Showing 1-100 of 106 pages in draft');
+    expect(firstHtml).toContain('Page 1 of 2');
+    expect(firstHtml).toContain('href="/admin?page=2&amp;pagesize=100"');
+    expect(firstHtml).not.toContain('Bulk Default 105');
+
+    const secondPage = await fetchWorker('/admin?page=2', { headers: { Cookie: await authCookie() } });
+    const secondHtml = await secondPage.text();
+
+    expect(secondPage.status).toBe(200);
+    expect(secondHtml).toContain('Showing 101-106 of 106 pages in draft');
+    expect(secondHtml).toContain('Bulk Default 105');
+    expect(secondHtml).toContain('href="/admin?page=1&amp;pagesize=100"');
+  });
+
+  it('GET /admin/pages/list/:pageType paginates one page type', async () => {
+    await seedDraftPages('company', 105, 2000, 'Company Bulk');
+
+    const response = await fetchWorker('/admin/pages/list/company?page=2&pagesize=25', {
+      headers: { Cookie: await authCookie() },
+    });
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(html).toContain('Showing 26-50 of 105 pages in draft');
+    expect(html).toContain('Page 2 of 5');
+    expect(html).toContain('Company Bulk 026');
+    expect(html).toContain('Company Bulk 050');
+    expect(html).not.toContain('Company Bulk 001');
+    expect(html).toContain('href="/admin/pages/list/company?page=1&amp;pagesize=25"');
+    expect(html).toContain('href="/admin/pages/list/company?page=3&amp;pagesize=25"');
+  });
+
   it('POST /admin/pages/import-v2/:pageType/confirm imports explicit localized CSV columns', async () => {
     const nameHeaders = cmsConfig.languages.map((language) => `name.${language}`);
     const bodyHeaders = cmsConfig.languages.map((language) => `body.${language}`);
@@ -629,4 +668,26 @@ async function seedBaseData(): Promise<void> {
   await env.DB.prepare('INSERT INTO draft_page_tags (id, page_id, tag_id) VALUES (?, ?, ?)')
     .bind(401, 101, 302)
     .run();
+}
+
+async function seedDraftPages(pageType: string, count: number, idStart: number, namePrefix: string): Promise<void> {
+  for (let index = 1; index <= count; index++) {
+    const padded = String(index).padStart(3, '0');
+    await env.DB.prepare(
+      `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        idStart + index,
+        `${pageType}-bulk-uuid-${padded}`,
+        `${namePrefix} ${padded}`,
+        `${pageType}-bulk-${padded}`,
+        10,
+        pageType,
+        basePageLect,
+        1,
+        '1',
+      )
+      .run();
+  }
 }

@@ -222,6 +222,26 @@
       </tbody>
     </table>
   </div>
+
+  {% if showPagination %}
+    <div class="mt-4 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-gray-500">Page {{ currentPage }} of {{ totalPages }}</div>
+      <div class="flex flex-wrap gap-2">
+        {% if hasFirstPage %}
+          <a href="{{ firstHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">First</a>
+        {% endif %}
+        {% if hasPreviousPage %}
+          <a href="{{ previousHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Previous</a>
+        {% endif %}
+        {% if hasNextPage %}
+          <a href="{{ nextHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Next</a>
+        {% endif %}
+        {% if hasLastPage %}
+          <a href="{{ lastHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Last</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
 </div>
 
 <script>

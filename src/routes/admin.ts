@@ -66,6 +66,16 @@ interface AdvancedSearchResult {
   };
 }
 
+interface DashboardListResult {
+  results: Page[];
+  pagination: {
+    total: number;
+    totalPages: number;
+    currentPage: number;
+    limit: number;
+  };
+}
+
 type BlueprintPathKind = 'scalar' | 'localized' | 'pointer';
 
 interface BlueprintPathSpec {
@@ -110,6 +120,12 @@ interface CsvImportPreview {
   skipped: number;
 }
 
+interface LivePageSnapshot {
+  uuid: string;
+  lect: string | null;
+  weight: number;
+}
+
 const CSV_IMPORT_MODE_OPTIONS: CsvImportModeOption[] = [
   {
     value: 'new-append',
@@ -148,6 +164,9 @@ const CSV_IMPORT_MODE_OPTIONS: CsvImportModeOption[] = [
     destructive: false,
   },
 ];
+
+const DASHBOARD_DEFAULT_PAGE_SIZE = 100;
+const DASHBOARD_MAX_PAGE_SIZE = 100;
 
 // Apply auth to all admin routes
 adminRoutes.use('*', authMiddleware);
@@ -188,6 +207,21 @@ function nullableStr(v: FormValue): string | null {
 function num(v: unknown, fallback = 5): number {
   const n = typeof v === 'number' ? v : parseInt(typeof v === 'string' ? v.trim() : String(v ?? ''), 10);
   return isNaN(n) ? fallback : n;
+}
+
+function dashboardPageSize(value: string | null | undefined): number {
+  return Math.min(Math.max(num(value, DASHBOARD_DEFAULT_PAGE_SIZE), 1), DASHBOARD_MAX_PAGE_SIZE);
+}
+
+function dashboardPageNumber(value: string | null | undefined): number {
+  return Math.max(num(value, 1), 1);
+}
+
+function dashboardPageHref(routeBase: string, page: number, pageSize: number): string {
+  const params = new URLSearchParams();
+  params.set('page', String(page));
+  params.set('pagesize', String(pageSize));
+  return `${routeBase}?${params.toString()}`;
 }
 
 function userIdFromContext(c: AdminContext): number {
@@ -1606,27 +1640,86 @@ async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
   return true;
 }
 
+async function listDashboardDraftPages(
+  db: D1Database,
+  options: { pageType?: string; page: number; limit: number },
+): Promise<DashboardListResult> {
+  const whereSql = options.pageType ? 'WHERE page_type = ?' : '';
+  const baseParams = options.pageType ? [options.pageType] : [];
+  const countRow = await db.prepare(`SELECT COUNT(*) AS total FROM draft_pages ${whereSql}`)
+    .bind(...baseParams)
+    .first<{ total: number }>();
+  const total = countRow?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / options.limit));
+  const currentPage = Math.min(options.page, totalPages);
+  const currentOffset = (currentPage - 1) * options.limit;
+
+  const pages = await db.prepare(
+    `SELECT * FROM draft_pages ${whereSql}
+     ORDER BY weight ASC, name ASC, id ASC
+     LIMIT ? OFFSET ?`,
+  )
+    .bind(...baseParams, options.limit, currentOffset)
+    .all<Page>();
+
+  return {
+    results: pages.results,
+    pagination: {
+      total,
+      totalPages,
+      currentPage,
+      limit: options.limit,
+    },
+  };
+}
+
+async function liveMapForDraftPages(db: D1Database, draftPages: Page[]): Promise<Map<string, LivePageSnapshot>> {
+  const uuids = Array.from(new Set(draftPages.map((page) => page.uuid)));
+  if (!uuids.length) return new Map();
+
+  const placeholders = uuids.map(() => '?').join(',');
+  const livePages = await db.prepare(
+    `SELECT uuid, lect, weight FROM live_pages WHERE uuid IN (${placeholders})`,
+  )
+    .bind(...uuids)
+    .all<LivePageSnapshot>();
+
+  return new Map(livePages.results.map((page) => [page.uuid, page]));
+}
+
+function dashboardPagination(routeBase: string, result: DashboardListResult) {
+  const { currentPage, totalPages, limit } = result.pagination;
+
+  return {
+    total: result.pagination.total,
+    totalPages,
+    currentPage,
+    pageSize: limit,
+    firstHref: currentPage > 1 ? dashboardPageHref(routeBase, 1, limit) : '',
+    previousHref: currentPage > 1 ? dashboardPageHref(routeBase, currentPage - 1, limit) : '',
+    nextHref: currentPage < totalPages ? dashboardPageHref(routeBase, currentPage + 1, limit) : '',
+    lastHref: currentPage < totalPages ? dashboardPageHref(routeBase, totalPages, limit) : '',
+  };
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 adminRoutes.get('/', async (c) => {
   const user = c.get('user');
   const flash = c.req.query('flash') ?? '';
   const search = c.req.query('search')?.trim() ?? '';
+  const pageSize = dashboardPageSize(c.req.query('pagesize'));
+  const requestedPage = dashboardPageNumber(c.req.query('page'));
 
   if (search) {
     return c.redirect(`/admin/advanced-search?operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=${encodeURIComponent(search)}&path1=`);
   }
 
-  const draftPages = await c.env.DB.prepare(
-    'SELECT * FROM draft_pages ORDER BY weight ASC, name ASC',
-  ).all<Page>();
-
-  const livePages = await c.env.DB.prepare('SELECT uuid, lect, weight FROM live_pages').all<{
-    uuid: string;
-    lect: string | null;
-    weight: number;
-  }>();
-  const liveMap = new Map(livePages.results.map((page) => [page.uuid, page]));
+  const draftPages = await listDashboardDraftPages(c.env.DB, {
+    page: requestedPage,
+    limit: pageSize,
+  });
+  const liveMap = await liveMapForDraftPages(c.env.DB, draftPages.results);
 
   const pages = draftPages.results.map((p) => ({
     ...p,
@@ -1651,10 +1744,11 @@ adminRoutes.get('/', async (c) => {
       userAvatar: dbUser?.avatar_url ?? '',
       pages,
       flash: flash || undefined,
-      returnPath: '/admin',
+      returnPath: dashboardPageHref('/admin', draftPages.pagination.currentPage, pageSize),
       searchAction: '/admin/advanced-search',
       advancedSearchHref: '/admin/advanced-search',
       exportHref: '/admin/pages/export',
+      pagination: dashboardPagination('/admin', draftPages),
     }),
   );
 });
@@ -1687,26 +1781,23 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
   const pageType = c.req.param('pageType');
   const flash = c.req.query('flash') ?? '';
   const search = c.req.query('search')?.trim() ?? '';
+  const pageSize = dashboardPageSize(c.req.query('pagesize'));
+  const requestedPage = dashboardPageNumber(c.req.query('page'));
 
   if (search) {
     return c.redirect(`/admin/advanced-search/${encodeURIComponent(pageType)}?operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=${encodeURIComponent(search)}&path1=`);
   }
 
-  const draftPages = await c.env.DB.prepare(
-    'SELECT * FROM draft_pages WHERE page_type = ? ORDER BY weight ASC, name ASC',
-  )
-    .bind(pageType)
-    .all<Page>();
-  const livePages = await c.env.DB.prepare('SELECT uuid, lect, slug, weight FROM live_pages').all<{
-    uuid: string;
-    lect: string | null;
-    slug: string;
-    weight: number;
-  }>();
-  const liveMap = new Map(livePages.results.map((page) => [page.uuid, page]));
+  const draftPages = await listDashboardDraftPages(c.env.DB, {
+    pageType,
+    page: requestedPage,
+    limit: pageSize,
+  });
+  const liveMap = await liveMapForDraftPages(c.env.DB, draftPages.results);
   const dbUser = await c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
     .bind(parseInt(user.sub, 10))
     .first<{ avatar_url: string | null }>();
+  const routeBase = `/admin/pages/list/${encodeURIComponent(pageType)}`;
 
   return c.html(
     await dashboardPage(c.env.VIEWS, {
@@ -1722,12 +1813,13 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
         hasLiveLectDrift: liveMap.has(page.uuid) && !lectsMatch(liveMap.get(page.uuid)?.lect, page.lect),
       })),
       flash: flash || undefined,
-      returnPath: `/admin/pages/list/${encodeURIComponent(pageType)}`,
+      returnPath: dashboardPageHref(routeBase, draftPages.pagination.currentPage, pageSize),
       pageTypeFilter: pageType,
       searchAction: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
       advancedSearchHref: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
       importHref: `/admin/pages/import-v2/${encodeURIComponent(pageType)}`,
       exportHref: `/admin/pages/export/${encodeURIComponent(pageType)}`,
+      pagination: dashboardPagination(routeBase, draftPages),
     }),
   );
 });
