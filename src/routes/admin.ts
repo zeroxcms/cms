@@ -1747,6 +1747,7 @@ adminRoutes.get('/', async (c) => {
       returnPath: dashboardPageHref('/admin', draftPages.pagination.currentPage, pageSize),
       searchAction: '/admin/advanced-search',
       advancedSearchHref: '/admin/advanced-search',
+      importHref: '/admin/pages/import-v2/default',
       exportHref: '/admin/pages/export',
       pagination: dashboardPagination('/admin', draftPages),
     }),

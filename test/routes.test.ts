@@ -330,14 +330,19 @@ describe('admin routes', () => {
     expect(csv).not.toContain('Acme');
   });
 
-  it('shows CSV export links on the dashboard and page-type list', async () => {
+  it('shows CSV import and export links on the dashboard and page-type list', async () => {
     const [dashboard, pageTypeList] = await Promise.all([
       fetchWorker('/admin', { headers: { Cookie: await authCookie() } }),
       fetchWorker('/admin/pages/list/default', { headers: { Cookie: await authCookie() } }),
     ]);
 
-    expect(await dashboard.text()).toContain('href="/admin/pages/export"');
-    expect(await pageTypeList.text()).toContain('href="/admin/pages/export/default"');
+    const dashboardHtml = await dashboard.text();
+    const pageTypeListHtml = await pageTypeList.text();
+
+    expect(dashboardHtml).toContain('href="/admin/pages/import-v2/default"');
+    expect(dashboardHtml).toContain('href="/admin/pages/export"');
+    expect(pageTypeListHtml).toContain('href="/admin/pages/import-v2/default"');
+    expect(pageTypeListHtml).toContain('href="/admin/pages/export/default"');
   });
 
   it('GET /admin paginates draft pages', async () => {
