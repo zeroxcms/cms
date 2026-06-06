@@ -135,11 +135,12 @@ describe('admin routes', () => {
   it.each<RouteCase>([
     { name: 'GET /admin', path: '/admin', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/pages/list/:pageType', path: '/admin/pages/list/default', authenticated: true, expectedStatus: 200 },
-    { name: 'GET /admin/pages/search/:pageType', path: '/admin/pages/search/default?search=About', authenticated: true, expectedStatus: 302, location: '/admin/pages/list/default?search=About' },
+    { name: 'GET /admin/pages/search/:pageType', path: '/admin/pages/search/default?search=About', authenticated: true, expectedStatus: 302, location: '/admin/advanced-search/default?operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=About&path1=' },
     { name: 'GET /admin/pages/create_by_type/:pageType', path: '/admin/pages/create_by_type/default', authenticated: true, expectedStatus: 302, location: '/admin/pages/new?page_type=default' },
     { name: 'POST /admin/pages/new_post/:pageType', method: 'POST', path: '/admin/pages/new_post/default', body: form({ name: 'Quick Page', slug: 'quick-page' }), authenticated: true, expectedStatus: 302, location: /^\/admin\/pages\/\d+\/edit$/ },
     { name: 'GET /admin/pages/import/:pageType', path: '/admin/pages/import/default', authenticated: true, expectedStatus: 200 },
     { name: 'POST /admin/pages/import/:pageType', method: 'POST', path: '/admin/pages/import/default', body: form({ items: JSON.stringify([{ name: 'Imported', slug: 'imported', lect: { name: { en: 'Imported' } } }]) }), authenticated: true, expectedStatus: 302, location: '/admin/pages/list/default?flash=1+item(s)+imported' },
+    { name: 'GET /admin/pages/import-v2/:pageType', path: '/admin/pages/import-v2/default', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/pages/new', path: '/admin/pages/new', authenticated: true, expectedStatus: 200 },
     { name: 'POST /admin/pages', method: 'POST', path: '/admin/pages', body: form({ name: 'Created', slug: 'created', page_type: 'default' }), authenticated: true, expectedStatus: 302, location: '/admin?flash=Page+created+successfully' },
     { name: 'GET /admin/pages/:id/edit', path: '/admin/pages/101/edit', authenticated: true, expectedStatus: 200 },
@@ -171,6 +172,40 @@ describe('admin routes', () => {
     { name: 'POST /admin/tags/:id/delete', method: 'POST', path: '/admin/tags/301/delete', authenticated: true, expectedStatus: 302, location: '/admin/tags' },
   ])('$name', async (route) => {
     await expectRoute(route);
+  });
+
+  it('POST /admin/pages/import-v2/:pageType shows a confirmation page before importing', async () => {
+    const response = await fetchWorker('/admin/pages/import-v2/default', {
+      method: 'POST',
+      body: form({ csv: 'name,slug\nFresh CSV,fresh-csv\nAbout,about' }),
+      headers: { Cookie: await authCookie() },
+    });
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(html).toContain('Confirm Import');
+    expect(html).toContain('Fresh CSV');
+    expect(html).toContain('#101 About');
+    expect(await env.DB.prepare('SELECT id FROM draft_pages WHERE slug = ?')
+      .bind('fresh-csv')
+      .first<{ id: number }>()).toBeNull();
+  });
+
+  it('POST /admin/pages/import-v2/:pageType/confirm imports confirmed CSV rows', async () => {
+    const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
+      method: 'POST',
+      body: form({ csv: 'name,slug\nFresh CSV,fresh-csv\nAbout Updated,about' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=1+created,+1+updated,+0+skipped');
+    expect(await env.DB.prepare('SELECT name, page_type FROM draft_pages WHERE slug = ?')
+      .bind('fresh-csv')
+      .first<{ name: string; page_type: string }>()).toEqual({ name: 'Fresh CSV', page_type: 'default' });
+    expect(await env.DB.prepare('SELECT name FROM draft_pages WHERE id = ?')
+      .bind(101)
+      .first<{ name: string }>()).toEqual({ name: 'About Updated' });
   });
 
   it('redirects anonymous admin requests to login', async () => {

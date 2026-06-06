@@ -79,6 +79,21 @@ interface CsvImportResult {
   skipped: number;
 }
 
+interface CsvImportPreviewRow {
+  rowNumber: number;
+  action: 'create' | 'update';
+  name: string;
+  slug: string;
+  existingId: number | null;
+  existingName: string;
+  existingSlug: string;
+}
+
+interface CsvImportPreview {
+  rows: CsvImportPreviewRow[];
+  skipped: number;
+}
+
 // Apply auth to all admin routes
 adminRoutes.use('*', authMiddleware);
 adminRoutes.use('*', editorGuard);
@@ -630,6 +645,44 @@ async function importPageTags(db: D1Database, pageId: number, row: Record<string
         .run();
     }
   }
+}
+
+async function previewPagesCsv(db: D1Database, pageType: string, csvText: string): Promise<CsvImportPreview> {
+  const rows = csvRowsToObjects(parseCsv(csvText));
+  const pathKinds = advancedSearchPathKindMap([pageType]);
+  const preview: CsvImportPreview = { rows: [], skipped: 0 };
+
+  for (const [index, row] of rows.entries()) {
+    if (!Object.values(row).some((value) => value.trim() !== '')) {
+      preview.skipped++;
+      continue;
+    }
+
+    const existing = await findImportTarget(db, pageType, row);
+    const baseLect = existing ? lectForPage(pageType, existing.lect) : blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
+    const lect = normalizeLect(baseLect);
+
+    for (const [path, kind] of pathKinds) {
+      if (!(path in row)) continue;
+      setLectPathValue(lect, path, kind, row[path] ?? '');
+    }
+
+    const name = row.name?.trim() || getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || existing?.name || `Untitled ${pageType}`;
+    const slug = row.slug?.trim() || existing?.slug || slugify(name);
+    const action = existing ? 'update' : 'create';
+
+    preview.rows.push({
+      rowNumber: index + 2,
+      action,
+      name,
+      slug,
+      existingId: existing?.id ?? null,
+      existingName: existing?.name ?? '',
+      existingSlug: existing?.slug ?? '',
+    });
+  }
+
+  return preview;
 }
 
 async function importPagesCsv(db: D1Database, pageType: string, csvText: string, userId: number): Promise<CsvImportResult> {
@@ -1394,9 +1447,39 @@ adminRoutes.get('/pages/import-v2/:pageType', async (c) => {
 });
 
 adminRoutes.post('/pages/import-v2/:pageType', async (c) => {
+  const user = c.get('user');
   const pageType = c.req.param('pageType');
   const form = await c.req.formData();
   const csvText = await readImportCsvText(form);
+  if (!csvText.trim()) {
+    return c.redirect(`/admin/pages/list/${encodeURIComponent(pageType)}?flash=No+CSV+content+provided`);
+  }
+
+  const [dbUser, preview] = await Promise.all([
+    c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+      .bind(parseInt(user.sub, 10))
+      .first<{ avatar_url: string | null }>(),
+    previewPagesCsv(c.env.DB, pageType, csvText),
+  ]);
+
+  return c.html(await importPage(c.env.VIEWS, {
+    siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
+    userName: user.name,
+    userRole: user.role,
+    userAvatar: dbUser?.avatar_url ?? '',
+    pageType,
+    mode: 'confirm',
+    action: `/admin/pages/import-v2/${encodeURIComponent(pageType)}/confirm`,
+    csvText,
+    previewRows: preview.rows,
+    skippedCount: preview.skipped,
+  }));
+});
+
+adminRoutes.post('/pages/import-v2/:pageType/confirm', async (c) => {
+  const pageType = c.req.param('pageType');
+  const form = await c.req.formData();
+  const csvText = str(form.get('csv'));
   if (!csvText.trim()) {
     return c.redirect(`/admin/pages/list/${encodeURIComponent(pageType)}?flash=No+CSV+content+provided`);
   }
