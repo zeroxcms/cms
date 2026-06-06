@@ -24,14 +24,6 @@
           </svg>
         </button>
       </form>
-      <a href="{{ advancedSearchHref | escape }}"
-         class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.097v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013l-2.5 1.25A.75.75 0 019.5 19.95v-5.517a2.25 2.25 0 00-.659-1.591L3.409 7.41A2.25 2.25 0 012.75 5.819V4.775c0-.541.384-1.006.917-1.097A49.42 49.42 0 0112 3z"/>
-        </svg>
-        Advanced Search
-      </a>
       {% if hasImportHref %}
         <a href="{{ importHref | escape }}"
            title="Import CSV"
