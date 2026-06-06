@@ -126,6 +126,15 @@ function editorsFromForm(form: FormData): string | null {
   return ids.length ? Array.from(new Set(ids)).join(',') : null;
 }
 
+async function parentPageOption(db: D1Database, pageId: string | number | null | undefined): Promise<Page[]> {
+  const id = num(pageId, 0);
+  if (!id) return [];
+  const page = await db.prepare('SELECT id, name, slug FROM draft_pages WHERE id = ?')
+    .bind(id)
+    .first<Page>();
+  return page ? [page] : [];
+}
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -1308,6 +1317,7 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
       pageTypeFilter: pageType,
       searchAction: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
       advancedSearchHref: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
+      importHref: `/admin/pages/import-v2/${encodeURIComponent(pageType)}`,
     }),
   );
 });
@@ -1485,8 +1495,7 @@ adminRoutes.get('/pages/new', async (c) => {
   const pageType = c.req.query('page_type') || 'default';
   const language = languageFromRequest(c);
   const lect = blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
-  const [parentPages, taxonomy, dbUser] = await Promise.all([
-    c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
+  const [taxonomy, dbUser] = await Promise.all([
     editorTaxonomy(c.env.DB),
     c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
       .bind(parseInt(user.sub, 10))
@@ -1499,7 +1508,7 @@ adminRoutes.get('/pages/new', async (c) => {
       userName: user.name,
       userRole: user.role,
       userAvatar: dbUser?.avatar_url ?? '',
-      parentPages: parentPages.results,
+      parentPages: [],
       tags: taxonomy.tags,
       tagTypes: taxonomy.tagTypes,
       selectedTagIds: [],
@@ -1534,7 +1543,7 @@ adminRoutes.post('/pages', async (c) => {
 
   if (errors.length) {
     const [parentPages, taxonomy, dbUser] = await Promise.all([
-      c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
+      parentPageOption(c.env.DB, nullableStr(form.get('page_id'))),
       editorTaxonomy(c.env.DB),
       c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
         .bind(parseInt(user.sub, 10))
@@ -1546,7 +1555,7 @@ adminRoutes.post('/pages', async (c) => {
         userName: user.name,
         userRole: user.role,
         userAvatar: dbUser?.avatar_url ?? '',
-        parentPages: parentPages.results,
+        parentPages,
         tags: taxonomy.tags,
         tagTypes: taxonomy.tagTypes,
         selectedTagIds: [],
@@ -1649,9 +1658,8 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
   const requestedVersionId = parseInt(c.req.query('version') ?? '', 10);
   const flash = c.req.query('flash') ?? '';
 
-  const [page, parentPages, taxonomy, dbUser] = await Promise.all([
+  const [page, taxonomy, dbUser] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(pageId).first<Page>(),
-    c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
     editorTaxonomy(c.env.DB),
     c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
       .bind(parseInt(user.sub, 10))
@@ -1683,6 +1691,7 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
   const pageType = page.page_type ?? 'default';
   const lect = lectForPage(pageType, version?.lect ?? page.lect);
   const displayPage = { ...page, lect: stringifyLect(lect) };
+  const parentPages = await parentPageOption(c.env.DB, page.page_id);
 
   return c.html(
     await editorPage(c.env.VIEWS, {
@@ -1694,7 +1703,7 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
       version: version ?? undefined,
       isVersionPreview: Number.isFinite(requestedVersionId) && !!version,
       liveVersionId: versions.results.find((candidate) => candidate.lect === livePage?.lect)?.id,
-      parentPages: parentPages.results,
+      parentPages,
       tags: taxonomy.tags,
       tagTypes: taxonomy.tagTypes,
       selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
@@ -1764,7 +1773,7 @@ adminRoutes.post('/pages/:id', async (c) => {
 
   if (errors.length) {
     const [parentPages, taxonomy, version, versions, livePage, pageTags, dbUser] = await Promise.all([
-      c.env.DB.prepare('SELECT id, name, slug FROM draft_pages ORDER BY name ASC').all<Page>(),
+      parentPageOption(c.env.DB, nullableStr(form.get('page_id')) ?? page.page_id),
       editorTaxonomy(c.env.DB),
       page.current_page_version_id
         ? c.env.DB.prepare('SELECT * FROM page_versions WHERE id = ?')
@@ -1793,7 +1802,7 @@ adminRoutes.post('/pages/:id', async (c) => {
         page,
         version: version ?? undefined,
         liveVersionId: versions.results.find((candidate) => candidate.lect === livePage?.lect)?.id,
-        parentPages: parentPages.results,
+        parentPages,
         tags: taxonomy.tags,
         tagTypes: taxonomy.tagTypes,
         selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
@@ -2102,6 +2111,42 @@ adminRoutes.post('/trash/:id/delete', async (c) => {
 });
 
 // ── Admin JSON API ───────────────────────────────────────────────────────────
+
+adminRoutes.get('/api/parent-pages', async (c) => {
+  const query = c.req.query('q')?.trim() ?? '';
+  const excludeId = num(c.req.query('exclude'), 0);
+  const params: unknown[] = [];
+  const conditions: string[] = [];
+
+  if (query) {
+    const term = `%${query.replaceAll(' ', '%')}%`;
+    conditions.push('(name LIKE ? OR slug LIKE ?)');
+    params.push(term, term);
+  }
+
+  if (excludeId) {
+    conditions.push('id != ?');
+    params.push(excludeId);
+  }
+
+  const whereSql = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const pages = await c.env.DB.prepare(
+    `SELECT id, name, slug
+     FROM draft_pages
+     ${whereSql}
+     ORDER BY updated_at DESC, name ASC
+     LIMIT 20`,
+  )
+    .bind(...params)
+    .all<{ id: number; name: string; slug: string }>();
+
+  return c.json(pages.results.map((page) => ({
+    id: page.id,
+    name: page.name,
+    slug: page.slug,
+    label: `/${page.slug}`,
+  })));
+});
 
 adminRoutes.get('/api/pages/:type', async (c) => {
   const pageType = c.req.param('type');

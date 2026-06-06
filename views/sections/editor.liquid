@@ -45,7 +45,7 @@
         </div>
         <div class="flex min-w-0 flex-wrap items-center gap-3 text-xs text-gray-600">
           <label for="parent_page_search" class="sr-only">Parent Page</label>
-          <div class="relative flex min-w-0 items-center gap-1" data-parent-combobox>
+          <div class="relative flex min-w-0 items-center gap-1" data-parent-combobox data-parent-exclude="{{ page.id | escape }}">
             <svg class="h-3.5 w-3.5 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
@@ -77,17 +77,6 @@
                 <span class="block font-medium">/</span>
                 <span class="block text-[11px] text-gray-400">No parent</span>
               </button>
-              {% for option in parentOptions %}
-                <button type="button"
-                        class="block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
-                        data-parent-option
-                        data-parent-id="{{ option.id }}"
-                        data-parent-label="{{ option.label | escape }}"
-                        data-parent-search="{{ option.name | append: ' /' | append: option.slug | escape }}">
-                  <span class="block truncate font-medium">{{ option.label | escape }}</span>
-                  <span class="block truncate text-[11px] text-gray-400">{{ option.name | escape }}</span>
-                </button>
-              {% endfor %}
               <p class="hidden px-3 py-2 text-xs text-gray-400" data-parent-empty>No matching pages</p>
             </div>
           </div>
@@ -302,24 +291,67 @@
     const parentResults = parentCombobox.querySelector('[data-parent-results]');
     const parentEmpty = parentCombobox.querySelector('[data-parent-empty]');
     const parentToggle = parentCombobox.querySelector('[data-parent-toggle]');
-    const parentOptions = Array.from(parentCombobox.querySelectorAll('[data-parent-option]'));
+    let parentSearchRequest = 0;
 
-    function filterParentOptions() {
-      const query = parentInput.value.trim().toLowerCase();
+    function parentOptions() {
+      return Array.from(parentCombobox.querySelectorAll('[data-parent-option]'));
+    }
+
+    function bindParentOption(option) {
+      option.addEventListener('click', () => selectParentOption(option));
+    }
+
+    function updateParentEmpty() {
       let visibleCount = 0;
-      parentOptions.forEach((option) => {
-        const text = `${option.dataset.parentSearch || ''} ${option.dataset.parentLabel || ''}`.toLowerCase();
-        const visible = !query || text.includes(query);
-        option.classList.toggle('hidden', !visible);
+      parentOptions().forEach((option) => {
+        const visible = !option.classList.contains('hidden');
         if (visible) visibleCount++;
       });
       parentEmpty.classList.toggle('hidden', visibleCount > 0);
     }
 
-    function openParentResults() {
-      filterParentOptions();
+    function renderParentOptions(pages) {
+      parentCombobox.querySelectorAll('[data-parent-dynamic]').forEach((option) => option.remove());
+      pages.forEach((page) => {
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.className = 'block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50';
+        option.dataset.parentOption = '';
+        option.dataset.parentDynamic = '';
+        option.dataset.parentId = String(page.id);
+        option.dataset.parentLabel = page.label;
+        option.innerHTML = `<span class="block truncate font-medium"></span><span class="block truncate text-[11px] text-gray-400"></span>`;
+        option.children[0].textContent = page.label;
+        option.children[1].textContent = page.name;
+        bindParentOption(option);
+        parentResults.insertBefore(option, parentEmpty);
+      });
+      updateParentEmpty();
+    }
+
+    async function loadParentOptions() {
+      const requestId = ++parentSearchRequest;
+      const params = new URLSearchParams();
+      const query = parentInput.value.trim();
+      const exclude = parentCombobox.dataset.parentExclude || '';
+      const noParentOption = parentCombobox.querySelector('[data-parent-id=""]');
+      noParentOption.classList.toggle('hidden', !!query && query !== '/');
+      if (query && query !== '/') params.set('q', query);
+      if (exclude) params.set('exclude', exclude);
+
+      try {
+        const response = await fetch(`/admin/api/parent-pages?${params.toString()}`);
+        if (!response.ok || requestId !== parentSearchRequest) return;
+        renderParentOptions(await response.json());
+      } catch (_error) {
+        if (requestId === parentSearchRequest) renderParentOptions([]);
+      }
+    }
+
+    async function openParentResults() {
       parentResults.classList.remove('hidden');
       parentInput.setAttribute('aria-expanded', 'true');
+      await loadParentOptions();
     }
 
     function closeParentResults() {
@@ -344,7 +376,7 @@
         return;
       }
       if (event.key !== 'Enter') return;
-      const firstVisible = parentOptions.find((option) => !option.classList.contains('hidden'));
+      const firstVisible = parentOptions().find((option) => !option.classList.contains('hidden'));
       if (!firstVisible) return;
       event.preventDefault();
       selectParentOption(firstVisible);
@@ -357,9 +389,7 @@
         closeParentResults();
       }
     });
-    parentOptions.forEach((option) => {
-      option.addEventListener('click', () => selectParentOption(option));
-    });
+    parentOptions().forEach(bindParentOption);
     document.addEventListener('click', (event) => {
       if (!parentCombobox.contains(event.target)) closeParentResults();
     });

@@ -34,12 +34,14 @@
       </a>
       {% if hasImportHref %}
         <a href="{{ importHref | escape }}"
+           title="Import CSV"
+           aria-label="Import CSV"
            class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M12 3v12m0-12l4 4m-4-4L8 7M4.5 15.75v3A2.25 2.25 0 006.75 21h10.5a2.25 2.25 0 002.25-2.25v-3"/>
           </svg>
-          Import
+          Import CSV
         </a>
       {% endif %}
       <a href="/admin/pages/new"

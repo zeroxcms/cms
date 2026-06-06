@@ -422,7 +422,7 @@ export async function editorPage(views: Fetcher, opts: {
       name: parent.name,
       slug: parent.slug,
       label: `/${parent.slug}`,
-      selected: page?.page_id === parent.id,
+      selected: page?.page_id === parent.id || parentPages.length === 1,
     }));
   const selectedParent = parentOptions.find((parent) => parent.selected);
   const versions = structured?.versions.map((version) => ({
@@ -451,6 +451,7 @@ export async function editorPage(views: Fetcher, opts: {
     flash,
     hasFlash: !!flash,
     page: {
+      id: page?.id ?? '',
       name: page?.name ?? '',
       slug: page?.slug ?? '',
       pageType: page?.page_type ?? defaultPageType,
