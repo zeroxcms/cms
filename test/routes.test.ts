@@ -230,6 +230,45 @@ describe('admin routes', () => {
       .first<{ name: string }>()).toEqual({ name: 'About Updated' });
   });
 
+  it('POST /admin/pages/import-v2/:pageType/confirm bulk creates page versions', async () => {
+    const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
+      method: 'POST',
+      body: form({ action: 'new', csv: 'name,slug\nBulk One,bulk-one\nBulk Two,bulk-two\nBulk Three,bulk-three' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=3+created,+0+updated,+0+skipped');
+
+    const pages = await env.DB.prepare(
+      `SELECT id, current_page_version_id
+       FROM draft_pages
+       WHERE slug IN (?, ?, ?)
+       ORDER BY slug ASC`,
+    )
+      .bind('bulk-one', 'bulk-three', 'bulk-two')
+      .all<{ id: number; current_page_version_id: number }>();
+    const pageIds = pages.results.map((page) => page.id);
+    const versions = await env.DB.prepare(
+      `SELECT id, page_id, action
+       FROM page_versions
+       WHERE page_id IN (?, ?, ?)
+       ORDER BY page_id ASC`,
+    )
+      .bind(...pageIds)
+      .all<{ id: number; page_id: number; action: string }>();
+    const versionByPage = new Map(versions.results.map((version) => [version.page_id, version]));
+
+    expect(pages.results).toHaveLength(3);
+    expect(versions.results).toHaveLength(3);
+    for (const page of pages.results) {
+      expect(versionByPage.get(page.id)).toMatchObject({
+        id: page.current_page_version_id,
+        action: 'import',
+      });
+    }
+  });
+
   it('POST /admin/pages/import-v2/:pageType/confirm can import new rows only', async () => {
     const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
       method: 'POST',

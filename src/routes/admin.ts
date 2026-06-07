@@ -120,6 +120,29 @@ interface CsvImportPreview {
   skipped: number;
 }
 
+interface ImportCsvRow {
+  index: number;
+  row: Record<string, string>;
+}
+
+interface BulkImportedPagePayload {
+  id: number;
+  version_id: number;
+  name: string;
+  slug: string;
+  weight: number;
+  start: string | null;
+  end: string | null;
+  page_type: string;
+  lect: string;
+  creator: number | null;
+}
+
+interface PreparedImportedPage {
+  payload: BulkImportedPagePayload;
+  row: Record<string, string>;
+}
+
 interface LivePageSnapshot {
   uuid: string;
   lect: string | null;
@@ -167,6 +190,9 @@ const CSV_IMPORT_MODE_OPTIONS: CsvImportModeOption[] = [
 
 const DASHBOARD_DEFAULT_PAGE_SIZE = 100;
 const DASHBOARD_MAX_PAGE_SIZE = 100;
+const IMPORT_LOOKUP_CHUNK_ROWS = 1000;
+const IMPORT_BULK_CHUNK_ROWS = 1000;
+const IMPORT_BULK_CHUNK_BYTES = 1_500_000;
 
 // Apply auth to all admin routes
 adminRoutes.use('*', authMiddleware);
@@ -835,20 +861,181 @@ async function readImportCsvText(form: FormData): Promise<string> {
   return str(form.get('csv'));
 }
 
-async function findImportTarget(db: D1Database, pageType: string, row: Record<string, string>): Promise<Page | null> {
-  const id = row.id?.trim();
-  if (id) {
-    const page = await db.prepare('SELECT * FROM draft_pages WHERE id = ? AND page_type = ?')
-      .bind(id, pageType)
-      .first<Page>();
-    if (page) return page;
+function chunkRows<T>(rows: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < rows.length; index += size) {
+    chunks.push(rows.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function jsonByteLength(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+
+function chunkByJsonPayload<T>(rows: T[], maxRows: number, maxBytes: number): T[][] {
+  const chunks: T[][] = [];
+  let chunk: T[] = [];
+  let chunkBytes = 2;
+
+  for (const row of rows) {
+    const rowBytes = jsonByteLength(JSON.stringify(row)) + (chunk.length ? 1 : 0);
+    if (chunk.length && (chunk.length >= maxRows || chunkBytes + rowBytes > maxBytes)) {
+      chunks.push(chunk);
+      chunk = [];
+      chunkBytes = 2;
+    }
+    chunk.push(row);
+    chunkBytes += rowBytes;
   }
 
-  const slug = row.slug?.trim();
-  if (!slug) return null;
-  return db.prepare('SELECT * FROM draft_pages WHERE slug = ? AND page_type = ?')
-    .bind(slug, pageType)
-    .first<Page>();
+  if (chunk.length) chunks.push(chunk);
+  return chunks;
+}
+
+function importLookupPayload(rows: ImportCsvRow[]): Array<{ index: number; id: string; slug: string }> {
+  return rows.map(({ index, row }) => {
+    const id = row.id?.trim() ?? '';
+    return {
+      index,
+      id: /^-?\d+$/.test(id) ? id : '',
+      slug: row.slug?.trim() ?? '',
+    };
+  });
+}
+
+async function findImportTargets(
+  db: D1Database,
+  pageType: string,
+  rows: ImportCsvRow[],
+): Promise<Map<number, Page>> {
+  const matches = new Map<number, Page>();
+  const lookupRows = rows.filter(({ row }) => row.id?.trim() || row.slug?.trim());
+  if (!lookupRows.length) return matches;
+
+  for (const chunk of chunkRows(lookupRows, IMPORT_LOOKUP_CHUNK_ROWS)) {
+    const payload = JSON.stringify(importLookupPayload(chunk));
+    const pages = await db.prepare(
+      `WITH incoming AS (
+         SELECT
+           CAST(json_extract(value, '$.index') AS INTEGER) AS row_index,
+           NULLIF(json_extract(value, '$.id'), '') AS row_id,
+           NULLIF(json_extract(value, '$.slug'), '') AS slug
+         FROM json_each(?)
+       )
+       SELECT incoming.row_index AS row_index, p.*
+       FROM incoming
+       JOIN draft_pages p
+         ON p.page_type = ?
+        AND (
+          (incoming.row_id IS NOT NULL AND p.id = CAST(incoming.row_id AS INTEGER))
+          OR (incoming.slug IS NOT NULL AND p.slug = incoming.slug)
+        )
+       ORDER BY incoming.row_index ASC,
+         CASE
+           WHEN incoming.row_id IS NOT NULL AND p.id = CAST(incoming.row_id AS INTEGER) THEN 0
+           ELSE 1
+         END ASC,
+         p.id ASC`,
+    )
+      .bind(payload, pageType)
+      .all<Page & { row_index: number }>();
+
+    for (const page of pages.results) {
+      if (!matches.has(page.row_index)) matches.set(page.row_index, page);
+    }
+  }
+
+  return matches;
+}
+
+function generatedImportIdBase(): number {
+  const buckets = new Uint32Array(1);
+  crypto.getRandomValues(buckets);
+  return 4_000_000_000_000_000 + (buckets[0] % 10_000_000) * 100_000;
+}
+
+function prepareImportedPage(
+  pageType: string,
+  row: Record<string, string>,
+  userId: number,
+  pathSpecs: CsvPathSpec[],
+  idBase: number,
+  index: number,
+): PreparedImportedPage {
+  const lect = normalizeLect(blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage));
+  applyCsvLectValues(lect, row, pathSpecs, 'replace');
+
+  lect._type = pageType;
+  const name = row.name?.trim() || getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || `Untitled ${pageType}`;
+  const slug = row.slug?.trim() || slugify(name);
+
+  return {
+    row,
+    payload: {
+      id: idBase + (index * 2),
+      version_id: idBase + (index * 2) + 1,
+      name,
+      slug,
+      weight: row.weight ? num(row.weight) : 5,
+      start: row.start?.trim() || null,
+      end: row.end?.trim() || null,
+      page_type: pageType,
+      lect: stringifyLect(withDraftMetadata(lect, userId)),
+      creator: userId || null,
+    },
+  };
+}
+
+async function bulkCreateImportedPages(
+  db: D1Database,
+  pages: PreparedImportedPage[],
+  taxonomy: { tagTypes: TagType[] },
+): Promise<void> {
+  for (const chunk of chunkByJsonPayload(pages, IMPORT_BULK_CHUNK_ROWS, IMPORT_BULK_CHUNK_BYTES)) {
+    const payload = JSON.stringify(chunk.map((page) => page.payload));
+
+    await db.prepare(
+      `WITH incoming AS (
+         SELECT
+           CAST(json_extract(value, '$.id') AS INTEGER) AS id,
+           CAST(json_extract(value, '$.version_id') AS INTEGER) AS version_id,
+           json_extract(value, '$.name') AS name,
+           json_extract(value, '$.slug') AS slug,
+           CAST(json_extract(value, '$.weight') AS INTEGER) AS weight,
+           json_extract(value, '$.start') AS start,
+           json_extract(value, '$.end') AS end,
+           json_extract(value, '$.page_type') AS page_type,
+           json_extract(value, '$.lect') AS lect,
+           CAST(json_extract(value, '$.creator') AS INTEGER) AS creator
+         FROM json_each(?)
+       )
+       INSERT INTO draft_pages (id, name, slug, weight, start, end, page_type, current_page_version_id, lect, creator)
+       SELECT id, name, slug, weight, start, end, page_type, version_id, lect, creator
+       FROM incoming`,
+    )
+      .bind(payload)
+      .run();
+
+    await db.prepare(
+      `WITH incoming AS (
+         SELECT
+           CAST(json_extract(value, '$.id') AS INTEGER) AS page_id,
+           CAST(json_extract(value, '$.version_id') AS INTEGER) AS version_id,
+           json_extract(value, '$.lect') AS lect
+         FROM json_each(?)
+       )
+       INSERT INTO page_versions (id, page_id, lect, action)
+       SELECT version_id, page_id, lect, 'import'
+       FROM incoming`,
+    )
+      .bind(payload)
+      .run();
+
+    for (const page of chunk) {
+      await importPageTags(db, page.payload.id, page.row, taxonomy.tagTypes, 'replace');
+    }
+  }
 }
 
 async function uniqueTagSlug(db: D1Database, baseSlug: string): Promise<string> {
@@ -919,6 +1106,8 @@ async function previewPagesCsv(db: D1Database, pageType: string, csvText: string
   const rows = csvRowsToObjects(parseCsv(csvText));
   const pathSpecs = csvPathSpecs([pageType], true);
   const preview: CsvImportPreview = { rows: [], skipped: 0 };
+  const importRows = rows.map((row, index) => ({ index, row })).filter(({ row }) => csvRowHasValues(row));
+  const targets = await findImportTargets(db, pageType, importRows);
 
   for (const [index, row] of rows.entries()) {
     if (!csvRowHasValues(row)) {
@@ -926,7 +1115,7 @@ async function previewPagesCsv(db: D1Database, pageType: string, csvText: string
       continue;
     }
 
-    const existing = await findImportTarget(db, pageType, row);
+    const existing = targets.get(index) ?? null;
     const baseLect = existing ? lectForPage(pageType, existing.lect) : blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
     const lect = normalizeLect(baseLect);
 
@@ -971,44 +1160,6 @@ function applyCsvLectValues(
     changed = true;
   }
   return changed;
-}
-
-async function createImportedPage(
-  db: D1Database,
-  pageType: string,
-  row: Record<string, string>,
-  userId: number,
-  taxonomy: { tagTypes: TagType[] },
-  pathSpecs: CsvPathSpec[],
-): Promise<boolean> {
-  const lect = normalizeLect(blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage));
-  applyCsvLectValues(lect, row, pathSpecs, 'replace');
-
-  lect._type = pageType;
-  const name = row.name?.trim() || getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || `Untitled ${pageType}`;
-  const slug = row.slug?.trim() || slugify(name);
-  const lectValue = stringifyLect(withDraftMetadata(lect, userId));
-  const weight = row.weight ? num(row.weight) : 5;
-  const start = row.start?.trim() || null;
-  const end = row.end?.trim() || null;
-
-  const insert = await db.prepare(
-    `INSERT INTO draft_pages (name, slug, weight, start, end, page_type, lect, creator)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(name, slug, weight, start, end, pageType, lectValue, userId || null)
-    .run();
-  const page = await db.prepare('SELECT id FROM draft_pages WHERE rowid = ?')
-    .bind(insert.meta.last_row_id)
-    .first<{ id: number }>();
-  if (!page) return false;
-
-  const versionId = await savePageVersion(db, page.id, lectValue, 'import');
-  await db.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
-    .bind(versionId, page.id)
-    .run();
-  await importPageTags(db, page.id, row, taxonomy.tagTypes, 'replace');
-  return true;
 }
 
 async function updateImportedPage(
@@ -1104,21 +1255,24 @@ async function importPagesCsv(
   const pathSpecs = csvPathSpecs([pageType], true);
   const taxonomy = await editorTaxonomy(db);
   const result: CsvImportResult = { created: 0, updated: 0, skipped: 0 };
+  const importRows = rows.map((row, index) => ({ index, row })).filter(({ row }) => csvRowHasValues(row));
+  const targets = mode === 'force-new' ? new Map<number, Page>() : await findImportTargets(db, pageType, importRows);
+  const creations: PreparedImportedPage[] = [];
+  const idBase = generatedImportIdBase();
 
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
     if (!csvRowHasValues(row)) {
       result.skipped++;
       continue;
     }
 
-    const existing = mode === 'force-new' ? null : await findImportTarget(db, pageType, row);
+    const existing = targets.get(index) ?? null;
     if (!existing) {
       if (mode === 'append' || mode === 'overwrite') {
         result.skipped++;
         continue;
       }
-      if (await createImportedPage(db, pageType, row, userId, taxonomy, pathSpecs)) result.created++;
-      else result.skipped++;
+      creations.push(prepareImportedPage(pageType, row, userId, pathSpecs, idBase, creations.length));
       continue;
     }
 
@@ -1133,6 +1287,11 @@ async function importPagesCsv(
     } else {
       result.skipped++;
     }
+  }
+
+  if (creations.length) {
+    await bulkCreateImportedPages(db, creations, taxonomy);
+    result.created += creations.length;
   }
 
   return result;
