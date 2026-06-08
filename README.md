@@ -6,8 +6,8 @@ Content management system on Workers
 - **OAuth 2.1** login via Eventuai, GitHub, or Google with PKCE (Proof Key for Code Exchange)
 - **Dual JWT** security – short-lived access tokens (15 min) + rotatable refresh tokens (7 days) stored as httpOnly cookies; refresh tokens are hashed and stored in D1 for revocation
 - **Role-based access** – users with `admin`, `editor`, or `moderator` in their comma-separated role list can access the CMS; other users are redirected to the login page
-- **Single D1 database** – auth, sessions, draft, live, and trash content live in one CMS database
-- **Page versioning** – every save creates a new `draft_page_versions` row; `draft_pages.current_page_version_id` points to the active version
+- **Separated D1 content stores** – the CMS database keeps auth, sessions, draft, trash, taxonomy, and media metadata; the published database keeps only live content for public reads
+- **Page versioning** – every save creates a new `page_versions` row; `draft_pages.current_page_version_id` points to the active version
 - **Private R2 media uploads** – picture fields upload to a private R2 bucket and are served back through the Worker at `/media/...`
 - **Tailwind CSS + VanillaJS** admin UI with inline HTML toolbar for content editing
 
@@ -21,26 +21,54 @@ Content management system on Workers
 npm install
 ```
 
-### 2. Create the D1 database
+### 2. Create the D1 databases
 
 ```bash
 npx wrangler d1 create cms
+npx wrangler d1 create cms-published
 ```
 
-Copy the `database_id` value printed by the command into `wrangler.toml`.
+Copy the `database_id` values printed by the commands into `wrangler.toml`:
 
-For an existing deployment, update the `DB` binding to point at the one database
-you want to keep. Existing rows from the old auth/content databases must be
-copied into the merged database separately.
+- `cms` -> `DB`
+- `cms-published` -> `PUBLISHED_DB`
+
+`DB` is the private CMS/admin database. It stores users, sessions, drafts,
+trash, taxonomy, page versions, and media metadata.
+
+`PUBLISHED_DB` is the published-content database. It stores the `live_pages`
+and `live_page_tags` rows used by public readers. A separate public Worker can
+be deployed with only this binding, so it has no access to CMS users, sessions,
+drafts, or trash.
+
+For an existing deployment, keep the existing `DB` binding and create the new
+`PUBLISHED_DB`. Existing rows from old `live_*` tables are not moved
+automatically; publish pages again or copy the current `live_pages` and
+`live_page_tags` rows into `cms-published`.
 
 ### 3. Run migrations
 
 ```bash
 npx wrangler d1 migrations apply cms
+npx wrangler d1 migrations apply cms-published
 ```
 
-The migrations create auth tables plus `draft_*`, `live_*`, and `trash_*`
-content tables. They do not automatically import rows from other D1 databases.
+For local development, the checked-in script applies both local databases:
+
+```bash
+npm run db:migrate
+```
+
+For production, add `--remote` to each `wrangler d1 migrations apply` command.
+
+The `cms` migrations create auth tables plus draft, trash, taxonomy,
+versioning, and media tables. The `cms-published` migrations create only the
+published `live_*` content tables. They do not automatically import rows from
+other D1 databases.
+
+The current `cms` migration still creates legacy `live_*` tables for existing
+local databases, but CMS routes no longer read or write those tables. Published
+content is stored in `PUBLISHED_DB`.
 
 ### 4. Create and bind the private R2 media bucket
 
@@ -184,36 +212,49 @@ npm run deploy
 
 ## Database schema
 
-### Content tables
+### CMS database (`DB`)
 
 | Table | Purpose |
 |-------|---------|
 | `draft_pages` | Draft page metadata (name, slug, type, dates, hierarchy) |
-| `live_pages` | Published page metadata |
 | `trash_pages` | Soft-deleted page metadata |
-| `draft_page_versions` | Versioned draft HTML content + JSON meta per page |
-| `trash_page_versions` | Versioned trashed HTML content + JSON meta per page |
+| `page_versions` | Versioned draft structured content per page |
 | `draft_page_tags` | Many-to-many draft page ↔ tag relationships |
 | `trash_page_tags` | Many-to-many trash page ↔ tag relationships |
+| `tag_types` | Tag category definitions |
 | `tags` | Shared tag reference table |
 | `media_files` | Metadata for files uploaded to private R2 |
 
-### Auth tables
+### Auth tables (`DB`)
 
 | Table | Purpose |
 |-------|---------|
 | `users` | OAuth user profiles + role assignment |
 | `sessions` | Hashed refresh-token JTIs for revocation |
 
+Legacy `live_pages` and `live_page_tags` tables may exist in `DB` from the
+combined schema, but they are not the publish target.
+
+### Published database (`PUBLISHED_DB`)
+
+| Table | Purpose |
+|-------|---------|
+| `live_pages` | Published page metadata and structured `lect` content |
+| `live_page_tags` | Published page ↔ tag relationships |
+
 ### Publish / un-publish flow
 
 ```
-draft_pages ──── Publish ────▶  live_pages   (public website reads here)
-            ◀─── Un-publish ───
+DB.draft_pages ──── Publish ────▶  PUBLISHED_DB.live_pages
+              ◀─── Un-publish ───
 ```
 
-Publish upserts the `draft_pages` row into `live_pages` by `uuid`.
-Un-publish deletes the matching `live_pages` row by `uuid`.
+Publish reads a row from `DB.draft_pages` and upserts the published snapshot
+into `PUBLISHED_DB.live_pages` by `uuid`, then copies draft tag links into
+`PUBLISHED_DB.live_page_tags`.
+
+Un-publish deletes the matching `PUBLISHED_DB.live_pages` row by `uuid` and
+removes its published tag links.
 
 ---
 
@@ -221,8 +262,9 @@ Un-publish deletes the matching `live_pages` row by `uuid`.
 
 ```
 ├── migrations/
-│   ├── 0001_auth_schema.sql
-│   └── 0002_single_content_schema.sql
+│   ├── 0001_initial_schema.sql
+│   └── published/
+│       └── 0001_published_schema.sql
 ├── src/
 │   ├── index.ts       # Hono app entry point
 │   ├── types.ts       # Shared TypeScript types & Env bindings
@@ -238,6 +280,7 @@ Un-publish deletes the matching `live_pages` row by `uuid`.
 │   │   └── editor.ts  # Create / edit page form
 │   └── utils/
 │       ├── jwt.ts     # HS256 sign / verify using Web Crypto API
+│       ├── lect.ts    # Structured content helpers
 │       └── pkce.ts    # PKCE code verifier / challenge helpers
 ├── package.json
 ├── tsconfig.json

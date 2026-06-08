@@ -14,6 +14,13 @@ database_name = "cms"
 database_id = "036882b7-c7d1-4163-9a40-cba28bc87233"
 migrations_dir = "migrations"
 
+[[d1_databases]]
+binding = "PUBLISHED_DB"
+database_name = "cms-published"
+# Replace with the id from `wrangler d1 create cms-published`.
+database_id = "94cc01db-8028-48eb-923f-e440423aeb3f"
+migrations_dir = "migrations/published"
+
 [[r2_buckets]]
 binding = "MEDIA_BUCKET"
 bucket_name = "worker-cms-media"

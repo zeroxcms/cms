@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "wrangler dev --local",
     "deploy": "wrangler deploy",
-    "db:migrate": "wrangler d1 migrations apply cms --local",
+    "db:migrate": "wrangler d1 migrations apply cms --local && wrangler d1 migrations apply cms-published --local",
+    "db:migrate:admin": "wrangler d1 migrations apply cms --local",
+    "db:migrate:published": "wrangler d1 migrations apply cms-published --local",
     "type-check": "tsc --noEmit",
     "test": "vitest run"
   },

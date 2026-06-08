@@ -5,6 +5,7 @@ declare global {
   namespace Cloudflare {
     interface Env extends AppEnv {
       TEST_MIGRATIONS: D1Migration[];
+      TEST_PUBLISHED_MIGRATIONS: D1Migration[];
     }
 
   }
@@ -13,5 +14,6 @@ declare global {
 declare module 'cloudflare:workers' {
   interface ProvidedEnv extends AppEnv {
     TEST_MIGRATIONS: D1Migration[];
+    TEST_PUBLISHED_MIGRATIONS: D1Migration[];
   }
 }

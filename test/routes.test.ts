@@ -194,6 +194,54 @@ describe('admin routes', () => {
     await expectRoute(route);
   });
 
+  it('POST /admin/pages/:id/publish writes published content to PUBLISHED_DB only', async () => {
+    await env.PUBLISHED_DB.prepare('DELETE FROM live_page_tags').run();
+    await env.PUBLISHED_DB.prepare('DELETE FROM live_pages').run();
+    await env.DB.prepare('DELETE FROM live_page_tags').run();
+    await env.DB.prepare('DELETE FROM live_pages').run();
+
+    const response = await fetchWorker('/admin/pages/101/publish', {
+      method: 'POST',
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(await env.PUBLISHED_DB.prepare('SELECT name, slug, page_type FROM live_pages WHERE uuid = ?')
+      .bind('page-uuid-101')
+      .first<{ name: string; slug: string; page_type: string }>()).toEqual({
+        name: 'About',
+        slug: 'about',
+        page_type: 'default',
+      });
+    expect(await env.PUBLISHED_DB.prepare(
+      `SELECT lpt.tag_id
+       FROM live_page_tags lpt
+       JOIN live_pages lp ON lp.id = lpt.page_id
+       WHERE lp.uuid = ?`,
+    )
+      .bind('page-uuid-101')
+      .first<{ tag_id: number }>()).toEqual({ tag_id: 302 });
+    expect(await env.DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
+      .bind('page-uuid-101')
+      .first<{ id: number }>()).toBeNull();
+  });
+
+  it('POST /admin/pages/:id/unpublish removes content from PUBLISHED_DB', async () => {
+    expect(await env.PUBLISHED_DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
+      .bind('page-uuid-101')
+      .first<{ id: number }>()).not.toBeNull();
+
+    const response = await fetchWorker('/admin/pages/101/unpublish', {
+      method: 'POST',
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(await env.PUBLISHED_DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
+      .bind('page-uuid-101')
+      .first<{ id: number }>()).toBeNull();
+  });
+
   it('POST /admin/pages/import-v2/:pageType shows a confirmation page before importing', async () => {
     const response = await fetchWorker('/admin/pages/import-v2/default', {
       method: 'POST',
@@ -650,7 +698,7 @@ function cookieValue(header: string | null, name: string): string {
 }
 
 async function resetData(): Promise<void> {
-  const tables = [
+  const adminTables = [
     'draft_page_tags',
     'live_page_tags',
     'trash_page_tags',
@@ -664,8 +712,16 @@ async function resetData(): Promise<void> {
     'sessions',
     'users',
   ];
-  for (const table of tables) {
+  for (const table of adminTables) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();
+  }
+
+  const publishedTables = [
+    'live_page_tags',
+    'live_pages',
+  ];
+  for (const table of publishedTables) {
+    await env.PUBLISHED_DB.prepare(`DELETE FROM ${table}`).run();
   }
 }
 
@@ -697,7 +753,7 @@ async function seedBaseData(): Promise<void> {
   )
     .bind(501, 101, basePageLect, 'create')
     .run();
-  await env.DB.prepare(
+  await env.PUBLISHED_DB.prepare(
     `INSERT INTO live_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )

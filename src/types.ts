@@ -105,6 +105,7 @@ export interface MediaFile {
 // ============================================================
 export interface Env {
   DB: D1Database;
+  PUBLISHED_DB: D1Database;
   VIEWS: Fetcher;
   MEDIA_BUCKET?: R2Bucket;
   /** HMAC-SHA256 secret for signing JWTs – set via `wrangler secret put JWT_SECRET` */

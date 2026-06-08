@@ -1520,7 +1520,7 @@ async function renderAdvancedSearch(c: AdminContext, defaultPageType = 'all', ca
       };
 
   const pageTypePlaceholders = pageTypes.map(() => '?').join(',');
-  const livePages = await c.env.DB.prepare(`SELECT uuid, lect, weight FROM live_pages WHERE page_type IN (${pageTypePlaceholders})`)
+  const livePages = await c.env.PUBLISHED_DB.prepare(`SELECT uuid, lect, weight FROM live_pages WHERE page_type IN (${pageTypePlaceholders})`)
     .bind(...pageTypes)
     .all<{ uuid: string; lect: string | null; weight: number }>();
   const liveMap = new Map(livePages.results.map((page) => [page.uuid, page]));
@@ -1742,13 +1742,13 @@ async function savePageVersion(
   return row!.id;
 }
 
-async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
-  const page = await db.prepare('SELECT * FROM draft_pages WHERE id = ?')
+async function publishPage(draftDb: D1Database, publishedDb: D1Database, pageId: number): Promise<boolean> {
+  const page = await draftDb.prepare('SELECT * FROM draft_pages WHERE id = ?')
     .bind(pageId)
     .first<Page>();
   if (!page) return false;
 
-  await db.prepare(
+  await publishedDb.prepare(
     `INSERT INTO live_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id, creator, editors)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
@@ -1778,18 +1778,18 @@ async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
     )
     .run();
 
-  const livePage = await db.prepare('SELECT id FROM live_pages WHERE uuid = ?')
+  const livePage = await publishedDb.prepare('SELECT id FROM live_pages WHERE uuid = ?')
     .bind(page.uuid)
     .first<{ id: number }>();
   if (!livePage) return true;
 
-  await db.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run();
+  await publishedDb.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run();
 
-  const pageTags = await db.prepare('SELECT * FROM draft_page_tags WHERE page_id = ?')
+  const pageTags = await draftDb.prepare('SELECT * FROM draft_page_tags WHERE page_id = ?')
     .bind(pageId)
     .all<PageTag>();
   for (const pageTag of pageTags.results) {
-    await db.prepare(
+    await publishedDb.prepare(
       'INSERT INTO live_page_tags (uuid, page_id, tag_id, weight) VALUES (?, ?, ?, ?)',
     )
       .bind(pageTag.uuid, livePage.id, pageTag.tag_id, pageTag.weight)
@@ -1797,6 +1797,19 @@ async function publishPage(db: D1Database, pageId: number): Promise<boolean> {
   }
 
   return true;
+}
+
+async function unpublishPage(publishedDb: D1Database, pageUuid: string): Promise<void> {
+  const livePage = await publishedDb.prepare('SELECT id FROM live_pages WHERE uuid = ?')
+    .bind(pageUuid)
+    .first<{ id: number }>();
+  if (livePage) {
+    await publishedDb.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run();
+  }
+
+  await publishedDb.prepare('DELETE FROM live_pages WHERE uuid = ?')
+    .bind(pageUuid)
+    .run();
 }
 
 async function listDashboardDraftPages(
@@ -1832,12 +1845,12 @@ async function listDashboardDraftPages(
   };
 }
 
-async function liveMapForDraftPages(db: D1Database, draftPages: Page[]): Promise<Map<string, LivePageSnapshot>> {
+async function liveMapForDraftPages(publishedDb: D1Database, draftPages: Page[]): Promise<Map<string, LivePageSnapshot>> {
   const uuids = Array.from(new Set(draftPages.map((page) => page.uuid)));
   if (!uuids.length) return new Map();
 
   const placeholders = uuids.map(() => '?').join(',');
-  const livePages = await db.prepare(
+  const livePages = await publishedDb.prepare(
     `SELECT uuid, lect, weight FROM live_pages WHERE uuid IN (${placeholders})`,
   )
     .bind(...uuids)
@@ -1878,7 +1891,7 @@ adminRoutes.get('/', async (c) => {
     page: requestedPage,
     limit: pageSize,
   });
-  const liveMap = await liveMapForDraftPages(c.env.DB, draftPages.results);
+  const liveMap = await liveMapForDraftPages(c.env.PUBLISHED_DB, draftPages.results);
 
   const pages = draftPages.results.map((p) => ({
     ...p,
@@ -1953,7 +1966,7 @@ adminRoutes.get('/pages/list/:pageType', async (c) => {
     page: requestedPage,
     limit: pageSize,
   });
-  const liveMap = await liveMapForDraftPages(c.env.DB, draftPages.results);
+  const liveMap = await liveMapForDraftPages(c.env.PUBLISHED_DB, draftPages.results);
   const dbUser = await c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
     .bind(parseInt(user.sub, 10))
     .first<{ avatar_url: string | null }>();
@@ -2375,7 +2388,7 @@ adminRoutes.get('/pages/:id/edit', async (c) => {
     c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
       .bind(pageId)
       .all<PageVersion>(),
-    c.env.DB.prepare('SELECT lect FROM live_pages WHERE uuid = ?')
+    c.env.PUBLISHED_DB.prepare('SELECT lect FROM live_pages WHERE uuid = ?')
       .bind(page.uuid)
       .first<{ lect: string | null }>(),
     c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?')
@@ -2477,7 +2490,7 @@ adminRoutes.post('/pages/:id', async (c) => {
       c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
         .bind(pageId)
         .all<PageVersion>(),
-      c.env.DB.prepare('SELECT lect FROM live_pages WHERE uuid = ?')
+      c.env.PUBLISHED_DB.prepare('SELECT lect FROM live_pages WHERE uuid = ?')
         .bind(page.uuid)
         .first<{ lect: string | null }>(),
       c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?').bind(pageId).all<{ tag_id: number }>(),
@@ -2576,7 +2589,7 @@ adminRoutes.post('/pages/:id', async (c) => {
   }
 
   if (action === 'publish') {
-    await publishPage(c.env.DB, pageId);
+    await publishPage(c.env.DB, c.env.PUBLISHED_DB, pageId);
     return c.redirect('/admin?flash=Page+published+successfully');
   }
 
@@ -2587,17 +2600,17 @@ adminRoutes.post('/pages/:id', async (c) => {
   return c.redirect('/admin?flash=Page+updated+successfully');
 });
 
-// ── Publish (DRAFT → LIVE) ────────────────────────────────────────────────────
+// ── Publish (DRAFT → PUBLISHED) ───────────────────────────────────────────────
 
 adminRoutes.post('/pages/:id/publish', async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
-  const published = await publishPage(c.env.DB, pageId);
+  const published = await publishPage(c.env.DB, c.env.PUBLISHED_DB, pageId);
   if (!published) return c.notFound();
 
   return c.redirect('/admin?flash=Page+published+successfully');
 });
 
-// ── Unpublish (remove from LIVE) ──────────────────────────────────────────────
+// ── Unpublish (remove from published DB) ──────────────────────────────────────
 
 adminRoutes.post('/pages/:id/unpublish', async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
@@ -2607,16 +2620,7 @@ adminRoutes.post('/pages/:id/unpublish', async (c) => {
     .first<{ uuid: string }>();
   if (!page) return c.notFound();
 
-  const livePage = await c.env.DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
-    .bind(page.uuid)
-    .first<{ id: number }>();
-  if (livePage) {
-    await c.env.DB.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run();
-  }
-
-  await c.env.DB.prepare('DELETE FROM live_pages WHERE uuid = ?')
-    .bind(page.uuid)
-    .run();
+  await unpublishPage(c.env.PUBLISHED_DB, page.uuid);
 
   return c.redirect('/admin?flash=Page+unpublished');
 });
@@ -2681,15 +2685,8 @@ adminRoutes.post('/pages/:id/delete', async (c) => {
     }
   }
 
-  const livePage = await c.env.DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
-    .bind(page.uuid)
-    .first<{ id: number }>();
-  if (livePage) {
-    await c.env.DB.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run();
-  }
-
-  // Unpublish from live (remove by uuid)
-  await c.env.DB.prepare('DELETE FROM live_pages WHERE uuid = ?').bind(page.uuid).run();
+  // Unpublish from the published DB before deleting the draft copy.
+  await unpublishPage(c.env.PUBLISHED_DB, page.uuid);
 
   // Delete from DRAFT
   await c.env.DB.prepare('DELETE FROM draft_pages WHERE id = ?').bind(pageId).run();
@@ -3068,7 +3065,7 @@ adminRoutes.post('/tags/:id/delete', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   await Promise.all([
     c.env.DB.prepare('DELETE FROM draft_page_tags WHERE tag_id = ?').bind(id).run(),
-    c.env.DB.prepare('DELETE FROM live_page_tags WHERE tag_id = ?').bind(id).run(),
+    c.env.PUBLISHED_DB.prepare('DELETE FROM live_page_tags WHERE tag_id = ?').bind(id).run(),
     c.env.DB.prepare('DELETE FROM trash_page_tags WHERE tag_id = ?').bind(id).run(),
     c.env.DB.prepare('UPDATE tags SET parent_tag = NULL WHERE parent_tag = ?').bind(id).run(),
   ]);
