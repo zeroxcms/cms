@@ -565,6 +565,11 @@
   //       typed while we were solo and CRDT was still disabled.
   var register = {};
 
+  // baseline[path] = the last-saved value (the field's value at page load, and
+  // refreshed whenever the page is saved). Fields revert here when an editor
+  // abandons their unsaved changes.
+  var baseline = {};
+
   var ws = null;
   var reconnectTimer = null;
   var crdtEnabled = false;
@@ -632,9 +637,18 @@
   document.querySelectorAll('input[name], textarea[name], select[name]').forEach(function (el) {
     var name = el.getAttribute('name') || '';
     if (!/^[.@*#\d]/.test(name)) return;
+    baseline[name] = el.value;
     el.addEventListener('input',  function () { sendOp(el); });
     el.addEventListener('change', function () { sendOp(el); });
   });
+
+  // Force a field to a value regardless of LWW state (used by reset/saved).
+  function forceField(path, value) {
+    var el = findField(path);
+    if (!el) return;
+    if (document.activeElement === el) return;
+    el.value = value;
+  }
 
   function connect() {
     if (!crdtEnabled) return;
@@ -656,21 +670,41 @@
 
       if (msg.type === 'snapshot') {
         // 1. Pull: apply the server's state (applyRemote skips our own + stale).
-        var serverState = {};
+        //    Ops are per-(path,user), so track the highest HLC seen per path.
+        var serverMax = {};
         (msg.ops || []).forEach(function (op) {
-          serverState[op.path] = op;
+          if (!serverMax[op.path] || op.hlc > serverMax[op.path]) serverMax[op.path] = op.hlc;
           applyRemote(op);
         });
         // 2. Push: replay local edits the server hasn't seen yet — this is what
         //    propagates work done while solo, and makes connect bidirectional.
         Object.keys(register).forEach(function (path) {
           var r = register[path];
-          var s = serverState[path];
-          if (!s || r.hlc > s.hlc) sendRaw(path, r.value, r.hlc);
+          if (!serverMax[path] || r.hlc > serverMax[path]) sendRaw(path, r.value, r.hlc);
         });
       } else if (msg.type === 'op') {
         // Real-time broadcast — server never echoes back to sender.
         applyRemote(msg);
+      } else if (msg.type === 'reset') {
+        // An editor left without saving; their abandoned fields fall back to the
+        // next editor's value, or to the saved baseline. Force past LWW.
+        (msg.entries || []).forEach(function (entry) {
+          if (entry.baseline) {
+            delete register[entry.path];
+            forceField(entry.path, baseline[entry.path] != null ? baseline[entry.path] : '');
+          } else {
+            register[entry.path] = { value: entry.value, hlc: entry.hlc };
+            forceField(entry.path, entry.value);
+          }
+        });
+      } else if (msg.type === 'saved') {
+        // Page was saved: current on-screen values are the new baseline; the
+        // live overlay is committed, so clear it.
+        Object.keys(baseline).forEach(function (path) {
+          var el = findField(path);
+          if (el) baseline[path] = el.value;
+        });
+        register = {};
       }
     };
 

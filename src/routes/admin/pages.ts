@@ -46,6 +46,17 @@ import { buildBaseProps, dashboardPagination, exportPageList } from '../../utils
 
 export const pagesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+// Tell the page's sync Durable Object that the page was saved, so it commits
+// the live overlay and notifies connected editors. Best-effort.
+async function notifyPageSaved(env: Env, pageId: number): Promise<void> {
+  try {
+    const id = env.PAGE_SYNC.idFromName(`page-${pageId}`);
+    await env.PAGE_SYNC.get(id).fetch('https://page-sync/?action=saved', { method: 'POST' });
+  } catch {
+    // Sync is a non-critical overlay; never block a save on it.
+  }
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 pagesRoutes.get('/', async (c) => {
@@ -551,6 +562,10 @@ pagesRoutes.post('/pages/:id', async (c) => {
   )
     .bind(newVersionId, pageId)
     .run();
+
+  // Commit the live CRDT overlay: clears uncommitted ops so a save-then-leave
+  // doesn't revert, and pushes the saved values as everyone's new baseline.
+  await notifyPageSaved(c.env, pageId);
 
   // Replace tag associations
   await c.env.DB.prepare('DELETE FROM draft_page_tags WHERE page_id = ?')
