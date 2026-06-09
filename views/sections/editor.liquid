@@ -518,7 +518,7 @@
   }
 
   function sendHeartbeat() {
-    fetch('/api/presence/' + pageId, {
+    fetch('/admin/api/presence/' + pageId, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lastActive: lastActive, userAvatar: userAvatar }),
@@ -526,7 +526,7 @@
   }
 
   function refreshPresence() {
-    fetch('/api/presence/' + pageId)
+    fetch('/admin/api/presence/' + pageId)
       .then(function (r) { return r.json(); })
       .then(renderAvatars)
       .catch(function () {});
@@ -538,7 +538,7 @@
   setInterval(refreshPresence, 15000);
 
   window.addEventListener('beforeunload', function () {
-    fetch('/api/presence/' + pageId, { method: 'DELETE', keepalive: true }).catch(function () {});
+    fetch('/admin/api/presence/' + pageId, { method: 'DELETE', keepalive: true }).catch(function () {});
   });
 }());
 </script>
