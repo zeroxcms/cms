@@ -108,6 +108,23 @@ export class PageSyncDO implements DurableObject {
       return;
     }
 
+    // Transient editing-presence signals: which field a user is in. Pure relay,
+    // never stored — they only matter while both editors are connected.
+    if (msg.type === 'focus') {
+      const path = String(msg.path ?? '');
+      const userAvatar = String(msg.userAvatar ?? '');
+      if (!path) return;
+      this.broadcast(JSON.stringify({ type: 'focus', path, userId, userName, userAvatar }), ws);
+      return;
+    }
+
+    if (msg.type === 'blur') {
+      const path = String(msg.path ?? '');
+      if (!path) return;
+      this.broadcast(JSON.stringify({ type: 'blur', path, userId }), ws);
+      return;
+    }
+
     if (msg.type === 'op') {
       const path  = String(msg.path  ?? '');
       const value = String(msg.value ?? '');
@@ -155,6 +172,9 @@ export class PageSyncDO implements DurableObject {
       (other) => other !== ws && (other.deserializeAttachment() as WsAttachment | null)?.userId === userId,
     );
     if (stillConnected) return;
+
+    // Remove the leaving user's editing highlights from every other client.
+    this.broadcast(JSON.stringify({ type: 'blur', userId, clearAll: true }), ws);
 
     const paths = this.sql.exec(
       `SELECT DISTINCT path FROM crdt_ops WHERE user_id = ?`, userId,
