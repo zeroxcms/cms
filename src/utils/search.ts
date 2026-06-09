@@ -2,7 +2,7 @@
 // Shared by the search route and (for path specs) the CSV import/export helpers.
 
 import { cmsConfig } from '../cms-config';
-import type { BlueprintEntry } from '../cms-config';
+import type { BlueprintEntry, CmsConfig } from '../cms-config';
 import type { Page, Tag, TagType } from '../types';
 import { num, strParam } from './forms';
 
@@ -104,18 +104,18 @@ export function advancedSearchQueryString(
   return params.toString();
 }
 
-export function advancedSearchPageTypes(): string[] {
-  return Object.keys(cmsConfig.blueprint);
+export function advancedSearchPageTypes(config: CmsConfig = cmsConfig): string[] {
+  return Object.keys(config.blueprint);
 }
 
-export function advancedSearchSelectedPageType(value: string | null | undefined, fallback = 'all'): string {
-  const pageTypes = advancedSearchPageTypes();
+export function advancedSearchSelectedPageType(value: string | null | undefined, fallback = 'all', config: CmsConfig = cmsConfig): string {
+  const pageTypes = advancedSearchPageTypes(config);
   const requested = strParam(value || fallback);
   return pageTypes.includes(requested) ? requested : 'all';
 }
 
-export function advancedSearchTargetPageTypes(selectedPageType: string): string[] {
-  const pageTypes = advancedSearchPageTypes();
+export function advancedSearchTargetPageTypes(selectedPageType: string, config: CmsConfig = cmsConfig): string[] {
+  const pageTypes = advancedSearchPageTypes(config);
   return selectedPageType === 'all' ? pageTypes : [selectedPageType];
 }
 
@@ -155,20 +155,20 @@ export function uniqueSorted(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right));
 }
 
-export function advancedSearchPathSpecs(pageTypes: string[]): BlueprintPathSpec[] {
-  const specs = pageTypes.flatMap((pageType) => collectBlueprintPathSpecs(cmsConfig.blueprint[pageType] ?? []));
+export function advancedSearchPathSpecs(pageTypes: string[], config: CmsConfig = cmsConfig): BlueprintPathSpec[] {
+  const specs = pageTypes.flatMap((pageType) => collectBlueprintPathSpecs(config.blueprint[pageType] ?? []));
   const byPath = new Map<string, BlueprintPathSpec>();
   for (const spec of specs) byPath.set(spec.path, spec);
   return Array.from(byPath.values()).sort((left, right) => left.path.localeCompare(right.path));
 }
 
-export function advancedSearchPathOptions(pageTypes: string[]): string[] {
-  return advancedSearchPathSpecs(pageTypes).map((spec) => spec.path);
+export function advancedSearchPathOptions(pageTypes: string[], config: CmsConfig = cmsConfig): string[] {
+  return advancedSearchPathSpecs(pageTypes, config).map((spec) => spec.path);
 }
 
-export function advancedSearchPathOptionsByPageType(): Record<string, string[]> {
+export function advancedSearchPathOptionsByPageType(config: CmsConfig = cmsConfig): Record<string, string[]> {
   const pageTypeOptions = Object.fromEntries(
-    advancedSearchPageTypes().map((pageType) => [pageType, advancedSearchPathOptions([pageType])]),
+    advancedSearchPageTypes(config).map((pageType) => [pageType, advancedSearchPathOptions([pageType], config)]),
   );
   return {
     all: uniqueSorted(Object.values(pageTypeOptions).flat()),

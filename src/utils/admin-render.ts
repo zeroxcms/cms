@@ -20,6 +20,8 @@ import {
   uniqueSorted,
 } from './search';
 import { csvDownloadResponse, exportPagesCsv } from './csv';
+import { resolveCmsConfig } from '../plugins/config';
+import { pluginNav } from '../plugins/registry';
 import { editorTaxonomy, fetchUserAvatar } from './admin-queries';
 import type { DashboardListResult } from './admin-queries';
 import { lectsMatch } from './page-logic';
@@ -31,20 +33,27 @@ export interface BaseTemplateProps {
   userName: string;
   userRole: string;
   userAvatar: string;
+  /** Navigation entries contributed by active plugins, filtered to the user's roles. */
+  pluginNav: Array<{ label: string; href: string }>;
 }
 
 /**
  * Builds the template props shared by every authenticated admin page:
- * site title, signed-in user's name/role, and avatar. Handlers spread the
- * result and add page-specific fields (and may override siteTitle).
+ * site title, signed-in user's name/role, avatar, and plugin nav. Handlers
+ * spread the result and add page-specific fields (and may override siteTitle).
  */
-export function buildBaseProps(c: AppContext, userAvatar: string | null): BaseTemplateProps {
+export async function buildBaseProps(c: AppContext, userAvatar: string | null): Promise<BaseTemplateProps> {
   const user = c.get('user');
+  const userRoles = user.role.split(',').map((role) => role.trim()).filter(Boolean);
+  const nav = (await pluginNav(c.env))
+    .filter((item) => !item.roles?.length || item.roles.some((role) => userRoles.includes(role)))
+    .map((item) => ({ label: item.label, href: item.href }));
   return {
     siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
     userName: user.name,
     userRole: user.role,
     userAvatar: userAvatar ?? '',
+    pluginNav: nav,
   };
 }
 
@@ -64,6 +73,7 @@ export function dashboardPagination(routeBase: string, result: DashboardListResu
 }
 
 export async function exportPageList(c: AppContext, pageType?: string): Promise<Response> {
+  const config = await resolveCmsConfig(c.env);
   const selectedPageType = strParam(pageType);
   const pages = selectedPageType
     ? await c.env.DB.prepare(
@@ -77,10 +87,10 @@ export async function exportPageList(c: AppContext, pageType?: string): Promise<
   const pageTypes = selectedPageType
     ? [selectedPageType]
     : uniqueSorted([
-        ...advancedSearchPageTypes(),
+        ...advancedSearchPageTypes(config),
         ...pages.results.map((page) => page.page_type ?? ''),
       ]);
-  const csv = await exportPagesCsv(c.env.DB, pages.results, pageTypes);
+  const csv = await exportPagesCsv(c.env.DB, pages.results, pageTypes, config);
   const stamp = c.req.query('r') || new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `${selectedPageType || 'pages'}-export-${stamp}.csv`;
 
@@ -88,11 +98,12 @@ export async function exportPageList(c: AppContext, pageType?: string): Promise<
 }
 
 export async function exportAdvancedSearch(c: AppContext, defaultPageType = 'all', canSelectPageType = true): Promise<Response> {
+  const config = await resolveCmsConfig(c.env);
   const criteria = parseAdvancedSearchCriteria(c.req.url);
   const selectedPageType = canSelectPageType
-    ? advancedSearchSelectedPageType(c.req.query('page_type'), defaultPageType)
-    : advancedSearchSelectedPageType(undefined, defaultPageType);
-  const pageTypes = advancedSearchTargetPageTypes(selectedPageType);
+    ? advancedSearchSelectedPageType(c.req.query('page_type'), defaultPageType, config)
+    : advancedSearchSelectedPageType(undefined, defaultPageType, config);
+  const pageTypes = advancedSearchTargetPageTypes(selectedPageType, config);
   const operator = advancedSearchOperator(c.req.query('operator'));
   const sort = advancedSearchSort(c.req.query('sort'));
   const order = advancedSearchOrder(c.req.query('order'));
@@ -112,7 +123,7 @@ export async function exportAdvancedSearch(c: AppContext, defaultPageType = 'all
           limit: 10000,
         },
       };
-  const csv = await exportPagesCsv(c.env.DB, result.results, pageTypes);
+  const csv = await exportPagesCsv(c.env.DB, result.results, pageTypes, config);
   const stamp = c.req.query('r') || new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `${selectedPageType === 'all' ? 'pages' : selectedPageType}-export-${stamp}.csv`;
 
@@ -120,12 +131,13 @@ export async function exportAdvancedSearch(c: AppContext, defaultPageType = 'all
 }
 
 export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all', canSelectPageType = true) {
+  const config = await resolveCmsConfig(c.env);
   const user = c.get('user');
   const criteria = parseAdvancedSearchCriteria(c.req.url);
   const selectedPageType = canSelectPageType
-    ? advancedSearchSelectedPageType(c.req.query('page_type'), defaultPageType)
-    : advancedSearchSelectedPageType(undefined, defaultPageType);
-  const pageTypes = advancedSearchTargetPageTypes(selectedPageType);
+    ? advancedSearchSelectedPageType(c.req.query('page_type'), defaultPageType, config)
+    : advancedSearchSelectedPageType(undefined, defaultPageType, config);
+  const pageTypes = advancedSearchTargetPageTypes(selectedPageType, config);
   const operator = advancedSearchOperator(c.req.query('operator'));
   const pageSize = advancedSearchPageSize(c.req.query('pagesize'));
   const requestedPage = Math.max(num(c.req.query('page'), 1), 1);
@@ -173,16 +185,16 @@ export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all
     page,
   });
   const maxCriterionIndex = criteria.reduce((max, criterion) => Math.max(max, criterion.index), 0);
-  const pathOptionsByPageType = advancedSearchPathOptionsByPageType();
+  const pathOptionsByPageType = advancedSearchPathOptionsByPageType(config);
 
   return c.html(
     await advancedSearchPage(c.env.VIEWS, {
-      ...buildBaseProps(c, userAvatar),
+      ...(await buildBaseProps(c, userAvatar)),
       siteTitle: `${c.env.SITE_TITLE ?? 'Worker CMS'} · Advanced Search`,
       pageTitle: selectedPageType === 'all' ? 'Advanced Search' : `Advanced Search: ${selectedPageType}`,
       pageType: selectedPageType,
       canSelectPageType,
-      pageTypes: advancedSearchPageTypes().map((pageType) => ({
+      pageTypes: advancedSearchPageTypes(config).map((pageType) => ({
         value: pageType,
         label: pageType,
         selected: pageType === selectedPageType,

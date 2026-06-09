@@ -10,6 +10,7 @@ Content management system on Workers
 - **Page versioning** – every save creates a new `page_versions` row; `draft_pages.current_page_version_id` points to the active version
 - **Private R2 media uploads** – picture fields upload to a private R2 bucket and are served back through the Worker at `/media/...`
 - **Tailwind CSS + VanillaJS** admin UI with inline HTML toolbar for content editing
+- **Plugins** – extend the CMS with separate Worker plugins (lifecycle hooks, content types, fields/blocks, admin pages). See [Plugins](#plugins).
 
 ---
 
@@ -205,6 +206,55 @@ Visit **http://localhost:8787** → redirects to the login page.
 ```bash
 npm run deploy
 ```
+
+---
+
+## Plugins
+
+The CMS can be extended with **plugins**, each of which is a separate Cloudflare
+Worker bound to the CMS as a [service binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/).
+A plugin can add four things:
+
+- **Lifecycle hooks** – run on page `create`/`update`/`publish`/`unpublish`/`delete`
+  (webhooks, external search indexing, cache purge, notifications). Hooks are
+  best-effort and never block the editor.
+- **Content types** – register new `blueprint`/`blocks`/`blockLists`/`tagLists`
+  that merge into the editor's config.
+- **Fields & blocks** – register new pagefield types and serve their Liquid
+  snippets, which render through the CMS editor.
+- **Admin routes + nav** – add an admin page (proxied at
+  `/admin/plugins/<id>/...`) and a navigation entry.
+
+Adding a plugin is a `wrangler.toml` change plus a redeploy — there is no runtime
+install. With no plugins configured (`PLUGINS` unset) the system is inert and adds
+no overhead.
+
+### How it works
+
+Each plugin Worker implements a small HTTP contract under the reserved
+`/__plugin` prefix (`/manifest`, `/views/*`, `/admin/*`, `/hooks/<event>`). The
+CMS discovers plugins from the comma-separated `PLUGINS` var (binding names),
+fetches and caches their manifests, forwards the signed-in user plus a shared
+`PLUGIN_SECRET` on every call, and merges their contributions into the editor.
+
+### Adding a plugin
+
+1. Build/deploy the plugin Worker (see [`examples/plugin-events`](examples/plugin-events)
+   for a complete reference implementing all four capabilities).
+2. Bind it in `wrangler.toml` and list its binding name in `PLUGINS`:
+   ```toml
+   [[services]]
+   binding = "PLUGIN_EVENTS"
+   service = "cms-plugin-events"
+
+   [vars]
+   PLUGINS = "PLUGIN_EVENTS"
+   ```
+3. Share the secret with both Workers: `wrangler secret put PLUGIN_SECRET`.
+4. Redeploy the CMS.
+
+> **Trust:** plugin Workers receive page content and the signed-in user. Only
+> bind plugins you trust.
 
 ---
 

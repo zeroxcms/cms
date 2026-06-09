@@ -3,7 +3,9 @@
 import { Hono } from 'hono';
 import { dashboardPage } from '../../templates/dashboard';
 import { editorPage } from '../../templates/editor';
-import { cmsConfig } from '../../cms-config';
+import { resolveCmsConfig } from '../../plugins/config';
+import { dispatchHook } from '../../plugins/hooks';
+import { viewsFor } from '../../plugins/views';
 import { blueprintToLect, stringifyLect } from '../../utils/lect';
 import type { Env, Variables, Page, PageVersion, PageTag } from '../../types';
 import {
@@ -74,7 +76,7 @@ pagesRoutes.get('/', async (c) => {
 
   return c.html(
     await dashboardPage(c.env.VIEWS, {
-      ...buildBaseProps(c, userAvatar),
+      ...(await buildBaseProps(c, userAvatar)),
       pages,
       flash: flash || undefined,
       returnPath: dashboardPageHref('/admin', draftPages.pagination.currentPage, pageSize),
@@ -109,7 +111,7 @@ pagesRoutes.get('/pages/list/:pageType', async (c) => {
 
   return c.html(
     await dashboardPage(c.env.VIEWS, {
-      ...buildBaseProps(c, userAvatar),
+      ...(await buildBaseProps(c, userAvatar)),
       siteTitle: `${c.env.SITE_TITLE ?? 'Worker CMS'} · ${pageType}`,
       pages: draftPages.results.map((page) => ({
         ...page,
@@ -155,11 +157,13 @@ pagesRoutes.post('/pages/new_post/:pageType', async (c) => {
   const creator = userIdFromContext(c);
   const name = str(form.get('name')) || `Untitled ${pageType.replace(/[_-]/g, ' ')}`;
   const slug = str(form.get('slug')) || slugify(name);
+  const config = await resolveCmsConfig(c.env);
   const lect = stringifyLect(
     withDraftMetadata(
       lectFromForm(
+        config,
         pageType,
-        blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
+        blueprintToLect(pageType, config.blueprint, config.defaultLanguage),
         form,
         language,
       ),
@@ -183,6 +187,8 @@ pagesRoutes.post('/pages/new_post/:pageType', async (c) => {
     .bind(versionId, page.id)
     .run();
 
+  dispatchHook(c, 'create', { id: page.id, page_type: pageType, name, slug });
+
   return c.redirect(`/admin/pages/${page.id}/edit`);
 });
 
@@ -191,15 +197,16 @@ pagesRoutes.post('/pages/new_post/:pageType', async (c) => {
 pagesRoutes.get('/pages/new', async (c) => {
   const pageType = c.req.query('page_type') || 'default';
   const language = languageFromRequest(c);
-  const lect = blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
+  const config = await resolveCmsConfig(c.env);
+  const lect = blueprintToLect(pageType, config.blueprint, config.defaultLanguage);
   const [taxonomy, userAvatar] = await Promise.all([
     editorTaxonomy(c.env.DB),
     fetchUserAvatar(c.env.DB, userIdFromContext(c)),
   ]);
 
   return c.html(
-    await editorPage(c.env.VIEWS, {
-      ...buildBaseProps(c, userAvatar),
+    await editorPage(viewsFor(c.env), {
+      ...(await buildBaseProps(c, userAvatar)),
       parentPages: [],
       tags: taxonomy.tags,
       tagTypes: taxonomy.tagTypes,
@@ -207,12 +214,12 @@ pagesRoutes.get('/pages/new', async (c) => {
       action: '/admin/pages',
       defaultPageType: pageType,
       structured: {
-        config: cmsConfig,
+        config,
         language,
         lect,
-        blueprintProps: blueprintPropsFor(pageType),
-        blockProps: blockPropsByName(),
-        blockNames: cmsConfig.blockLists[pageType] ?? cmsConfig.blockLists.default,
+        blueprintProps: blueprintPropsFor(config, pageType),
+        blockProps: blockPropsByName(config),
+        blockNames: config.blockLists[pageType] ?? config.blockLists.default,
         versions: [],
       },
     }),
@@ -228,6 +235,7 @@ pagesRoutes.post('/pages', async (c) => {
   const name = str(form.get('name'));
   const slug = str(form.get('slug'));
   const errors = validatePageBasics(name, slug);
+  const config = await resolveCmsConfig(c.env);
 
   if (errors.length) {
     const pageType = nullableStr(form.get('page_type')) ?? 'default';
@@ -237,8 +245,8 @@ pagesRoutes.post('/pages', async (c) => {
       fetchUserAvatar(c.env.DB, userIdFromContext(c)),
     ]);
     return c.html(
-      await editorPage(c.env.VIEWS, {
-        ...buildBaseProps(c, userAvatar),
+      await editorPage(viewsFor(c.env), {
+        ...(await buildBaseProps(c, userAvatar)),
         parentPages,
         tags: taxonomy.tags,
         tagTypes: taxonomy.tagTypes,
@@ -247,17 +255,18 @@ pagesRoutes.post('/pages', async (c) => {
         action: '/admin/pages',
         defaultPageType: pageType,
         structured: {
-          config: cmsConfig,
+          config,
           language,
           lect: lectFromForm(
+            config,
             pageType,
-            blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
+            blueprintToLect(pageType, config.blueprint, config.defaultLanguage),
             form,
             language,
           ),
-          blueprintProps: blueprintPropsFor(pageType),
-          blockProps: blockPropsByName(),
-          blockNames: cmsConfig.blockLists[pageType] ?? cmsConfig.blockLists.default,
+          blueprintProps: blueprintPropsFor(config, pageType),
+          blockProps: blockPropsByName(config),
+          blockNames: config.blockLists[pageType] ?? config.blockLists.default,
           versions: [],
         },
       }),
@@ -275,8 +284,9 @@ pagesRoutes.post('/pages', async (c) => {
   const lectVal = stringifyLect(
     withDraftMetadata(
       lectFromForm(
+        config,
         pageTypeVal,
-        blueprintToLect(pageTypeVal, cmsConfig.blueprint, cmsConfig.defaultLanguage),
+        blueprintToLect(pageTypeVal, config.blueprint, config.defaultLanguage),
         form,
         language,
       ),
@@ -330,6 +340,8 @@ pagesRoutes.post('/pages', async (c) => {
       .run();
   }
 
+  dispatchHook(c, 'create', { id: pageId, page_type: pageTypeVal, name, slug });
+
   return c.redirect('/admin?flash=Page+created+successfully');
 });
 
@@ -370,13 +382,14 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
       .all<{ tag_id: number }>(),
   ]);
   const pageType = page.page_type ?? 'default';
-  const lect = lectForPage(pageType, version?.lect ?? page.lect);
+  const config = await resolveCmsConfig(c.env);
+  const lect = lectForPage(config, pageType, version?.lect ?? page.lect);
   const displayPage = { ...page, lect: stringifyLect(lect) };
   const parentPages = await parentPageOption(c.env.DB, page.page_id);
 
   return c.html(
-    await editorPage(c.env.VIEWS, {
-      ...buildBaseProps(c, userAvatar),
+    await editorPage(viewsFor(c.env), {
+      ...(await buildBaseProps(c, userAvatar)),
       page: displayPage,
       version: version ?? undefined,
       isVersionPreview: Number.isFinite(requestedVersionId) && !!version,
@@ -388,12 +401,12 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
       flash: flash || undefined,
       action: `/admin/pages/${pageId}`,
       structured: {
-        config: cmsConfig,
+        config,
         language,
         lect,
-        blueprintProps: blueprintPropsFor(pageType),
-        blockProps: blockPropsByName(),
-        blockNames: cmsConfig.blockLists[pageType] ?? cmsConfig.blockLists.default,
+        blueprintProps: blueprintPropsFor(config, pageType),
+        blockProps: blockPropsByName(config),
+        blockNames: config.blockLists[pageType] ?? config.blockLists.default,
         versions: versions.results,
       },
     }),
@@ -433,6 +446,8 @@ pagesRoutes.post('/pages/:id', async (c) => {
     .first<Page>();
   if (!page) return c.notFound();
 
+  const config = await resolveCmsConfig(c.env);
+
   if (action.startsWith('revert:')) {
     const versionId = parseInt(action.split(':')[1], 10);
     const version = await c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? AND id = ?')
@@ -464,10 +479,10 @@ pagesRoutes.post('/pages/:id', async (c) => {
       fetchUserAvatar(c.env.DB, userIdFromContext(c)),
     ]);
     const pageType = nullableStr(form.get('page_type')) ?? page.page_type ?? 'default';
-    const lect = lectFromForm(pageType, lectForPage(pageType, page.lect), form, language);
+    const lect = lectFromForm(config, pageType, lectForPage(config, pageType, page.lect), form, language);
     return c.html(
-      await editorPage(c.env.VIEWS, {
-        ...buildBaseProps(c, userAvatar),
+      await editorPage(viewsFor(c.env), {
+        ...(await buildBaseProps(c, userAvatar)),
         page,
         version: version ?? undefined,
         liveVersionId: versions.results.find((candidate) => candidate.lect === livePage?.lect)?.id,
@@ -478,12 +493,12 @@ pagesRoutes.post('/pages/:id', async (c) => {
         errors,
         action: `/admin/pages/${pageId}`,
         structured: {
-          config: cmsConfig,
+          config,
           language,
           lect,
-          blueprintProps: blueprintPropsFor(pageType),
-          blockProps: blockPropsByName(),
-          blockNames: cmsConfig.blockLists[pageType] ?? cmsConfig.blockLists.default,
+          blueprintProps: blueprintPropsFor(config, pageType),
+          blockProps: blockPropsByName(config),
+          blockNames: config.blockLists[pageType] ?? config.blockLists.default,
           versions: versions.results,
         },
       }),
@@ -498,7 +513,8 @@ pagesRoutes.post('/pages/:id', async (c) => {
   const weightVal = num(form.get('weight'));
   const editorsVal = editorsFromForm(form);
   const lect = applyStructuredAction(
-    lectFromForm(pageTypeVal, lectForPage(pageTypeVal, page.lect), form, language),
+    config,
+    lectFromForm(config, pageTypeVal, lectForPage(config, pageTypeVal, page.lect), form, language),
     pageTypeVal,
     action,
     form,
@@ -552,12 +568,15 @@ pagesRoutes.post('/pages/:id', async (c) => {
 
   if (action === 'publish') {
     await publishPage(c.env.DB, c.env.PUBLISHED_DB, pageId);
+    dispatchHook(c, 'publish', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug });
     return c.redirect('/admin?flash=Page+published+successfully');
   }
 
   if (isStructuredEditorAction(action)) {
     return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}`);
   }
+
+  dispatchHook(c, 'update', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug });
 
   return c.redirect('/admin?flash=Page+updated+successfully');
 });
@@ -569,6 +588,17 @@ pagesRoutes.post('/pages/:id/publish', async (c) => {
   const published = await publishPage(c.env.DB, c.env.PUBLISHED_DB, pageId);
   if (!published) return c.notFound();
 
+  const page = await c.env.DB.prepare('SELECT uuid, name, slug, page_type FROM draft_pages WHERE id = ?')
+    .bind(pageId)
+    .first<{ uuid: string; name: string; slug: string; page_type: string | null }>();
+  dispatchHook(c, 'publish', {
+    id: pageId,
+    uuid: page?.uuid,
+    name: page?.name,
+    slug: page?.slug,
+    page_type: page?.page_type,
+  });
+
   return c.redirect('/admin?flash=Page+published+successfully');
 });
 
@@ -577,12 +607,20 @@ pagesRoutes.post('/pages/:id/publish', async (c) => {
 pagesRoutes.post('/pages/:id/unpublish', async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
 
-  const page = await c.env.DB.prepare('SELECT uuid FROM draft_pages WHERE id = ?')
+  const page = await c.env.DB.prepare('SELECT uuid, name, slug, page_type FROM draft_pages WHERE id = ?')
     .bind(pageId)
-    .first<{ uuid: string }>();
+    .first<{ uuid: string; name: string; slug: string; page_type: string | null }>();
   if (!page) return c.notFound();
 
   await unpublishPage(c.env.PUBLISHED_DB, page.uuid);
+
+  dispatchHook(c, 'unpublish', {
+    id: pageId,
+    uuid: page.uuid,
+    name: page.name,
+    slug: page.slug,
+    page_type: page.page_type,
+  });
 
   return c.redirect('/admin?flash=Page+unpublished');
 });
@@ -652,6 +690,14 @@ pagesRoutes.post('/pages/:id/delete', async (c) => {
 
   // Delete from DRAFT
   await c.env.DB.prepare('DELETE FROM draft_pages WHERE id = ?').bind(pageId).run();
+
+  dispatchHook(c, 'delete', {
+    id: page.id,
+    uuid: page.uuid,
+    name: page.name,
+    slug: page.slug,
+    page_type: page.page_type,
+  });
 
   return c.redirect('/admin?flash=Page+moved+to+trash');
 });

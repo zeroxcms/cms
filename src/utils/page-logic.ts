@@ -1,6 +1,7 @@
 // Lect / page-structure helpers used by the admin editor handlers.
 
 import { cmsConfig } from '../cms-config';
+import type { CmsConfig } from '../cms-config';
 import {
   blockToLect,
   blueprintToLect,
@@ -26,13 +27,13 @@ export function withDraftMetadata(lect: Lect, modifier: number): Lect {
   };
 }
 
-export function blueprintPropsFor(pageType: string) {
-  return getBlueprintProps(cmsConfig.blueprint[pageType] ?? cmsConfig.blueprint.default);
+export function blueprintPropsFor(config: CmsConfig, pageType: string) {
+  return getBlueprintProps(config.blueprint[pageType] ?? config.blueprint.default);
 }
 
-export function blockPropsByName(): Record<string, ReturnType<typeof getBlueprintProps>> {
+export function blockPropsByName(config: CmsConfig): Record<string, ReturnType<typeof getBlueprintProps>> {
   const props: Record<string, ReturnType<typeof getBlueprintProps>> = {};
-  for (const [name, blueprint] of Object.entries(cmsConfig.blocks)) {
+  for (const [name, blueprint] of Object.entries(config.blocks)) {
     props[name] = getBlueprintProps(blueprint);
   }
   return props;
@@ -43,23 +44,23 @@ export function lectsMatch(left: string | null | undefined, right: string | null
   return stringifyLect(safeParseLect(left)) === stringifyLect(safeParseLect(right));
 }
 
-export function lectForPage(pageType: string, stored: string | null | undefined): Lect {
+export function lectForPage(config: CmsConfig, pageType: string, stored: string | null | undefined): Lect {
   return mergeLects(
-    blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage),
+    blueprintToLect(pageType, config.blueprint, config.defaultLanguage),
     safeParseLect(stored),
   );
 }
 
-export function lectFromForm(pageType: string, existing: Lect, form: FormData, language: string): Lect {
+export function lectFromForm(config: CmsConfig, pageType: string, existing: Lect, form: FormData, language: string): Lect {
   const jsonLect = safeParseLect(str(form.get('lect_json')));
   const postedLect = postToLect(form, language);
   return mergeLects(
-    mergeLects(blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage), existing),
+    mergeLects(blueprintToLect(pageType, config.blueprint, config.defaultLanguage), existing),
     mergeLects(jsonLect, postedLect),
   );
 }
 
-export function applyStructuredAction(lect: Lect, pageType: string, action: string, form: FormData): Lect {
+export function applyStructuredAction(config: CmsConfig, lect: Lect, pageType: string, action: string, form: FormData): Lect {
   const next = normalizeLect(lect);
   const [actionType, actionParam = ''] = action.split(':');
   const actionParams = actionParam.split('|');
@@ -67,8 +68,8 @@ export function applyStructuredAction(lect: Lect, pageType: string, action: stri
 
   if (actionType === 'block-add') {
     const blockName = str(form.get('block-select'));
-    if (!blockName || !cmsConfig.blocks[blockName]) return next;
-    const block = blockToLect(blockName, cmsConfig.blocks, cmsConfig.defaultLanguage);
+    if (!blockName || !config.blocks[blockName]) return next;
+    const block = blockToLect(blockName, config.blocks, config.defaultLanguage);
     next._blocks ||= [];
     block._weight = getNextWeight(next._blocks);
     next._blocks.push(block);
@@ -81,7 +82,7 @@ export function applyStructuredAction(lect: Lect, pageType: string, action: stri
   }
 
   if (actionType === 'item-add') {
-    addDefaultItem(next, pageType, actionParam, count);
+    addDefaultItem(config, next, pageType, actionParam, count);
     return next;
   }
 
@@ -94,7 +95,7 @@ export function applyStructuredAction(lect: Lect, pageType: string, action: stri
   if (actionType === 'block-item-add') {
     const [blockIndex, itemName] = actionParams;
     const block = getLectBlocks(next)[parseInt(blockIndex, 10)];
-    if (block) addDefaultBlockItem(block, itemName, count);
+    if (block) addDefaultBlockItem(config, block, itemName, count);
     next._blocks = replaceBlock(next, parseInt(blockIndex, 10), block);
     return next;
   }
@@ -113,9 +114,9 @@ export function applyStructuredAction(lect: Lect, pageType: string, action: stri
   return next;
 }
 
-export function addDefaultItem(lect: Lect, pageType: string, itemName: string, count: number): void {
+export function addDefaultItem(config: CmsConfig, lect: Lect, pageType: string, itemName: string, count: number): void {
   if (!itemName) return;
-  const defaults = blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
+  const defaults = blueprintToLect(pageType, config.blueprint, config.defaultLanguage);
   const defaultItem = getLectItems(defaults, itemName)[0] ?? defaultLectItem();
   const items = getMutableItems(lect, itemName);
   for (let index = 0; index < count; index++) {
@@ -125,10 +126,10 @@ export function addDefaultItem(lect: Lect, pageType: string, itemName: string, c
   }
 }
 
-export function addDefaultBlockItem(block: Lect, itemName: string, count: number): void {
+export function addDefaultBlockItem(config: CmsConfig, block: Lect, itemName: string, count: number): void {
   if (!itemName) return;
   const blockType = String(block._type || 'default');
-  const defaults = blockToLect(blockType, cmsConfig.blocks, cmsConfig.defaultLanguage);
+  const defaults = blockToLect(blockType, config.blocks, config.defaultLanguage);
   const defaultItem = getLectItems(defaults, itemName)[0] ?? defaultLectItem();
   const items = getMutableItems(block, itemName);
   for (let index = 0; index < count; index++) {

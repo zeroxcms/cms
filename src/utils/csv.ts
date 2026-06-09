@@ -1,6 +1,7 @@
 // CSV parsing, export formatting, and import (preview + apply) logic for admin pages.
 
 import { cmsConfig } from '../cms-config';
+import type { CmsConfig } from '../cms-config';
 import type { Page, TagType } from '../types';
 import {
   blueprintToLect,
@@ -75,8 +76,8 @@ const IMPORT_LOOKUP_CHUNK_ROWS = 1000;
 const IMPORT_BULK_CHUNK_ROWS = 1000;
 const IMPORT_BULK_CHUNK_BYTES = 1_500_000;
 
-export function csvPathSpecs(pageTypes: string[], includeLegacyLocalized = false): CsvPathSpec[] {
-  return advancedSearchPathSpecs(pageTypes).flatMap<CsvPathSpec>((spec) => {
+export function csvPathSpecs(pageTypes: string[], includeLegacyLocalized = false, config: CmsConfig = cmsConfig): CsvPathSpec[] {
+  return advancedSearchPathSpecs(pageTypes, config).flatMap<CsvPathSpec>((spec) => {
     if (spec.kind !== 'localized') {
       return [{ header: spec.path, sourcePath: spec.path, kind: spec.kind }];
     }
@@ -366,11 +367,11 @@ async function pageTagsForExport(db: D1Database): Promise<Map<number, Record<str
   return result;
 }
 
-export async function exportPagesCsv(db: D1Database, pages: Page[], pageTypes: string[]): Promise<string> {
+export async function exportPagesCsv(db: D1Database, pages: Page[], pageTypes: string[], config: CmsConfig = cmsConfig): Promise<string> {
   const taxonomy = await editorTaxonomy(db);
   const pageLects = pages.map((page) => ({
     page,
-    lect: lectForPage(page.page_type ?? 'default', page.lect),
+    lect: lectForPage(config, page.page_type ?? 'default', page.lect),
   }));
   const pathColumns = exportCsvPathSpecs(pageTypes, pageLects.map(({ lect }) => lect));
   const headers = exportHeaders(pathColumns, taxonomy.tagTypes);
@@ -518,8 +519,9 @@ function prepareImportedPage(
   pathSpecs: CsvPathSpec[],
   idBase: number,
   index: number,
+  config: CmsConfig = cmsConfig,
 ): PreparedImportedPage {
-  const lect = normalizeLect(blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage));
+  const lect = normalizeLect(blueprintToLect(pageType, config.blueprint, config.defaultLanguage));
   applyCsvLectValues(lect, row, pathSpecs, 'replace');
 
   lect._type = pageType;
@@ -658,9 +660,9 @@ async function importPageTags(
   return changed;
 }
 
-export async function previewPagesCsv(db: D1Database, pageType: string, csvText: string): Promise<CsvImportPreview> {
+export async function previewPagesCsv(db: D1Database, pageType: string, csvText: string, config: CmsConfig = cmsConfig): Promise<CsvImportPreview> {
   const rows = csvRowsToObjects(parseCsv(csvText));
-  const pathSpecs = csvPathSpecs([pageType], true);
+  const pathSpecs = csvPathSpecs([pageType], true, config);
   const preview: CsvImportPreview = { rows: [], skipped: 0 };
   const importRows = rows.map((row, index) => ({ index, row })).filter(({ row }) => csvRowHasValues(row));
   const targets = await findImportTargets(db, pageType, importRows);
@@ -672,7 +674,7 @@ export async function previewPagesCsv(db: D1Database, pageType: string, csvText:
     }
 
     const existing = targets.get(index) ?? null;
-    const baseLect = existing ? lectForPage(pageType, existing.lect) : blueprintToLect(pageType, cmsConfig.blueprint, cmsConfig.defaultLanguage);
+    const baseLect = existing ? lectForPage(config, pageType, existing.lect) : blueprintToLect(pageType, config.blueprint, config.defaultLanguage);
     const lect = normalizeLect(baseLect);
 
     for (const spec of pathSpecs) {
@@ -727,8 +729,9 @@ async function updateImportedPage(
   taxonomy: { tagTypes: TagType[] },
   pathSpecs: CsvPathSpec[],
   mode: 'replace' | 'append',
+  config: CmsConfig = cmsConfig,
 ): Promise<boolean> {
-  const lect = normalizeLect(lectForPage(pageType, existing.lect));
+  const lect = normalizeLect(lectForPage(config, pageType, existing.lect));
   let changed = applyCsvLectValues(lect, row, pathSpecs, mode);
   let name = existing.name;
   let slug = existing.slug;
@@ -806,9 +809,10 @@ export async function importPagesCsv(
   csvText: string,
   userId: number,
   mode: CsvImportMode = 'new-append',
+  config: CmsConfig = cmsConfig,
 ): Promise<CsvImportResult> {
   const rows = csvRowsToObjects(parseCsv(csvText));
-  const pathSpecs = csvPathSpecs([pageType], true);
+  const pathSpecs = csvPathSpecs([pageType], true, config);
   const taxonomy = await editorTaxonomy(db);
   const result: CsvImportResult = { created: 0, updated: 0, skipped: 0 };
   const importRows = rows.map((row, index) => ({ index, row })).filter(({ row }) => csvRowHasValues(row));
@@ -828,7 +832,7 @@ export async function importPagesCsv(
         result.skipped++;
         continue;
       }
-      creations.push(prepareImportedPage(pageType, row, userId, pathSpecs, idBase, creations.length));
+      creations.push(prepareImportedPage(pageType, row, userId, pathSpecs, idBase, creations.length, config));
       continue;
     }
 
@@ -838,7 +842,7 @@ export async function importPagesCsv(
     }
 
     const updateMode = mode === 'append' || mode === 'new-append' ? 'append' : 'replace';
-    if (await updateImportedPage(db, pageType, row, existing, userId, taxonomy, pathSpecs, updateMode)) {
+    if (await updateImportedPage(db, pageType, row, existing, userId, taxonomy, pathSpecs, updateMode, config)) {
       result.updated++;
     } else {
       result.skipped++;

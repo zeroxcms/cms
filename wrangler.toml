@@ -25,7 +25,17 @@ migrations_dir = "migrations/published"
 binding = "MEDIA_BUCKET"
 bucket_name = "worker-cms-media"
 
+# ── Plugins (optional) ────────────────────────────────────────────────────────
+# Each plugin is a separate Worker bound as a service binding. List the binding
+# names in the PLUGINS var below, then redeploy. See examples/plugin-events.
+# [[services]]
+# binding = "PLUGIN_EVENTS"
+# service = "cms-plugin-events"
+
 [vars]
+# Comma-separated plugin service-binding names, e.g. "PLUGIN_EVENTS,PLUGIN_SEO".
+# Leave unset to disable the plugin system entirely (zero overhead).
+# PLUGINS = "PLUGIN_EVENTS"
 # Comma-separated list of enabled OAuth providers: "github", "google", "eventuai"
 ENABLED_PROVIDERS = "eventuai,github"
 # Per-provider OAuth client IDs – add the ones you use
@@ -41,3 +51,4 @@ SITE_TITLE = "Worker CMS"
 # wrangler secret put EVENTUAI_CLIENT_SECRET
 # wrangler secret put GITHUB_CLIENT_SECRET
 # wrangler secret put GOOGLE_CLIENT_SECRET
+# wrangler secret put PLUGIN_SECRET   # shared with each plugin Worker

@@ -36,7 +36,7 @@ tagsRoutes.get('/tag-types', async (c) => {
   ]);
 
   return c.html(await tagTypesPage(c.env.VIEWS, {
-    ...buildBaseProps(c, userAvatar),
+    ...(await buildBaseProps(c, userAvatar)),
     tagTypes: tagTypes.results,
   }));
 });
@@ -93,7 +93,7 @@ tagsRoutes.get('/tags', async (c) => {
     fetchUserAvatar(c.env.DB, userIdFromContext(c)),
   ]);
   return c.html(await tagsPage(c.env.VIEWS, {
-    ...buildBaseProps(c, userAvatar),
+    ...(await buildBaseProps(c, userAvatar)),
     tagTypes: tagTypes.results,
     tags: tags.results,
     filterTagType,
@@ -157,7 +157,7 @@ tagsRoutes.post('/tags/:id/delete', async (c) => {
 async function tagTypeForm(c: AppContext, tagType?: TagType) {
   const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
   return c.html(await tagTypeFormPage(c.env.VIEWS, {
-    ...buildBaseProps(c, userAvatar),
+    ...(await buildBaseProps(c, userAvatar)),
     tagType,
   }));
 }
@@ -175,7 +175,7 @@ async function tagForm(c: AppContext, tag?: Tag) {
   const defaultTranslatedName = getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || tag?.name || '';
   const translatedPlaceholder = language === cmsConfig.defaultLanguage ? '' : defaultTranslatedName;
   return c.html(await tagFormPage(c.env.VIEWS, {
-    ...buildBaseProps(c, userAvatar),
+    ...(await buildBaseProps(c, userAvatar)),
     tag,
     language,
     languages: cmsConfig.languages,

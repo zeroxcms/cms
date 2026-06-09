@@ -20,7 +20,7 @@ trashRoutes.get('/trash', async (c) => {
   ]);
 
   return c.html(await trashPage(c.env.VIEWS, {
-    ...buildBaseProps(c, userAvatar),
+    ...(await buildBaseProps(c, userAvatar)),
     pages: trashedPages.results,
     flash: flash || undefined,
   }));

@@ -2,6 +2,8 @@
 // Shared TypeScript types
 // ============================================================
 
+import type { BlueprintEntry } from './cms-config';
+
 export const USER_ROLES = ['admin', 'editor', 'moderator', 'viewer'] as const;
 
 export type UserRole = typeof USER_ROLES[number];
@@ -101,6 +103,50 @@ export interface MediaFile {
 }
 
 // ============================================================
+// Plugins (service-binding model — each plugin is its own Worker)
+// ============================================================
+
+export interface PluginNavItem {
+  /** Display label shown in the admin navigation. */
+  label: string;
+  /** Path relative to the plugin's admin mount, e.g. "events" → /admin/plugins/<id>/events. */
+  href: string;
+  /** Roles allowed to see the item; omit/empty to show for all editor roles. */
+  roles?: string[];
+}
+
+export interface PluginFieldType {
+  /** Field type id; resolves to /snippets/pagefield/<type>/basic.liquid. Namespace by plugin id. */
+  type: string;
+}
+
+/** Content-type fragments a plugin merges into the effective CmsConfig. */
+export interface PluginContentTypes {
+  blueprint?: Record<string, BlueprintEntry[]>;
+  blocks?: Record<string, BlueprintEntry[]>;
+  blockLists?: Record<string, string[]>;
+  tagLists?: Record<string, string[]>;
+}
+
+export interface PluginManifest {
+  id: string;
+  name: string;
+  version: string;
+  /** Lifecycle events the plugin wants to receive (e.g. "publish", "delete"). */
+  hooks?: string[];
+  nav?: PluginNavItem[];
+  contentTypes?: PluginContentTypes;
+  fieldTypes?: PluginFieldType[];
+}
+
+/** A resolved, active plugin: its declared binding name, Fetcher, and manifest. */
+export interface ResolvedPlugin {
+  binding: string;
+  fetcher: Fetcher;
+  manifest: PluginManifest;
+}
+
+// ============================================================
 // Cloudflare Worker environment bindings
 // ============================================================
 export interface Env {
@@ -108,6 +154,10 @@ export interface Env {
   PUBLISHED_DB: D1Database;
   VIEWS: Fetcher;
   MEDIA_BUCKET?: R2Bucket;
+  /** Comma-separated list of plugin service-binding names, e.g. "PLUGIN_EVENTS,PLUGIN_SEO". */
+  PLUGINS?: string;
+  /** Shared secret forwarded to plugin Workers so they can trust CMS-originated calls. */
+  PLUGIN_SECRET?: string;
   /** HMAC-SHA256 secret for signing JWTs – set via `wrangler secret put JWT_SECRET` */
   JWT_SECRET: string;
   /**

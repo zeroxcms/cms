@@ -23,6 +23,7 @@ import { pagesRoutes } from './pages';
 import { trashRoutes } from './trash';
 import { tagsRoutes } from './tags';
 import { apiRoutes } from './api';
+import { pluginAdminRoutes } from './plugins';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -33,6 +34,7 @@ adminRoutes.use('*', editorGuard);
 // Mount feature sub-routers. Order matters — see the note above.
 adminRoutes.route('/', searchRoutes);
 adminRoutes.route('/', importRoutes);
+adminRoutes.route('/', pluginAdminRoutes);
 adminRoutes.route('/', pagesRoutes);
 adminRoutes.route('/', trashRoutes);
 adminRoutes.route('/', tagsRoutes);
