@@ -154,6 +154,7 @@ export interface Env {
   PUBLISHED_DB: D1Database;
   VIEWS: Fetcher;
   MEDIA_BUCKET?: R2Bucket;
+  PAGE_SYNC: DurableObjectNamespace;
   /** Comma-separated list of plugin service-binding names, e.g. "PLUGIN_EVENTS,PLUGIN_SEO". */
   PLUGINS?: string;
   /** Shared secret forwarded to plugin Workers so they can trust CMS-originated calls. */

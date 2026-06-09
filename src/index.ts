@@ -130,3 +130,4 @@ app.onError(async (err, c) => {
 });
 
 export default app;
+export { PageSyncDO } from './durable-objects/page-sync';

@@ -25,6 +25,14 @@ migrations_dir = "migrations/published"
 binding = "MEDIA_BUCKET"
 bucket_name = "worker-cms-media"
 
+[[durable_objects.bindings]]
+name = "PAGE_SYNC"
+class_name = "PageSyncDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PageSyncDO"]
+
 # ── Plugins (optional) ────────────────────────────────────────────────────────
 # Each plugin is a separate Worker bound as a service binding. List the binding
 # names in the PLUGINS var below, then redeploy. See examples/plugin-events.

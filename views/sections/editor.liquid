@@ -13,6 +13,9 @@
            data-user-id="{{ currentUserId | escape }}"
            data-user-avatar="{{ userAvatar | escape }}">
         <div id="presence-avatars" class="flex items-center gap-1"></div>
+        <div id="sync-indicator"
+             title=""
+             style="width:8px;height:8px;border-radius:50%;background:#9ca3af;flex-shrink:0;transition:background .4s,opacity .4s;display:none"></div>
       </div>
     {% endif %}
   </div>
@@ -506,6 +509,12 @@
         ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;outline:' +
         ring + ';opacity:' + opacity + ';transition:opacity .3s">' + initials(e.user_name) + '</div>';
     }).join('');
+    // Enable CRDT only while at least one other editor is present.
+    if (editors.length > 1) {
+      window.__cmsSync && window.__cmsSync.enable();
+    } else {
+      window.__cmsSync && window.__cmsSync.disable();
+    }
   }
 
   function sendHeartbeat() {
@@ -530,6 +539,157 @@
 
   window.addEventListener('beforeunload', function () {
     fetch('/api/presence/' + pageId, { method: 'DELETE', keepalive: true }).catch(function () {});
+  });
+}());
+</script>
+
+<script>
+(function () {
+  var bar = document.getElementById('presence-bar');
+  if (!bar) return;
+
+  var pageId = bar.dataset.pageId;
+  var currentUserId = bar.dataset.userId;
+  var indicator = document.getElementById('sync-indicator');
+
+  // HLC: "<ms>.<counter>.<userId>" — lexicographic ordering is correct.
+  var hlcCounter = 0;
+  function nextHlc() {
+    return Date.now() + '.' + (++hlcCounter).toString().padStart(6, '0') + '.' + currentUserId;
+  }
+
+  // Track locally sent ops so snapshot ops don't overwrite in-progress edits.
+  // localOps[path] = hlc of the latest op we sent for that path.
+  var localOps = {};
+
+  var ws = null;
+  var reconnectTimer = null;
+  var crdtEnabled = false;
+
+  function setSyncStatus(status) {
+    if (!indicator) return;
+    if (status === 'idle') {
+      indicator.style.display = 'none';
+      indicator.title = '';
+    } else if (status === 'connected') {
+      indicator.style.display = '';
+      indicator.style.background = '#10b981';
+      indicator.title = 'Live sync active';
+    } else if (status === 'connecting') {
+      indicator.style.display = '';
+      indicator.style.background = '#f59e0b';
+      indicator.title = 'Connecting…';
+    } else {
+      indicator.style.display = '';
+      indicator.style.background = '#9ca3af';
+      indicator.title = 'Sync disconnected — changes still save normally';
+    }
+  }
+
+  function applyOp(op) {
+    var path = op.path;
+    var value = op.value != null ? String(op.value) : '';
+
+    // Don't clobber a locally edited field whose op is newer.
+    var localHlc = localOps[path];
+    if (localHlc && localHlc >= (op.hlc || '')) return;
+
+    // Escape backslashes and quotes for the attribute selector.
+    var escaped = path.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    var el = document.querySelector('[name="' + escaped + '"]');
+    if (!el) return;
+
+    // Don't interrupt the user mid-edit.
+    if (document.activeElement === el) return;
+
+    el.value = value;
+  }
+
+  function sendOp(el) {
+    if (!crdtEnabled || !ws || ws.readyState !== WebSocket.OPEN) return;
+    var hlc = nextHlc();
+    localOps[el.name] = hlc;
+    ws.send(JSON.stringify({
+      type: 'op',
+      path: el.name,
+      value: el.value,
+      hlc: hlc,
+      opId: crypto.randomUUID(),
+    }));
+  }
+
+  // Attach listeners to all lect-encoded form fields.
+  // Names follow the lect convention: starts with . @ * or # (digit).
+  document.querySelectorAll('input[name], textarea[name], select[name]').forEach(function (el) {
+    var name = el.getAttribute('name') || '';
+    if (!/^[.@*#\d]/.test(name)) return;
+    el.addEventListener('input',  function () { sendOp(el); });
+    el.addEventListener('change', function () { sendOp(el); });
+  });
+
+  function connect() {
+    if (!crdtEnabled) return;
+    if (ws && ws.readyState < 2) return; // already CONNECTING or OPEN
+    clearTimeout(reconnectTimer);
+    setSyncStatus('connecting');
+
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/admin/api/sync/' + pageId);
+
+    ws.onopen = function () {
+      setSyncStatus('connected');
+      ws.send(JSON.stringify({ type: 'sync' }));
+    };
+
+    ws.onmessage = function (e) {
+      var msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+
+      if (msg.type === 'snapshot') {
+        // Apply state from other editors; skip ops we own.
+        (msg.ops || []).forEach(function (op) {
+          if (op.userId === currentUserId) return;
+          applyOp(op);
+        });
+      } else if (msg.type === 'op') {
+        // Real-time broadcast — server never echoes back to sender.
+        applyOp(msg);
+      }
+    };
+
+    ws.onclose = ws.onerror = function () {
+      if (!crdtEnabled) {
+        setSyncStatus('idle');
+        return;
+      }
+      setSyncStatus('disconnected');
+      reconnectTimer = setTimeout(connect, 4000);
+    };
+  }
+
+  function disconnect() {
+    crdtEnabled = false;
+    clearTimeout(reconnectTimer);
+    if (ws) {
+      ws.onclose = ws.onerror = null;
+      try { ws.close(1000, 'No co-editors'); } catch {}
+      ws = null;
+    }
+    setSyncStatus('idle');
+  }
+
+  // Exposed to the presence script so it can drive CRDT activation.
+  window.__cmsSync = {
+    enable: function () {
+      if (crdtEnabled) return; // already active
+      crdtEnabled = true;
+      connect();
+    },
+    disable: disconnect,
+  };
+
+  window.addEventListener('beforeunload', function () {
+    if (ws) try { ws.close(1001, 'Leaving'); } catch {}
   });
 }());
 </script>

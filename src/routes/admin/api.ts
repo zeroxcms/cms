@@ -106,6 +106,26 @@ async function deletePageTagApi(c: AppContext) {
   return c.json({ type: 'DELETE_PAGE_TAG', payload: { success: true, id } });
 }
 
+// ── Lect CRDT sync (WebSocket) ────────────────────────────────────────────────
+
+apiRoutes.get('/api/sync/:pageId', async (c) => {
+  if (c.req.header('Upgrade')?.toLowerCase() !== 'websocket') {
+    return c.text('Expected WebSocket upgrade', 426);
+  }
+
+  const user = c.get('user');
+  const pageId = c.req.param('pageId');
+
+  const doId = c.env.PAGE_SYNC.idFromName(`page-${pageId}`);
+  const stub = c.env.PAGE_SYNC.get(doId);
+
+  const headers = new Headers(c.req.raw.headers);
+  headers.set('X-User-Id', String(user.sub));
+  headers.set('X-User-Name', user.name);
+
+  return stub.fetch(new Request(c.req.raw.url, { headers }));
+});
+
 // ── Presence ─────────────────────────────────────────────────────────────────
 
 apiRoutes.post('/api/presence/:pageId', async (c) => {
