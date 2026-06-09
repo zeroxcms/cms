@@ -53,8 +53,8 @@ export class PageSyncDO implements DurableObject {
     const userName = request.headers.get('X-User-Name') ?? '';
 
     const { 0: client, 1: server } = new WebSocketPair();
-    server.serializeAttachment({ userId, userName } satisfies WsAttachment);
     this.state.acceptWebSocket(server);
+    server.serializeAttachment({ userId, userName } satisfies WsAttachment);
 
     return new Response(null, { status: 101, webSocket: client });
   }

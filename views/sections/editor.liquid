@@ -535,7 +535,7 @@
   sendHeartbeat();
   refreshPresence();
   setInterval(sendHeartbeat, 30000);
-  setInterval(refreshPresence, 15000);
+  setInterval(refreshPresence, 8000);
 
   window.addEventListener('beforeunload', function () {
     fetch('/admin/api/presence/' + pageId, { method: 'DELETE', keepalive: true }).catch(function () {});
@@ -558,13 +558,28 @@
     return Date.now() + '.' + (++hlcCounter).toString().padStart(6, '0') + '.' + currentUserId;
   }
 
-  // Track locally sent ops so snapshot ops don't overwrite in-progress edits.
-  // localOps[path] = hlc of the latest op we sent for that path.
-  var localOps = {};
+  // register[path] = { value, hlc } — our local replica of the LWW state,
+  // updated from BOTH our own edits and remote ops. It lets us:
+  //   (a) reject stale remote ops, and
+  //   (b) replay un-synced local edits when we (re)connect — including edits
+  //       typed while we were solo and CRDT was still disabled.
+  var register = {};
 
   var ws = null;
   var reconnectTimer = null;
   var crdtEnabled = false;
+
+  function findField(path) {
+    var escaped = path.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return document.querySelector('[name="' + escaped + '"]');
+  }
+
+  function sendRaw(path, value, hlc) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({
+      type: 'op', path: path, value: value, hlc: hlc, opId: crypto.randomUUID(),
+    }));
+  }
 
   function setSyncStatus(status) {
     if (!indicator) return;
@@ -586,36 +601,30 @@
     }
   }
 
-  function applyOp(op) {
+  function applyRemote(op) {
+    if (!op || op.userId === currentUserId) return;
     var path = op.path;
     var value = op.value != null ? String(op.value) : '';
 
-    // Don't clobber a locally edited field whose op is newer.
-    var localHlc = localOps[path];
-    if (localHlc && localHlc >= (op.hlc || '')) return;
+    // LWW: ignore anything not strictly newer than what we already hold.
+    var cur = register[path];
+    if (cur && cur.hlc >= (op.hlc || '')) return;
+    register[path] = { value: value, hlc: op.hlc };
 
-    // Escape backslashes and quotes for the attribute selector.
-    var escaped = path.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    var el = document.querySelector('[name="' + escaped + '"]');
+    var el = findField(path);
     if (!el) return;
-
-    // Don't interrupt the user mid-edit.
+    // Don't yank a field the user is editing; their next keystroke re-wins it.
     if (document.activeElement === el) return;
 
     el.value = value;
   }
 
   function sendOp(el) {
-    if (!crdtEnabled || !ws || ws.readyState !== WebSocket.OPEN) return;
+    // Always record the edit locally, even while disabled/disconnected, so it
+    // can be replayed on connect. Sending happens only when the socket is open.
     var hlc = nextHlc();
-    localOps[el.name] = hlc;
-    ws.send(JSON.stringify({
-      type: 'op',
-      path: el.name,
-      value: el.value,
-      hlc: hlc,
-      opId: crypto.randomUUID(),
-    }));
+    register[el.name] = { value: el.value, hlc: hlc };
+    sendRaw(el.name, el.value, hlc);
   }
 
   // Attach listeners to all lect-encoded form fields.
@@ -646,14 +655,22 @@
       try { msg = JSON.parse(e.data); } catch { return; }
 
       if (msg.type === 'snapshot') {
-        // Apply state from other editors; skip ops we own.
+        // 1. Pull: apply the server's state (applyRemote skips our own + stale).
+        var serverState = {};
         (msg.ops || []).forEach(function (op) {
-          if (op.userId === currentUserId) return;
-          applyOp(op);
+          serverState[op.path] = op;
+          applyRemote(op);
+        });
+        // 2. Push: replay local edits the server hasn't seen yet — this is what
+        //    propagates work done while solo, and makes connect bidirectional.
+        Object.keys(register).forEach(function (path) {
+          var r = register[path];
+          var s = serverState[path];
+          if (!s || r.hlc > s.hlc) sendRaw(path, r.value, r.hlc);
         });
       } else if (msg.type === 'op') {
         // Real-time broadcast — server never echoes back to sender.
-        applyOp(msg);
+        applyRemote(msg);
       }
     };
 
