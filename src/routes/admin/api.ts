@@ -113,17 +113,19 @@ apiRoutes.get('/api/sync/:pageId', async (c) => {
     return c.text('Expected WebSocket upgrade', 426);
   }
 
+  const pageId = parseInt(c.req.param('pageId'), 10);
+  if (!Number.isFinite(pageId) || pageId <= 0) return c.text('Invalid page ID', 400);
+
   const user = c.get('user');
-  const pageId = c.req.param('pageId');
-
-  const doId = c.env.PAGE_SYNC.idFromName(`page-${pageId}`);
-  const stub = c.env.PAGE_SYNC.get(doId);
-
-  const headers = new Headers(c.req.raw.headers);
-  headers.set('X-User-Id', String(user.sub));
-  headers.set('X-User-Name', user.name);
-
-  return stub.fetch(new Request(c.req.raw.url, { headers }));
+  return c.env.PAGE_SYNC.get(c.env.PAGE_SYNC.idFromName(`page-${pageId}`)).fetch(
+    new Request(c.req.raw.url, {
+      headers: {
+        Upgrade: 'websocket',
+        'X-User-Id': String(user.sub),
+        'X-User-Name': user.name,
+      },
+    }),
+  );
 });
 
 // ── Presence ─────────────────────────────────────────────────────────────────

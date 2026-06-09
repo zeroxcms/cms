@@ -22,6 +22,10 @@
 
 import type { Env } from '../types';
 
+function strField(msg: Record<string, unknown>, key: string): string {
+  return String(msg[key] ?? '');
+}
+
 interface WsAttachment {
   userId: string;
   userName: string;
@@ -110,26 +114,27 @@ export class PageSyncDO implements DurableObject {
 
     // Transient editing-presence signals: which field a user is in. Pure relay,
     // never stored — they only matter while both editors are connected.
+    // userAvatar is intentionally omitted from the relay; clients should read
+    // it from the presence API to avoid echoing client-supplied URLs.
     if (msg.type === 'focus') {
-      const path = String(msg.path ?? '');
-      const userAvatar = String(msg.userAvatar ?? '');
+      const path = strField(msg, 'path');
       if (!path) return;
-      this.broadcast(JSON.stringify({ type: 'focus', path, userId, userName, userAvatar }), ws);
+      this.broadcast(JSON.stringify({ type: 'focus', path, userId, userName }), ws);
       return;
     }
 
     if (msg.type === 'blur') {
-      const path = String(msg.path ?? '');
+      const path = strField(msg, 'path');
       if (!path) return;
       this.broadcast(JSON.stringify({ type: 'blur', path, userId }), ws);
       return;
     }
 
     if (msg.type === 'op') {
-      const path  = String(msg.path  ?? '');
-      const value = String(msg.value ?? '');
-      const hlc   = String(msg.hlc   ?? '');
-      const opId  = String(msg.opId  ?? crypto.randomUUID());
+      const path  = strField(msg, 'path');
+      const value = strField(msg, 'value');
+      const hlc   = strField(msg, 'hlc');
+      const opId  = strField(msg, 'opId') || crypto.randomUUID();
 
       if (!path || !hlc) return;
 

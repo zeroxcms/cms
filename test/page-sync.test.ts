@@ -281,7 +281,7 @@ describe('PageSyncDO multi-user sync', () => {
     a.send({ type: 'focus', path: '.title|en', userAvatar: 'https://img/a.png' });
     for (const peer of [b, c, d]) {
       expect(await peer.next()).toMatchObject({
-        type: 'focus', path: '.title|en', userId: 'A', userName: 'Alice', userAvatar: 'https://img/a.png',
+        type: 'focus', path: '.title|en', userId: 'A', userName: 'Alice',
       });
     }
     await a.expectSilent();
