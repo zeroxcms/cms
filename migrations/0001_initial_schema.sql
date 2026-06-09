@@ -1,5 +1,5 @@
 -- ============================================================
--- Initial combined schema - applied to the CMS database
+-- Initial CMS schema - applied to the private CMS database
 -- ============================================================
 
 -- 1. Users – populated on first OAuth login
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS tag_types(
     slug TEXT NOT NULL UNIQUE
 );
 
--- 4. Tags – shared by draft, live, and trash page states. Supports hierarchical tags and structured lect snapshots.
+-- 4. Tags – shared by draft and trash page states. Supports hierarchical tags and structured lect snapshots.
 CREATE TABLE IF NOT EXISTS tags(
     id INTEGER UNIQUE DEFAULT ((( strftime('%s','now') - 1563741060 ) * 100000) + (RANDOM() & 65535)) NOT NULL,
     uuid TEXT UNIQUE DEFAULT (lower(hex( randomblob(4)) || '-' || hex( randomblob(2)) || '-' || '4' || substr( hex( randomblob(2)), 2)
@@ -71,27 +71,7 @@ CREATE TABLE IF NOT EXISTS draft_pages(
     FOREIGN KEY (page_id) REFERENCES draft_pages (id) ON DELETE CASCADE
 );
 
--- 6. Live Pages
-CREATE TABLE IF NOT EXISTS live_pages(
-    id INTEGER UNIQUE DEFAULT ((( strftime('%s','now') - 1563741060 ) * 100000) + (RANDOM() & 65535)) NOT NULL,
-    uuid TEXT UNIQUE DEFAULT (lower(hex( randomblob(4)) || '-' || hex( randomblob(2)) || '-' || '4' || substr( hex( randomblob(2)), 2)
-    || '-' || substr('AB89', 1 + (abs(random()) % 4) , 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))) ) NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    name TEXT NOT NULL,
-    slug TEXT NOT NULL,
-    weight INTEGER DEFAULT 5,
-    start DATETIME,
-    end DATETIME,
-    page_type TEXT,
-    lect TEXT,
-    page_id INTEGER,
-    creator INTEGER,
-    editors TEXT,
-    FOREIGN KEY (page_id) REFERENCES live_pages (id) ON DELETE CASCADE
-);
-
--- 7. Trash Pages
+-- 6. Trash Pages
 CREATE TABLE IF NOT EXISTS trash_pages(
     id INTEGER UNIQUE DEFAULT ((( strftime('%s','now') - 1563741060 ) * 100000) + (RANDOM() & 65535)) NOT NULL,
     uuid TEXT UNIQUE DEFAULT (lower(hex( randomblob(4)) || '-' || hex( randomblob(2)) || '-' || '4' || substr( hex( randomblob(2)), 2)
@@ -111,7 +91,7 @@ CREATE TABLE IF NOT EXISTS trash_pages(
     FOREIGN KEY (page_id) REFERENCES trash_pages (id) ON DELETE CASCADE
 );
 
--- 8. Page Versions – supports version browsing and snapshots
+-- 7. Page Versions – supports version browsing and snapshots
 CREATE TABLE IF NOT EXISTS page_versions(
     id INTEGER UNIQUE DEFAULT ((( strftime('%s','now') - 1563741060 ) * 100000) + (RANDOM() & 65535)) NOT NULL,
     uuid TEXT UNIQUE DEFAULT (lower(hex( randomblob(4)) || '-' || hex( randomblob(2)) || '-' || '4' || substr( hex( randomblob(2)), 2)
@@ -124,7 +104,7 @@ CREATE TABLE IF NOT EXISTS page_versions(
     FOREIGN KEY (page_id) REFERENCES draft_pages (id) ON DELETE CASCADE
 );
 
--- 9. Draft Page Tags
+-- 8. Draft Page Tags
 CREATE TABLE IF NOT EXISTS draft_page_tags(
     id INTEGER UNIQUE DEFAULT ((( strftime('%s','now') - 1563741060 ) * 100000) + (RANDOM() & 65535)) NOT NULL,
     uuid TEXT UNIQUE DEFAULT (lower(hex( randomblob(4)) || '-' || hex( randomblob(2)) || '-' || '4' || substr( hex( randomblob(2)), 2)
@@ -137,20 +117,7 @@ CREATE TABLE IF NOT EXISTS draft_page_tags(
     FOREIGN KEY (page_id) REFERENCES draft_pages (id) ON DELETE CASCADE
 );
 
--- 10. Live Page Tags – keeps separate copy of tags for published pages
-CREATE TABLE IF NOT EXISTS live_page_tags(
-    id INTEGER UNIQUE DEFAULT ((( strftime('%s','now') - 1563741060 ) * 100000) + (RANDOM() & 65535)) NOT NULL,
-    uuid TEXT UNIQUE DEFAULT (lower(hex( randomblob(4)) || '-' || hex( randomblob(2)) || '-' || '4' || substr( hex( randomblob(2)), 2)
-    || '-' || substr('AB89', 1 + (abs(random()) % 4) , 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))) ) NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    page_id INTEGER,
-    tag_id INTEGER NOT NULL,
-    weight INTEGER DEFAULT 5,
-    FOREIGN KEY (page_id) REFERENCES live_pages(id) ON DELETE CASCADE
-);
-
--- 11. Trash Page Tags
+-- 9. Trash Page Tags
 CREATE TABLE IF NOT EXISTS trash_page_tags(
     id INTEGER UNIQUE DEFAULT ((( strftime('%s','now') - 1563741060 ) * 100000) + (RANDOM() & 65535)) NOT NULL,
     uuid TEXT UNIQUE DEFAULT (lower(hex( randomblob(4)) || '-' || hex( randomblob(2)) || '-' || '4' || substr( hex( randomblob(2)), 2)
@@ -163,7 +130,7 @@ CREATE TABLE IF NOT EXISTS trash_page_tags(
     FOREIGN KEY (page_id) REFERENCES trash_pages (id) ON DELETE CASCADE
 );
 
--- 12. Media Files
+-- 10. Media Files
 CREATE TABLE IF NOT EXISTS media_files(
     id INTEGER UNIQUE DEFAULT ((( strftime('%s','now') - 1563741060 ) * 100000) + (RANDOM() & 65535)) NOT NULL,
     uuid TEXT UNIQUE DEFAULT (lower(hex( randomblob(4)) || '-' || hex( randomblob(2)) || '-' || '4' || substr( hex( randomblob(2)), 2)
@@ -182,8 +149,6 @@ CREATE TABLE IF NOT EXISTS media_files(
 CREATE INDEX IF NOT EXISTS idx_draft_pages_page_type_name ON draft_pages(page_type, name);
 CREATE INDEX IF NOT EXISTS idx_draft_pages_page_type_slug ON draft_pages(page_type, slug);
 CREATE INDEX IF NOT EXISTS idx_page_versions_page_id_created_at ON page_versions(page_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_live_page_tags_page_id ON live_page_tags(page_id);
-CREATE INDEX IF NOT EXISTS idx_live_page_tags_tag_id ON live_page_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_tags_tag_type_id ON tags(tag_type_id);
 CREATE INDEX IF NOT EXISTS idx_tags_parent_tag ON tags(parent_tag);
 
@@ -206,10 +171,6 @@ CREATE TRIGGER IF NOT EXISTS draft_pages_updated_at AFTER UPDATE ON draft_pages 
     UPDATE draft_pages SET updated_at = CURRENT_TIMESTAMP WHERE id = old.id;
 END;
 
-CREATE TRIGGER IF NOT EXISTS live_pages_updated_at AFTER UPDATE ON live_pages WHEN old.updated_at < CURRENT_TIMESTAMP BEGIN
-    UPDATE live_pages SET updated_at = CURRENT_TIMESTAMP WHERE id = old.id;
-END;
-
 CREATE TRIGGER IF NOT EXISTS trash_pages_updated_at AFTER UPDATE ON trash_pages WHEN old.updated_at < CURRENT_TIMESTAMP BEGIN
     UPDATE trash_pages SET updated_at = CURRENT_TIMESTAMP WHERE id = old.id;
 END;
@@ -220,10 +181,6 @@ END;
 
 CREATE TRIGGER IF NOT EXISTS draft_page_tags_updated_at AFTER UPDATE ON draft_page_tags WHEN old.updated_at < CURRENT_TIMESTAMP BEGIN
     UPDATE draft_page_tags SET updated_at = CURRENT_TIMESTAMP WHERE id = old.id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS live_page_tags_updated_at AFTER UPDATE ON live_page_tags WHEN old.updated_at < CURRENT_TIMESTAMP BEGIN
-    UPDATE live_page_tags SET updated_at = CURRENT_TIMESTAMP WHERE id = old.id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS trash_page_tags_updated_at AFTER UPDATE ON trash_page_tags WHEN old.updated_at < CURRENT_TIMESTAMP BEGIN

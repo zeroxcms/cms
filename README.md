@@ -44,7 +44,9 @@ drafts, or trash.
 For an existing deployment, keep the existing `DB` binding and create the new
 `PUBLISHED_DB`. Existing rows from old `live_*` tables are not moved
 automatically; publish pages again or copy the current `live_pages` and
-`live_page_tags` rows into `cms-published`.
+`live_page_tags` rows into `cms-published`. Older deployed CMS databases may
+still contain legacy `live_*` tables, but CMS routes ignore them after this
+change.
 
 ### 3. Run migrations
 
@@ -65,10 +67,6 @@ The `cms` migrations create auth tables plus draft, trash, taxonomy,
 versioning, and media tables. The `cms-published` migrations create only the
 published `live_*` content tables. They do not automatically import rows from
 other D1 databases.
-
-The current `cms` migration still creates legacy `live_*` tables for existing
-local databases, but CMS routes no longer read or write those tables. Published
-content is stored in `PUBLISHED_DB`.
 
 ### 4. Create and bind the private R2 media bucket
 
@@ -231,9 +229,6 @@ npm run deploy
 |-------|---------|
 | `users` | OAuth user profiles + role assignment |
 | `sessions` | Hashed refresh-token JTIs for revocation |
-
-Legacy `live_pages` and `live_page_tags` tables may exist in `DB` from the
-combined schema, but they are not the publish target.
 
 ### Published database (`PUBLISHED_DB`)
 

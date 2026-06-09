@@ -197,8 +197,6 @@ describe('admin routes', () => {
   it('POST /admin/pages/:id/publish writes published content to PUBLISHED_DB only', async () => {
     await env.PUBLISHED_DB.prepare('DELETE FROM live_page_tags').run();
     await env.PUBLISHED_DB.prepare('DELETE FROM live_pages').run();
-    await env.DB.prepare('DELETE FROM live_page_tags').run();
-    await env.DB.prepare('DELETE FROM live_pages').run();
 
     const response = await fetchWorker('/admin/pages/101/publish', {
       method: 'POST',
@@ -221,9 +219,6 @@ describe('admin routes', () => {
     )
       .bind('page-uuid-101')
       .first<{ tag_id: number }>()).toEqual({ tag_id: 302 });
-    expect(await env.DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
-      .bind('page-uuid-101')
-      .first<{ id: number }>()).toBeNull();
   });
 
   it('POST /admin/pages/:id/unpublish removes content from PUBLISHED_DB', async () => {
@@ -240,6 +235,16 @@ describe('admin routes', () => {
     expect(await env.PUBLISHED_DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
       .bind('page-uuid-101')
       .first<{ id: number }>()).toBeNull();
+  });
+
+  it('CMS DB migration does not create live tables', async () => {
+    const tables = await env.DB.prepare(
+      `SELECT name FROM sqlite_master
+       WHERE type = 'table' AND name IN ('live_pages', 'live_page_tags')
+       ORDER BY name`,
+    ).all<{ name: string }>();
+
+    expect(tables.results).toEqual([]);
   });
 
   it('POST /admin/pages/import-v2/:pageType shows a confirmation page before importing', async () => {
@@ -700,12 +705,10 @@ function cookieValue(header: string | null, name: string): string {
 async function resetData(): Promise<void> {
   const adminTables = [
     'draft_page_tags',
-    'live_page_tags',
     'trash_page_tags',
     'page_versions',
     'media_files',
     'draft_pages',
-    'live_pages',
     'trash_pages',
     'tags',
     'tag_types',
