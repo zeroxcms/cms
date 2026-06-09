@@ -366,6 +366,7 @@ export async function editorPage(views: Fetcher, opts: {
   userName: string;
   userRole: string;
   userAvatar: string;
+  currentUserId: string;
   page?: Page;
   version?: PageVersion;
   isVersionPreview?: boolean;
@@ -393,6 +394,7 @@ export async function editorPage(views: Fetcher, opts: {
     userName,
     userRole,
     userAvatar,
+    currentUserId,
     page,
     version,
     isVersionPreview = false,
@@ -481,6 +483,8 @@ export async function editorPage(views: Fetcher, opts: {
     ),
     versions,
     hasVersions: versions.length > 0,
+    currentUserId,
+    userAvatar,
   });
 
   return layout(views, {

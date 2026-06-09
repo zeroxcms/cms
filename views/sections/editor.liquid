@@ -6,6 +6,15 @@
       </svg>
     </a>
     <h2 class="min-w-0 break-words text-2xl font-bold text-gray-900">{{ pageTitle | escape }}</h2>
+    {% if isEdit %}
+      <div id="presence-bar"
+           class="ml-auto flex items-center gap-1.5 shrink-0"
+           data-page-id="{{ page.id }}"
+           data-user-id="{{ currentUserId | escape }}"
+           data-user-avatar="{{ userAvatar | escape }}">
+        <div id="presence-avatars" class="flex items-center gap-1"></div>
+      </div>
+    {% endif %}
   </div>
 
   {% if hasErrors %}
@@ -449,4 +458,78 @@
     input.setSelectionRange(0, 99999); // For mobile devices
     document.execCommand('copy');
   }
+</script>
+
+<script>
+(function () {
+  var bar = document.getElementById('presence-bar');
+  if (!bar) return;
+
+  var pageId = bar.dataset.pageId;
+  var currentUserId = bar.dataset.userId;
+  var userAvatar = bar.dataset.userAvatar || '';
+  var lastActive = new Date().toISOString();
+
+  ['mousemove', 'keydown', 'click', 'scroll'].forEach(function (evt) {
+    document.addEventListener(evt, function () { lastActive = new Date().toISOString(); }, { passive: true });
+  });
+
+  function userColor(userId) {
+    var palette = ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#f97316'];
+    var h = 0;
+    for (var i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) & 0xffffff;
+    return palette[Math.abs(h) % palette.length];
+  }
+
+  function initials(name) {
+    return name.trim().split(/\s+/).map(function (w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
+  }
+
+  function renderAvatars(editors) {
+    var container = document.getElementById('presence-avatars');
+    if (!container) return;
+    var now = Date.now();
+    var IDLE_MS = 5 * 60 * 1000;
+    container.innerHTML = editors.map(function (e) {
+      var idle = (now - new Date(e.last_active).getTime()) > IDLE_MS;
+      var color = userColor(e.user_id);
+      var ring = idle ? '2px solid #9ca3af' : '2px solid ' + color;
+      var opacity = idle ? '0.4' : '1';
+      var label = e.user_name + (idle ? ' (idle)' : '') + (e.user_id === currentUserId ? ' (you)' : '');
+      if (e.user_avatar) {
+        return '<img src="' + e.user_avatar + '" title="' + label + '" alt="' + e.user_name +
+          '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;outline:' + ring +
+          ';opacity:' + opacity + ';transition:opacity .3s">';
+      }
+      return '<div title="' + label + '" aria-label="' + label +
+        '" style="width:32px;height:32px;border-radius:50%;background:' + color +
+        ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;outline:' +
+        ring + ';opacity:' + opacity + ';transition:opacity .3s">' + initials(e.user_name) + '</div>';
+    }).join('');
+  }
+
+  function sendHeartbeat() {
+    fetch('/api/presence/' + pageId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lastActive: lastActive, userAvatar: userAvatar }),
+    }).catch(function () {});
+  }
+
+  function refreshPresence() {
+    fetch('/api/presence/' + pageId)
+      .then(function (r) { return r.json(); })
+      .then(renderAvatars)
+      .catch(function () {});
+  }
+
+  sendHeartbeat();
+  refreshPresence();
+  setInterval(sendHeartbeat, 30000);
+  setInterval(refreshPresence, 15000);
+
+  window.addEventListener('beforeunload', function () {
+    fetch('/api/presence/' + pageId, { method: 'DELETE', keepalive: true }).catch(function () {});
+  });
+}());
 </script>

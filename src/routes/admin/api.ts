@@ -106,6 +106,50 @@ async function deletePageTagApi(c: AppContext) {
   return c.json({ type: 'DELETE_PAGE_TAG', payload: { success: true, id } });
 }
 
+// ── Presence ─────────────────────────────────────────────────────────────────
+
+apiRoutes.post('/api/presence/:pageId', async (c) => {
+  const pageId = Number(c.req.param('pageId'));
+  const user = c.get('user');
+  const body = await c.req.json<{ lastActive: string; userAvatar?: string }>();
+  const now = new Date().toISOString();
+
+  await c.env.DB.prepare(
+    `INSERT INTO presence (user_id, user_name, user_avatar, page_id, last_seen, last_active)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (user_id, page_id) DO UPDATE SET
+       last_seen   = excluded.last_seen,
+       last_active = excluded.last_active,
+       user_avatar = excluded.user_avatar`,
+  ).bind(String(user.sub), user.name, body.userAvatar || null, pageId, now, body.lastActive).run();
+
+  await c.env.DB.prepare(
+    `DELETE FROM presence WHERE page_id = ? AND last_seen < datetime('now', '-10 minutes')`,
+  ).bind(pageId).run();
+
+  return c.json({ ok: true });
+});
+
+apiRoutes.get('/api/presence/:pageId', async (c) => {
+  const pageId = Number(c.req.param('pageId'));
+  const { results } = await c.env.DB.prepare(
+    `SELECT user_id, user_name, user_avatar, last_seen, last_active
+     FROM presence
+     WHERE page_id = ? AND last_seen >= datetime('now', '-10 minutes')
+     ORDER BY last_seen DESC`,
+  ).bind(pageId).all<{ user_id: string; user_name: string; user_avatar: string | null; last_seen: string; last_active: string }>();
+  return c.json(results);
+});
+
+apiRoutes.delete('/api/presence/:pageId', async (c) => {
+  const pageId = Number(c.req.param('pageId'));
+  const user = c.get('user');
+  await c.env.DB.prepare(
+    `DELETE FROM presence WHERE user_id = ? AND page_id = ?`,
+  ).bind(String(user.sub), pageId).run();
+  return c.json({ ok: true });
+});
+
 // ── Upload ───────────────────────────────────────────────────────────────────
 
 apiRoutes.post('/upload', async (c) => {

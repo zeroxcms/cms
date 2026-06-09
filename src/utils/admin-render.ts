@@ -33,6 +33,7 @@ export interface BaseTemplateProps {
   userName: string;
   userRole: string;
   userAvatar: string;
+  currentUserId: string;
   /** Navigation entries contributed by active plugins, filtered to the user's roles. */
   pluginNav: Array<{ label: string; href: string }>;
 }
@@ -53,6 +54,7 @@ export async function buildBaseProps(c: AppContext, userAvatar: string | null): 
     userName: user.name,
     userRole: user.role,
     userAvatar: userAvatar ?? '',
+    currentUserId: String(user.sub),
     pluginNav: nav,
   };
 }
