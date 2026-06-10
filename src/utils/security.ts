@@ -1,15 +1,4 @@
 const SECURITY_HEADERS: Record<string, string> = {
-  'Content-Security-Policy': [
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://static.cloudflareinsights.com",
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: https:",
-    "connect-src 'self'",
-    "form-action 'self'",
-    "base-uri 'none'",
-    "object-src 'none'",
-    "frame-ancestors 'none'",
-  ].join('; '),
   'Referrer-Policy': 'same-origin',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
@@ -17,14 +6,33 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Strict-Transport-Security': 'max-age=31536000',
 };
 
+export function buildContentSecurityPolicy(nonce: string): string {
+  const scriptSrc = nonce
+    ? `'self' 'nonce-${nonce}' https://static.cloudflareinsights.com`
+    : "'self' https://static.cloudflareinsights.com";
+  return [
+    "default-src 'self'",
+    `script-src ${scriptSrc}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    "connect-src 'self'",
+    "form-action 'self'",
+    "base-uri 'none'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+  ].join('; ');
+}
+
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-export function withSecurityHeaders(response: Response): Response {
+export function withSecurityHeaders(response: Response, cspNonce = ''): Response {
   const secured = new Response(response.body, response);
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
-    // A route may set its own (stricter or nonce-based) CSP; don't clobber it.
-    if (name === 'Content-Security-Policy' && secured.headers.has(name)) continue;
     secured.headers.set(name, value);
+  }
+  // A route may set its own (stricter) CSP, e.g. the media sandbox; don't clobber it.
+  if (!secured.headers.has('Content-Security-Policy')) {
+    secured.headers.set('Content-Security-Policy', buildContentSecurityPolicy(cspNonce));
   }
   return secured;
 }

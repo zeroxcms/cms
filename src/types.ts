@@ -28,6 +28,8 @@ export interface JWTPayload {
   role: string;
   type: 'access' | 'refresh';
   jti?: string;        // unique token id (refresh tokens only)
+  iss?: string;        // always set by signJWT; verified on every token
+  aud?: string;        // always set by signJWT; verified on every token
   exp: number;
   iat: number;
 }

@@ -285,7 +285,7 @@
                     <span class="sr-only">Edit</span>
                   </a>
                   {% if page.isPublished %}
-                    <form method="POST" action="{{ page.unpublishAction | escape }}" class="inline shrink-0" onsubmit="return confirm('Unpublish this page?')">
+                    <form method="POST" action="{{ page.unpublishAction | escape }}" class="inline shrink-0" data-confirm="Unpublish this page?">
                       <button type="submit" title="Unpublish" aria-label="Unpublish {{ page.name | escape }}"
                               class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-yellow-600 transition-colors hover:bg-yellow-50 hover:text-yellow-800">
                         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -309,7 +309,7 @@
                       </button>
                     </form>
                   {% endif %}
-                  <form method="POST" action="{{ page.deleteAction | escape }}" class="inline shrink-0" onsubmit="return confirm('Move this page to trash?')">
+                  <form method="POST" action="{{ page.deleteAction | escape }}" class="inline shrink-0" data-confirm="Move this page to trash?">
                     <button type="submit" title="Trash" aria-label="Move {{ page.name | escape }} to trash"
                             class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50 hover:text-red-700">
                       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -353,7 +353,7 @@
   {% endif %}
 </div>
 
-<script>
+<script nonce="{{ nonce }}">
   (() => {
     const criteria = document.getElementById('advanced-search-criteria');
     const template = document.getElementById('advanced-search-criterion-template');

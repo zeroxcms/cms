@@ -4,22 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ title | escape }} - {{ siteTitle | escape }}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              50: '#eef2ff',
-              600: '#4f46e5',
-              700: '#4338ca',
-            }
-          }
-        }
-      }
-    };
-
+  <link rel="stylesheet" href="/assets/admin.css">
+  <script nonce="{{ nonce }}">
     (function() {
       const INTERVAL = 14 * 60 * 1000;
       async function refresh() {
@@ -30,6 +16,27 @@
       }
       setInterval(refresh, INTERVAL);
     })();
+
+    // Confirmation prompts for forms marked with data-confirm (CSP-safe
+    // replacement for inline onsubmit handlers).
+    document.addEventListener('submit', function(event) {
+      const message = event.target instanceof Element ? event.target.getAttribute('data-confirm') : null;
+      if (message && !confirm(message)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
+
+    // Avatar fallback (CSP-safe replacement for the inline onerror handler).
+    document.addEventListener('DOMContentLoaded', function() {
+      const avatar = document.querySelector('[data-avatar-img]');
+      if (avatar) {
+        avatar.addEventListener('error', function() {
+          avatar.classList.add('hidden');
+          avatar.nextElementSibling?.classList.remove('hidden');
+        });
+      }
+    });
   </script>
 </head>
 <body class="h-full">
@@ -93,7 +100,7 @@
               <img src="{{ userAvatar | escape }}"
                    class="w-8 h-8 rounded-full object-cover"
                    alt="avatar"
-                   onerror="this.classList.add('hidden'); this.nextElementSibling.classList.remove('hidden');">
+                   data-avatar-img>
               <div class="hidden w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-sm font-bold">{{ userInitial | escape }}</div>
             </div>
           {% else %}

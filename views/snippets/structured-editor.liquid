@@ -15,7 +15,6 @@
           id="structured_language"
           name="_language"
           class="min-w-0 flex-1 px-2 py-1 border border-gray-300 rounded-lg text-xs sm:flex-none"
-          onchange="switchEditorLanguage(this.value)"
         >
           {% for option in languageOptions %}
             <option value="{{ option.value | escape }}" {% if option.selected %}selected{% endif %}>{{ option.value | escape }}</option>

@@ -114,8 +114,7 @@
                      value="{{ page.name | escape }}"
                      placeholder="My Awesome Page"
                      style="width: max(16rem, {{ page.name | size | plus: 2 }}ch);"
-                     class="max-w-full border-b border-transparent bg-transparent p-0 text-lg font-bold text-gray-900 focus:border-indigo-500 focus:outline-none"
-                     oninput="autoSlug(this.value)">
+                     class="max-w-full border-b border-transparent bg-transparent p-0 text-lg font-bold text-gray-900 focus:border-indigo-500 focus:outline-none">
               <span class="text-sm text-gray-500">(</span>
               <label for="page_type" class="sr-only">Page Type</label>
               <input type="text" id="page_type" name="page_type" list="page_type_options"
@@ -136,7 +135,7 @@
                      value="{{ page.slug | escape }}"
                      placeholder="my-awesome-page"
                      class="min-w-[10rem] flex-1 border-b border-transparent bg-transparent p-0 focus:border-indigo-500 focus:outline-none">
-              <button type="button" onclick="copyToClipboard('#slug')" title="Copy slug"
+              <button type="button" id="copy-slug-btn" title="Copy slug"
                       class="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-700">
                 <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -292,7 +291,7 @@
   </form>
 </div>
 
-<script>
+<script nonce="{{ nonce }}">
   const flash = document.getElementById('flash');
   if (flash) setTimeout(() => flash.remove(), 4000);
 
@@ -461,9 +460,13 @@
     input.setSelectionRange(0, 99999); // For mobile devices
     document.execCommand('copy');
   }
+
+  document.getElementById('name')?.addEventListener('input', (event) => autoSlug(event.target.value));
+  document.getElementById('copy-slug-btn')?.addEventListener('click', () => copyToClipboard('#slug'));
+  document.getElementById('structured_language')?.addEventListener('change', (event) => switchEditorLanguage(event.target.value));
 </script>
 
-<script>
+<script nonce="{{ nonce }}">
 (function () {
   var bar = document.getElementById('presence-bar');
   if (!bar) return;
@@ -543,7 +546,7 @@
 }());
 </script>
 
-<script>
+<script nonce="{{ nonce }}">
 (function () {
   var bar = document.getElementById('presence-bar');
   if (!bar) return;

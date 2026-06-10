@@ -1,5 +1,6 @@
 import { Liquid } from 'liquidjs';
 import expand from 'emmet';
+import { currentCspNonce } from '../utils/request-context';
 
 const templateCache = new Map<string, Promise<string>>();
 
@@ -99,8 +100,14 @@ export async function renderLiquid(
   data: Record<string, unknown>,
 ): Promise<string> {
   const template = await loadTemplate(views, templatePath);
-  const engine = getEngine(views, data);
-  return String(await engine.parseAndRender(template, data));
+  const renderData = withRequestGlobals(data);
+  const engine = getEngine(views, renderData);
+  return String(await engine.parseAndRender(template, renderData));
+}
+
+/** Inject request-scoped globals (the CSP nonce) every template can rely on. */
+function withRequestGlobals(data: Record<string, unknown>): Record<string, unknown> {
+  return { nonce: currentCspNonce(), ...data };
 }
 
 export async function renderView(
@@ -129,10 +136,10 @@ async function renderJsonTemplate(
   const jsonTemplate = JSON.parse(rawTemplate) as JsonTemplate;
   if (!jsonTemplate.order?.length) return '';
 
-  const renderData = {
+  const renderData = withRequestGlobals({
     meta: {},
     ...data,
-  } as Record<string, unknown>;
+  });
   const engine = getEngine(views, renderData);
   const renders: Record<string, string> = {};
 

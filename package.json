@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev --local",
-    "deploy": "wrangler deploy",
+    "dev": "npm run build:css && wrangler dev --local",
+    "build:css": "tailwindcss -i src/styles/admin.css -o views/assets/admin.css --minify",
+    "deploy": "npm run build:css && wrangler deploy",
     "db:migrate": "wrangler d1 migrations apply cms --local && wrangler d1 migrations apply cms-published --local",
     "db:migrate:admin": "wrangler d1 migrations apply cms --local",
     "db:migrate:published": "wrangler d1 migrations apply cms-published --local",
     "type-check": "tsc --noEmit",
+    "pretest": "npm run build:css",
     "test": "vitest run"
   },
   "dependencies": {
@@ -19,6 +21,8 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.12",
     "@cloudflare/workers-types": "^4.20260603.1",
+    "@tailwindcss/cli": "^4.3.0",
+    "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8",
     "wrangler": "^4.97.0"
