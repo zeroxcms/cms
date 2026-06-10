@@ -16,11 +16,28 @@ import {
   rejectCrossOriginMutation,
   withSecurityHeaders,
 } from './utils/security';
+import { applyMediaResponseHeaders } from './utils/media';
+import { generateCspNonce, requestContext } from './utils/request-context';
 import type { Env, Variables } from './types';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+const MIN_JWT_SECRET_LENGTH = 32;
+let warnedWeakJwtSecret = false;
+
 app.use('*', async (c, next) => {
+  // A weak HMAC secret lets anyone forge admin tokens, so refuse to serve
+  // (outside local development) rather than run with a forgeable secret.
+  if (!c.env.JWT_SECRET || c.env.JWT_SECRET.length < MIN_JWT_SECRET_LENGTH) {
+    if (!warnedWeakJwtSecret) {
+      warnedWeakJwtSecret = true;
+      console.error(`JWT_SECRET is missing or shorter than ${MIN_JWT_SECRET_LENGTH} characters`);
+    }
+    if (!isLocalHost(new URL(c.req.url).hostname)) {
+      return withSecurityHeaders(new Response('Server misconfigured', { status: 500 }));
+    }
+  }
+
   const canonicalOrigin = c.env.CANONICAL_ORIGIN ?? 'https://cms.eventuai.com';
   const canonicalResponse = canonicalHostResponse(
     c.req.raw,
@@ -31,8 +48,9 @@ app.use('*', async (c, next) => {
   const crossOriginMutation = rejectCrossOriginMutation(c.req.raw, [canonicalOrigin]);
   if (crossOriginMutation) return withSecurityHeaders(crossOriginMutation);
 
-  await next();
-  c.res = withSecurityHeaders(c.res);
+  const cspNonce = generateCspNonce();
+  await requestContext.run({ cspNonce }, () => next());
+  c.res = withSecurityHeaders(c.res, cspNonce);
   return undefined;
 });
 
@@ -82,12 +100,23 @@ async function mediaObjectResponse(bucket: R2Bucket, key: string): Promise<Respo
   object.writeHttpMetadata(headers);
   headers.set('Cache-Control', 'public, max-age=31536000');
   headers.set('ETag', object.httpEtag);
+  applyMediaResponseHeaders(headers, key);
   return new Response(object.body, { headers });
 }
 
 function isLocalHost(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
 }
+
+// ── Static assets (compiled CSS) from the VIEWS binding ──────────────────────
+app.get('/assets/*', async (c) => {
+  const assetPath = new URL(c.req.url).pathname;
+  const response = await c.env.VIEWS.fetch(`https://views.local${assetPath}`);
+  if (!response.ok) return c.notFound();
+  const headers = new Headers(response.headers);
+  headers.set('Cache-Control', 'public, max-age=86400');
+  return new Response(response.body, { status: response.status, headers });
+});
 
 // ── Login shortcut ────────────────────────────────────────────────────────────
 app.get('/login', (c) => c.redirect('/auth/login'));

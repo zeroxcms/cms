@@ -161,7 +161,7 @@
                   </a>
                   {% if page.isPublished %}
                     <form method="POST" action="{{ page.unpublishAction | escape }}" class="inline shrink-0"
-                          onsubmit="return confirm('Unpublish this page?')">
+                          data-confirm="Unpublish this page?">
                       <button type="submit"
                               title="Unpublish"
                               aria-label="Unpublish {{ page.name | escape }}"
@@ -192,7 +192,7 @@
                     </form>
                   {% endif %}
                   <form method="POST" action="{{ page.deleteAction | escape }}" class="inline shrink-0"
-                        onsubmit="return confirm('Move this page to trash?')">
+                        data-confirm="Move this page to trash?">
                     <button type="submit"
                             title="Trash"
                             aria-label="Move {{ page.name | escape }} to trash"
@@ -244,7 +244,7 @@
   {% endif %}
 </div>
 
-<script>
+<script nonce="{{ nonce }}">
   const flash = document.getElementById('flash');
   if (flash) setTimeout(() => flash.remove(), 4000);
 </script>

@@ -38,7 +38,7 @@
                             class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">Restore</button>
                   </form>
                   <form method="POST" action="{{ page.deleteAction | escape }}" class="inline"
-                        onsubmit="return confirm('Permanently delete this page? This cannot be undone.')">
+                        data-confirm="Permanently delete this page? This cannot be undone.">
                     <button type="submit"
                             class="text-red-500 hover:text-red-700 text-sm font-medium">Delete Forever</button>
                   </form>
@@ -56,7 +56,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ nonce }}">
   const flash = document.getElementById('flash');
   if (flash) setTimeout(() => flash.remove(), 4000);
 </script>

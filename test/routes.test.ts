@@ -7,6 +7,7 @@ import type { JWTPayload } from '../src/types';
 
 const IncomingRequest = Request;
 const worker = (exports as unknown as { default: Fetcher }).default;
+let ipCounter = 0;
 
 interface RouteCase {
   name: string;
@@ -79,6 +80,61 @@ describe('app shell routes', () => {
     await expect(response.text()).resolves.toBe('Forbidden');
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
   });
+
+  it('rejects mutations with no browser origin signals (fail closed)', async () => {
+    // Raw request without Origin, Referer or Sec-Fetch-Site — e.g. a script
+    // replaying stolen cookies. Must be rejected even with valid auth.
+    const response = await worker.fetch(new IncomingRequest('http://localhost/admin/pages', {
+      method: 'POST',
+      redirect: 'manual',
+      body: form({ name: 'Sneaky', slug: 'sneaky', page_type: 'default' }),
+      headers: { Cookie: await authCookie() },
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it('allows mutations with an explicit cross-site Sec-Fetch-Site of none (address bar)', async () => {
+    const response = await fetchWorker('/admin/pages', {
+      method: 'POST',
+      body: form({ name: 'Direct', slug: 'direct', page_type: 'default' }),
+      headers: { Cookie: await authCookie(), 'Sec-Fetch-Site': 'none' },
+    });
+
+    expect(response.status).toBe(302);
+  });
+
+  it('rejects mutations marked cross-site by Sec-Fetch-Site', async () => {
+    const response = await fetchWorker('/admin/pages', {
+      method: 'POST',
+      headers: { Cookie: await authCookie(), 'Sec-Fetch-Site': 'cross-site' },
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('issues __Host- prefixed auth cookies on https', async () => {
+    const jti = 'host-cookie-refresh';
+    const token = await signTestToken({ type: 'refresh', jti });
+    await env.DB.prepare(
+      "INSERT INTO sessions (user_id, refresh_token_hash, expires_at) VALUES (?, ?, datetime('now', '+1 day'))",
+    )
+      .bind(1, await hashToken(jti))
+      .run();
+
+    const response = await fetchWorker('/auth/refresh', {
+      method: 'POST',
+      host: 'https://cms.eventuai.com',
+      headers: { Cookie: `refresh_token=${token}` },
+    });
+    const setCookies = response.headers.getSetCookie().join('\n');
+
+    expect(response.status).toBe(200);
+    expect(setCookies).toContain('__Host-access_token=');
+    expect(setCookies).toContain('__Host-refresh_token=');
+    // Legacy unprefixed cookie still accepted (read fallback) but replaced.
+    expect(setCookies).toMatch(/(^|\n)access_token=;/);
+  });
 });
 
 describe('auth routes', () => {
@@ -86,7 +142,8 @@ describe('auth routes', () => {
     { name: 'GET /auth/login', path: '/auth/login', expectedStatus: 200 },
     { name: 'GET /auth/start', path: '/auth/start?provider=eventuai', expectedStatus: 302, location: /^https:\/\/id\.eventuai\.com\/oauth\/authorize/ },
     { name: 'GET /auth/callback missing params', path: '/auth/callback', expectedStatus: 302, location: '/auth/login?error=missing_params' },
-    { name: 'GET /auth/logout', path: '/auth/logout', expectedStatus: 302, location: '/auth/login' },
+    { name: 'POST /auth/logout', method: 'POST', path: '/auth/logout', expectedStatus: 302, location: '/auth/login' },
+    { name: 'GET /auth/logout is rejected', path: '/auth/logout', expectedStatus: 405 },
     { name: 'POST /auth/refresh without token', method: 'POST', path: '/auth/refresh', expectedStatus: 401, json: { error: 'no_refresh_token' } },
   ])('$name', async (route) => {
     await expectRoute(route);
@@ -127,6 +184,93 @@ describe('auth routes', () => {
       .bind('eventuai:eventuai-user')
       .first<{ role: string }>()).toEqual({ role: 'editor' });
     expect((await env.DB.prepare('SELECT id FROM sessions').all()).results).toHaveLength(1);
+  });
+
+  it('purges expired sessions during refresh', async () => {
+    const jti = 'hygiene-refresh';
+    const token = await signTestToken({ type: 'refresh', jti });
+    await env.DB.prepare(
+      "INSERT INTO sessions (user_id, refresh_token_hash, expires_at) VALUES (?, ?, datetime('now', '+1 day'))",
+    )
+      .bind(1, await hashToken(jti))
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO sessions (user_id, refresh_token_hash, expires_at) VALUES (?, ?, datetime('now', '-1 day'))",
+    )
+      .bind(1, 'stale-hash')
+      .run();
+
+    const response = await fetchWorker('/auth/refresh', {
+      method: 'POST',
+      headers: { Cookie: `refresh_token=${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    // The purge runs via waitUntil; poll briefly for it to land.
+    await expect.poll(async () => {
+      const row = await env.DB.prepare('SELECT id FROM sessions WHERE refresh_token_hash = ?')
+        .bind('stale-hash')
+        .first();
+      return row;
+    }, { timeout: 2000 }).toBeNull();
+  });
+
+  it('caps concurrent sessions per user at login', async () => {
+    // Pre-create the user the mocked OAuth login signs in as.
+    await env.DB.prepare(
+      'INSERT INTO users (id, oauth_id, email, name, avatar_url, role) VALUES (?, ?, ?, ?, ?, ?)',
+    )
+      .bind(50, 'eventuai:eventuai-user', 'eventuai@example.com', 'Eventuai User', '', 'editor')
+      .run();
+    for (let i = 0; i < 7; i++) {
+      await env.DB.prepare(
+        "INSERT INTO sessions (user_id, refresh_token_hash, expires_at) VALUES (?, ?, datetime('now', '+1 day'))",
+      )
+        .bind(50, `old-session-${i}`)
+        .run();
+    }
+
+    const callback = await completeMockedOAuthLogin();
+    expect(callback.status).toBe(302);
+
+    await expect.poll(async () => {
+      const rows = await env.DB.prepare('SELECT COUNT(*) AS n FROM sessions WHERE user_id = 50').first<{ n: number }>();
+      return rows?.n;
+    }, { timeout: 2000 }).toBe(5);
+  });
+
+  it('rejects new sign-ups outside ALLOWED_EMAIL_DOMAINS', async () => {
+    const testEnv = env as unknown as Record<string, unknown>;
+    testEnv.ALLOWED_EMAIL_DOMAINS = 'cowise.co';
+    try {
+      const callback = await completeMockedOAuthLogin();
+
+      expect(callback.status).toBe(302);
+      expect(callback.headers.get('Location')).toBe('/auth/login?error=email_not_allowed');
+      expect(await env.DB.prepare('SELECT id FROM users WHERE oauth_id = ?')
+        .bind('eventuai:eventuai-user')
+        .first()).toBeNull();
+    } finally {
+      delete testEnv.ALLOWED_EMAIL_DOMAINS;
+    }
+  });
+
+  it('lets existing users sign in even when their domain is not allowlisted', async () => {
+    await env.DB.prepare(
+      'INSERT INTO users (oauth_id, email, name, avatar_url, role) VALUES (?, ?, ?, ?, ?)',
+    )
+      .bind('eventuai:eventuai-user', 'eventuai@example.com', 'Eventuai User', '', 'editor')
+      .run();
+    const testEnv = env as unknown as Record<string, unknown>;
+    testEnv.ALLOWED_EMAIL_DOMAINS = 'cowise.co';
+    try {
+      const callback = await completeMockedOAuthLogin();
+
+      expect(callback.status).toBe(302);
+      expect(callback.headers.get('Location')).toBe('/admin');
+    } finally {
+      delete testEnv.ALLOWED_EMAIL_DOMAINS;
+    }
   });
 
   it('POST /auth/refresh rotates a valid refresh token session', async () => {
@@ -177,7 +321,7 @@ describe('admin routes', () => {
     { name: 'POST /admin/api/page/:pageId/tag/:tagId', method: 'POST', path: '/admin/api/page/101/tag/301', authenticated: true, expectedStatus: 200 },
     { name: 'DELETE /admin/api/page/remove/page_tag/:id', method: 'DELETE', path: '/admin/api/page/remove/page_tag/401', authenticated: true, expectedStatus: 200, json: { type: 'DELETE_PAGE_TAG', payload: { success: true, id: 401 } } },
     { name: 'DELETE /admin/api/page_tag/:id', method: 'DELETE', path: '/admin/api/page_tag/401', authenticated: true, expectedStatus: 200, json: { type: 'DELETE_PAGE_TAG', payload: { success: true, id: 401 } } },
-    { name: 'POST /admin/upload', method: 'POST', path: '/admin/upload', body: form({ dir: 'uploads' }), authenticated: true, expectedStatus: 200, json: { success: true, files: [] } },
+    { name: 'POST /admin/upload', method: 'POST', path: '/admin/upload', body: form({ dir: 'uploads' }), authenticated: true, expectedStatus: 200, json: { success: true, files: [], errors: [] } },
     { name: 'GET /admin/tag-types', path: '/admin/tag-types', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/tag-types/new', path: '/admin/tag-types/new', authenticated: true, expectedStatus: 200 },
     { name: 'POST /admin/tag-types', method: 'POST', path: '/admin/tag-types', body: form({ name: 'Topics', slug: 'topics' }), authenticated: true, expectedStatus: 302, location: '/admin/tag-types' },
@@ -396,7 +540,7 @@ describe('admin routes', () => {
     const csv = await response.text();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="pages-export-test.csv"');
+    expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="pages-export-test.csv"; filename*=UTF-8\'\'pages-export-test.csv');
     expect(csv).toContain('About');
     expect(csv).toContain('Acme');
   });
@@ -417,7 +561,7 @@ describe('admin routes', () => {
     const csv = await response.text();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="default-export-test.csv"');
+    expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="default-export-test.csv"; filename*=UTF-8\'\'default-export-test.csv');
     expect(csv).toContain('About');
     expect(csv).not.toContain('Acme');
   });
@@ -575,6 +719,50 @@ describe('admin routes', () => {
     expect(await response.json()).toEqual({ success: false, error: 'Editor role required' });
   });
 
+  it('records page mutations in the audit log', async () => {
+    const response = await fetchWorker('/admin/pages', {
+      method: 'POST',
+      body: form({ name: 'Audited Page', slug: 'audited-page', page_type: 'default' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    await expect.poll(async () => {
+      return env.DB.prepare("SELECT user_email, action, entity_type FROM audit_log WHERE action = 'page.create' ORDER BY id DESC LIMIT 1")
+        .first<{ user_email: string; action: string; entity_type: string }>();
+    }, { timeout: 2000 }).toMatchObject({
+      user_email: 'admin@example.com',
+      action: 'page.create',
+      entity_type: 'page',
+    });
+  });
+
+  it('rejects malformed legacy JSON imports without a server error', async () => {
+    const response = await fetchWorker('/admin/pages/import/default', {
+      method: 'POST',
+      body: form({ items: '{not json' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=Invalid+JSON+import+payload');
+  });
+
+  it('POST /admin/api/presence/:pageId sanitizes invalid avatar and timestamp values', async () => {
+    const response = await fetchWorker('/admin/api/presence/101', {
+      method: 'POST',
+      body: JSON.stringify({ lastActive: 'not-a-date', userAvatar: `javascript:${'x'.repeat(600)}` }),
+      headers: { Cookie: await authCookie(), 'Content-Type': 'application/json' },
+    });
+
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare('SELECT user_avatar, last_active FROM presence WHERE page_id = ?')
+      .bind(101)
+      .first<{ user_avatar: string | null; last_active: string }>();
+    expect(row?.user_avatar).toBeNull();
+    expect(Number.isFinite(Date.parse(row?.last_active ?? ''))).toBe(true);
+  });
+
   it('POST /admin/api/page/:pageId/tag/:tagId reports duplicate tag links', async () => {
     await env.DB.prepare('INSERT INTO draft_page_tags (id, page_id, tag_id) VALUES (?, ?, ?)')
       .bind(402, 101, 301)
@@ -595,7 +783,7 @@ describe('admin routes', () => {
   it('POST /admin/upload stores media in R2 and records metadata', async () => {
     const body = new FormData();
     body.append('dir', 'pictures');
-    body.append('file', new File(['tiny image'], 'avatar.png', { type: 'image/png' }));
+    body.append('file', new File([pngBytes()], 'avatar.png', { type: 'image/png' }));
 
     const response = await fetchWorker('/admin/upload', {
       method: 'POST',
@@ -623,7 +811,7 @@ describe('admin routes', () => {
   it('GET /media-preview/* serves uploaded media for editor thumbnails', async () => {
     const body = new FormData();
     body.append('dir', 'pictures');
-    body.append('file', new File(['tiny image'], 'avatar.png', { type: 'image/png' }));
+    body.append('file', new File([pngBytes()], 'avatar.png', { type: 'image/png' }));
 
     const upload = await fetchWorker('/admin/upload', {
       method: 'POST',
@@ -637,7 +825,7 @@ describe('admin routes', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('image/png');
-    expect(new TextDecoder().decode(await response.arrayBuffer())).toBe('tiny image');
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(pngBytes());
   });
 });
 
@@ -668,9 +856,22 @@ async function fetchWorker(
   init: RequestInit & { host?: string } = {},
 ): Promise<Response> {
   const host = init.host ?? 'http://localhost';
+  // Real browsers always send Sec-Fetch-Site; mirror that so the fail-closed
+  // cross-site check sees a same-origin signal unless a test overrides it.
+  const headers = new Headers(init.headers);
+  if (!headers.has('Sec-Fetch-Site') && !headers.has('Origin')) {
+    headers.set('Sec-Fetch-Site', 'same-origin');
+  }
+  // Unique client IP per request so the (real, miniflare-simulated) rate
+  // limiter never throttles unrelated tests.
+  if (!headers.has('CF-Connecting-IP')) {
+    ipCounter += 1;
+    headers.set('CF-Connecting-IP', `10.0.${Math.floor(ipCounter / 250)}.${(ipCounter % 250) + 1}`);
+  }
   const request = new IncomingRequest(new URL(path, host), {
     redirect: 'manual',
     ...init,
+    headers,
   });
   return worker.fetch(request);
 }
@@ -697,9 +898,42 @@ function form(values: Record<string, string>): URLSearchParams {
   return new URLSearchParams(values);
 }
 
+/** 10 bytes: the PNG signature plus two filler bytes. */
+function pngBytes(): Uint8Array {
+  return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
+}
+
 function cookieValue(header: string | null, name: string): string {
   const match = header?.match(new RegExp(`${name}=([^;]+)`));
   return match?.[1] ?? '';
+}
+
+/** Runs the full PKCE flow against a mocked eventuai provider and returns the callback response. */
+async function completeMockedOAuthLogin(): Promise<Response> {
+  const start = await fetchWorker('/auth/start?provider=eventuai');
+  const location = new URL(start.headers.get('Location') ?? '');
+  const state = location.searchParams.get('state') ?? '';
+  const stateCookie = cookieValue(start.headers.get('Set-Cookie'), 'oauth_state');
+
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = input.toString();
+    if (url === 'https://id.eventuai.com/oauth/token') {
+      return Response.json({ access_token: 'provider-token' });
+    }
+    if (url === 'https://id.eventuai.com/oauth/userinfo') {
+      return Response.json({
+        sub: 'eventuai-user',
+        email: 'eventuai@example.com',
+        preferred_username: 'Eventuai User',
+        roles: ['editor'],
+      });
+    }
+    return new Response('Unexpected fetch', { status: 500 });
+  }));
+
+  return fetchWorker(`/auth/callback?code=abc&state=${encodeURIComponent(state)}`, {
+    headers: { Cookie: `oauth_state=${stateCookie}` },
+  });
 }
 
 async function resetData(): Promise<void> {
@@ -714,6 +948,8 @@ async function resetData(): Promise<void> {
     'tag_types',
     'sessions',
     'users',
+    'presence',
+    'audit_log',
   ];
   for (const table of adminTables) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();

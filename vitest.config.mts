@@ -11,7 +11,7 @@ export default defineConfig({
       wrangler: { configPath: './wrangler.toml' },
       miniflare: {
         bindings: {
-          JWT_SECRET: 'test-jwt-secret',
+          JWT_SECRET: 'test-jwt-secret-0123456789abcdef0123456789abcdef',
           ENABLED_PROVIDERS: 'eventuai,github',
           EVENTUAI_CLIENT_ID: 'test-eventuai-client',
           EVENTUAI_CLIENT_SECRET: 'test-eventuai-secret',

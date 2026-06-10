@@ -5,6 +5,9 @@
 
 import type { JWTPayload } from '../types';
 
+const JWT_ISS = 'worker-cms';
+const JWT_AUD = 'worker-cms-admin';
+
 function base64urlEncode(data: ArrayBuffer | Uint8Array | string): string {
   let bytes: Uint8Array;
   if (typeof data === 'string') {
@@ -55,6 +58,8 @@ export async function signJWT(
   const now = Math.floor(Date.now() / 1000);
   const fullPayload: JWTPayload = {
     ...(payload as JWTPayload),
+    iss: JWT_ISS,
+    aud: JWT_AUD,
     iat: payload.iat ?? now,
   };
 
@@ -101,6 +106,7 @@ export async function verifyJWT(
     const payload = JSON.parse(base64urlDecode(payloadEncoded)) as JWTPayload;
     if (typeof payload.exp !== 'number' || typeof payload.iat !== 'number') return null;
     if (payload.type !== 'access' && payload.type !== 'refresh') return null;
+    if (payload.iss !== JWT_ISS || payload.aud !== JWT_AUD) return null;
 
     // Reject expired tokens
     if (payload.exp < Math.floor(Date.now() / 1000)) return null;

@@ -33,6 +33,19 @@ class_name = "PageSyncDO"
 tag = "v1"
 new_sqlite_classes = ["PageSyncDO"]
 
+# ── Rate limiting (per-colo, IP-keyed) ────────────────────────────────────────
+[[unsafe.bindings]]
+name = "AUTH_RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+[[unsafe.bindings]]
+name = "UPLOAD_RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 30, period = 60 }
+
 # ── Plugins (optional) ────────────────────────────────────────────────────────
 # Each plugin is a separate Worker bound as a service binding. List the binding
 # names in the PLUGINS var below, then redeploy. See examples/plugin-events.
@@ -54,6 +67,9 @@ GITHUB_CLIENT_ID = "Ov23lis6jG7x2nBmbFM1"
 OAUTH_REDIRECT_URI = "https://cms.eventuai.com/auth/callback"
 CANONICAL_ORIGIN = "https://cms.eventuai.com"
 SITE_TITLE = "Worker CMS"
+# Optional: restrict new sign-ups to these email domains (comma-separated).
+# Existing users always keep access. Unset = open registration (viewer role).
+# ALLOWED_EMAIL_DOMAINS = "cowise.co"
 
 # Secrets – set via: wrangler secret put JWT_SECRET
 # wrangler secret put EVENTUAI_CLIENT_SECRET

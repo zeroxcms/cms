@@ -28,6 +28,8 @@ export interface JWTPayload {
   role: string;
   type: 'access' | 'refresh';
   jti?: string;        // unique token id (refresh tokens only)
+  iss?: string;        // always set by signJWT; verified on every token
+  aud?: string;        // always set by signJWT; verified on every token
   exp: number;
   iat: number;
 }
@@ -178,6 +180,19 @@ export interface Env {
   OAUTH_REDIRECT_URI: string;
   CANONICAL_ORIGIN?: string;
   SITE_TITLE: string;
+  /**
+   * Optional comma-separated email-domain allowlist for new sign-ups,
+   * e.g. "cowise.co,eventuai.com". Unset = open registration (viewer role).
+   */
+  ALLOWED_EMAIL_DOMAINS?: string;
+  /** Workers Rate Limiting bindings (optional – absent in local dev/tests). */
+  AUTH_RATE_LIMITER?: RateLimiter;
+  UPLOAD_RATE_LIMITER?: RateLimiter;
+}
+
+/** Shape of a Workers Rate Limiting binding. */
+export interface RateLimiter {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 
 // Hono context variables set by the auth middleware

@@ -5,6 +5,9 @@ import { cmsConfig } from '../../cms-config';
 import { getLectLocalizedValue, safeParseLect } from '../../utils/lect';
 import type { Env, Variables, Tag, TagType } from '../../types';
 import { num, slugify, str } from '../../utils/forms';
+import { validateUpload } from '../../utils/media';
+import { rateLimitByIP } from '../../middleware/rate-limit';
+import { logAudit } from '../../utils/audit';
 import type { AppContext } from '../../utils/context';
 
 export const apiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -133,8 +136,21 @@ apiRoutes.get('/api/sync/:pageId', async (c) => {
 apiRoutes.post('/api/presence/:pageId', async (c) => {
   const pageId = Number(c.req.param('pageId'));
   const user = c.get('user');
-  const body = await c.req.json<{ lastActive: string; userAvatar?: string }>();
+  const body = await c.req.json<{ lastActive?: unknown; userAvatar?: unknown }>();
   const now = new Date().toISOString();
+
+  // Presence is best-effort: invalid fields degrade to safe values rather
+  // than failing the heartbeat.
+  const lastActive = typeof body.lastActive === 'string'
+    && body.lastActive.length <= 40
+    && Number.isFinite(Date.parse(body.lastActive))
+    ? body.lastActive
+    : now;
+  const userAvatar = typeof body.userAvatar === 'string'
+    && body.userAvatar.length <= 512
+    && /^(https:\/\/|\/media\/)/.test(body.userAvatar)
+    ? body.userAvatar
+    : null;
 
   await c.env.DB.prepare(
     `INSERT INTO presence (user_id, user_name, user_avatar, page_id, last_seen, last_active)
@@ -143,7 +159,7 @@ apiRoutes.post('/api/presence/:pageId', async (c) => {
        last_seen   = excluded.last_seen,
        last_active = excluded.last_active,
        user_avatar = excluded.user_avatar`,
-  ).bind(String(user.sub), user.name, body.userAvatar || null, pageId, now, body.lastActive).run();
+  ).bind(String(user.sub), user.name, userAvatar, pageId, now, lastActive).run();
 
   await c.env.DB.prepare(
     `DELETE FROM presence WHERE page_id = ? AND last_seen < datetime('now', '-10 minutes')`,
@@ -174,34 +190,51 @@ apiRoutes.delete('/api/presence/:pageId', async (c) => {
 
 // ── Upload ───────────────────────────────────────────────────────────────────
 
+apiRoutes.use('/upload', rateLimitByIP((env) => env.UPLOAD_RATE_LIMITER));
+
 apiRoutes.post('/upload', async (c) => {
   if (!c.env.MEDIA_BUCKET) {
     return c.json({ success: false, error: 'MEDIA_BUCKET binding is not configured' }, 501);
   }
 
   const form = await c.req.formData();
-  const uploadDirectory = slugify(str(form.get('dir')) || 'upload');
+  const uploadDirectory = slugify(str(form.get('dir')) || 'upload') || 'upload';
   const now = new Date();
   const datePath = `${now.getUTCFullYear()}/${now.getUTCMonth() + 1}/${now.getUTCDate()}`;
   const files: string[] = [];
+  const errors: Array<{ file: string; error: string }> = [];
+  let errorStatus: 413 | 415 | undefined;
 
   for (const [, value] of form.entries()) {
     if (typeof value === 'string') continue;
     const file = value as File;
     if (!file.name) continue;
+
+    const headerBytes = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+    const validation = validateUpload(file, headerBytes);
+    if (!validation.ok) {
+      errors.push({ file: file.name, error: validation.error });
+      errorStatus = errorStatus ?? validation.status;
+      continue;
+    }
+
     const safeName = file.name.replace(/[^a-z0-9-_.]/gi, '');
     const key = `${uploadDirectory}/${datePath}/${crypto.randomUUID()}-${safeName}`;
     await c.env.MEDIA_BUCKET.put(key, file.stream(), {
-      httpMetadata: { contentType: file.type || undefined },
+      httpMetadata: { contentType: validation.contentType },
     });
     const url = `/media/${key}`;
     await c.env.DB.prepare(
       'INSERT INTO media_files (key, url, filename, content_type, size) VALUES (?, ?, ?, ?, ?)',
     )
-      .bind(key, url, file.name, file.type || null, file.size)
+      .bind(key, url, file.name, validation.contentType, file.size)
       .run();
+    logAudit(c, 'media.upload', 'media', key, { filename: file.name, size: file.size });
     files.push(url);
   }
 
-  return c.json({ success: true, files });
+  if (errors.length > 0 && files.length === 0) {
+    return c.json({ success: false, files, errors }, errorStatus ?? 415);
+  }
+  return c.json({ success: true, files, errors });
 });
