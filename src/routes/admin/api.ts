@@ -135,9 +135,11 @@ apiRoutes.get('/api/sync/:pageId', async (c) => {
 // ── Presence ─────────────────────────────────────────────────────────────────
 
 apiRoutes.post('/api/presence/:pageId', async (c) => {
-  const pageId = Number(c.req.param('pageId'));
+  const pageId = parseInt(c.req.param('pageId'), 10);
+  if (!Number.isFinite(pageId) || pageId <= 0) return c.json({ error: 'invalid_page_id' }, 400);
+
   const user = c.get('user');
-  const body = await c.req.json<{ lastActive?: unknown; userAvatar?: unknown }>();
+  const body = await c.req.json().catch(() => ({})) as { lastActive?: unknown; userAvatar?: unknown };
   const now = new Date().toISOString();
 
   // Presence is best-effort: invalid fields degrade to safe values rather
@@ -153,40 +155,41 @@ apiRoutes.post('/api/presence/:pageId', async (c) => {
     ? body.userAvatar
     : null;
 
-  await c.env.DB.prepare(
-    `INSERT INTO presence (user_id, user_name, user_avatar, page_id, last_seen, last_active)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT (user_id, page_id) DO UPDATE SET
-       last_seen   = excluded.last_seen,
-       last_active = excluded.last_active,
-       user_avatar = excluded.user_avatar`,
-  ).bind(String(user.sub), user.name, userAvatar, pageId, now, lastActive).run();
-
-  await c.env.DB.prepare(
-    `DELETE FROM presence WHERE page_id = ? AND last_seen < datetime('now', '-10 minutes')`,
-  ).bind(pageId).run();
-
-  return c.json({ ok: true });
+  return c.env.PAGE_SYNC.get(c.env.PAGE_SYNC.idFromName(`page-${pageId}`)).fetch(
+    'https://page-sync/?action=presence',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-User-Id': String(user.sub),
+        'X-User-Name': user.name,
+      },
+      body: JSON.stringify({ lastSeen: now, lastActive, userAvatar }),
+    },
+  );
 });
 
 apiRoutes.get('/api/presence/:pageId', async (c) => {
-  const pageId = Number(c.req.param('pageId'));
-  const { results } = await c.env.DB.prepare(
-    `SELECT user_id, user_name, user_avatar, last_seen, last_active
-     FROM presence
-     WHERE page_id = ? AND last_seen >= datetime('now', '-10 minutes')
-     ORDER BY last_seen DESC`,
-  ).bind(pageId).all<{ user_id: string; user_name: string; user_avatar: string | null; last_seen: string; last_active: string }>();
-  return c.json(results);
+  const pageId = parseInt(c.req.param('pageId'), 10);
+  if (!Number.isFinite(pageId) || pageId <= 0) return c.json({ error: 'invalid_page_id' }, 400);
+
+  return c.env.PAGE_SYNC.get(c.env.PAGE_SYNC.idFromName(`page-${pageId}`)).fetch(
+    'https://page-sync/?action=presence',
+  );
 });
 
 apiRoutes.delete('/api/presence/:pageId', async (c) => {
-  const pageId = Number(c.req.param('pageId'));
+  const pageId = parseInt(c.req.param('pageId'), 10);
+  if (!Number.isFinite(pageId) || pageId <= 0) return c.json({ error: 'invalid_page_id' }, 400);
+
   const user = c.get('user');
-  await c.env.DB.prepare(
-    `DELETE FROM presence WHERE user_id = ? AND page_id = ?`,
-  ).bind(String(user.sub), pageId).run();
-  return c.json({ ok: true });
+  return c.env.PAGE_SYNC.get(c.env.PAGE_SYNC.idFromName(`page-${pageId}`)).fetch(
+    'https://page-sync/?action=presence',
+    {
+      method: 'DELETE',
+      headers: { 'X-User-Id': String(user.sub) },
+    },
+  );
 });
 
 // ── Upload ───────────────────────────────────────────────────────────────────

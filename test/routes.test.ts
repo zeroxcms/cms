@@ -760,7 +760,7 @@ describe('admin routes', () => {
     expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=Invalid+JSON+import+payload');
   });
 
-  it('POST /admin/api/presence/:pageId sanitizes invalid avatar and timestamp values', async () => {
+  it('POST /admin/api/presence/:pageId stores sanitized presence in the page Durable Object', async () => {
     const response = await fetchWorker('/admin/api/presence/101', {
       method: 'POST',
       body: JSON.stringify({ lastActive: 'not-a-date', userAvatar: `javascript:${'x'.repeat(600)}` }),
@@ -768,11 +768,28 @@ describe('admin routes', () => {
     });
 
     expect(response.status).toBe(200);
-    const row = await env.DB.prepare('SELECT user_avatar, last_active FROM presence WHERE page_id = ?')
+    const presenceResponse = await fetchWorker('/admin/api/presence/101', {
+      headers: { Cookie: await authCookie() },
+    });
+    const rows = await presenceResponse.json() as Array<{
+      user_id: string;
+      user_name: string;
+      user_avatar: string | null;
+      last_seen: string;
+      last_active: string;
+    }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      user_id: '1',
+      user_name: 'Admin User',
+      user_avatar: null,
+    });
+    expect(Number.isFinite(Date.parse(rows[0].last_active))).toBe(true);
+
+    const d1Row = await env.DB.prepare('SELECT user_avatar, last_active FROM presence WHERE page_id = ?')
       .bind(101)
       .first<{ user_avatar: string | null; last_active: string }>();
-    expect(row?.user_avatar).toBeNull();
-    expect(Number.isFinite(Date.parse(row?.last_active ?? ''))).toBe(true);
+    expect(d1Row).toBeNull();
   });
 
   it('POST /admin/api/page/:pageId/tag/:tagId reports duplicate tag links', async () => {

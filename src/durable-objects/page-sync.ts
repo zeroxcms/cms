@@ -40,6 +40,20 @@ interface CrdtRow {
   opId: string;
 }
 
+interface PresenceInput {
+  lastActive?: unknown;
+  lastSeen?: unknown;
+  userAvatar?: unknown;
+}
+
+interface PresenceRow {
+  user_id: string;
+  user_name: string;
+  user_avatar: string | null;
+  last_seen: string;
+  last_active: string;
+}
+
 export class PageSyncDO implements DurableObject {
   private readonly sql: SqlStorage;
 
@@ -64,6 +78,17 @@ export class PageSyncDO implements DurableObject {
         PRIMARY KEY (path, user_id)
       )
     `);
+
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS presence (
+        user_id      TEXT    PRIMARY KEY,
+        user_name    TEXT    NOT NULL,
+        user_avatar  TEXT,
+        last_seen    TEXT    NOT NULL,
+        last_seen_ms INTEGER NOT NULL,
+        last_active  TEXT    NOT NULL
+      )
+    `);
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -74,6 +99,10 @@ export class PageSyncDO implements DurableObject {
       this.sql.exec(`DELETE FROM crdt_ops`);
       this.broadcast(JSON.stringify({ type: 'saved' }));
       return new Response('ok');
+    }
+
+    if (url.searchParams.get('action') === 'presence') {
+      return this.handlePresence(request);
     }
 
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
@@ -88,6 +117,67 @@ export class PageSyncDO implements DurableObject {
     server.serializeAttachment({ userId, userName } satisfies WsAttachment);
 
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  private async handlePresence(request: Request): Promise<Response> {
+    this.deleteStalePresence();
+
+    if (request.method === 'GET') {
+      const rows = this.sql.exec(
+        `SELECT user_id, user_name, user_avatar, last_seen, last_active
+         FROM presence
+         ORDER BY last_seen_ms DESC`,
+      ).toArray() as unknown as PresenceRow[];
+      return Response.json(rows);
+    }
+
+    const userId = request.headers.get('X-User-Id') ?? '';
+    if (!userId) return Response.json({ error: 'missing_user' }, { status: 400 });
+
+    if (request.method === 'DELETE') {
+      this.sql.exec(`DELETE FROM presence WHERE user_id = ?`, userId);
+      return Response.json({ ok: true });
+    }
+
+    if (request.method !== 'POST') {
+      return Response.json({ error: 'method_not_allowed' }, { status: 405 });
+    }
+
+    const userName = request.headers.get('X-User-Name') ?? '';
+    if (!userName) return Response.json({ error: 'missing_user' }, { status: 400 });
+
+    const body = await request.json().catch(() => ({})) as PresenceInput;
+    const now = new Date();
+    const lastSeen = typeof body.lastSeen === 'string' && Number.isFinite(Date.parse(body.lastSeen))
+      ? body.lastSeen
+      : now.toISOString();
+    const lastActive = typeof body.lastActive === 'string' && Number.isFinite(Date.parse(body.lastActive))
+      ? body.lastActive
+      : lastSeen;
+    const userAvatar = typeof body.userAvatar === 'string' && body.userAvatar ? body.userAvatar : null;
+
+    this.sql.exec(
+      `INSERT INTO presence (user_id, user_name, user_avatar, last_seen, last_seen_ms, last_active)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (user_id) DO UPDATE SET
+         user_name    = excluded.user_name,
+         user_avatar  = excluded.user_avatar,
+         last_seen    = excluded.last_seen,
+         last_seen_ms = excluded.last_seen_ms,
+         last_active  = excluded.last_active`,
+      userId,
+      userName,
+      userAvatar,
+      lastSeen,
+      Date.parse(lastSeen),
+      lastActive,
+    );
+
+    return Response.json({ ok: true });
+  }
+
+  private deleteStalePresence(): void {
+    this.sql.exec(`DELETE FROM presence WHERE last_seen_ms < ?`, Date.now() - 10 * 60 * 1000);
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
