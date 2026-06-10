@@ -398,10 +398,13 @@ export async function exportPagesCsv(db: D1Database, pages: Page[], pageTypes: s
 }
 
 export function csvDownloadResponse(csv: string, filename: string): Response {
+  // Sanitize the ASCII fallback and RFC 5987-encode the full name so the
+  // filename can never inject quotes/CR/LF into the header.
+  const asciiFilename = filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\;,]/g, '_');
   return new Response(csv, {
     headers: {
       'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Disposition': `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       'Content-Type': 'text/csv; charset=utf-8',
       'Expires': '0',
       'Pragma': 'no-cache',

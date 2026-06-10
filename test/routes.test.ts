@@ -452,7 +452,7 @@ describe('admin routes', () => {
     const csv = await response.text();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="pages-export-test.csv"');
+    expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="pages-export-test.csv"; filename*=UTF-8\'\'pages-export-test.csv');
     expect(csv).toContain('About');
     expect(csv).toContain('Acme');
   });
@@ -473,7 +473,7 @@ describe('admin routes', () => {
     const csv = await response.text();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="default-export-test.csv"');
+    expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="default-export-test.csv"; filename*=UTF-8\'\'default-export-test.csv');
     expect(csv).toContain('About');
     expect(csv).not.toContain('Acme');
   });
@@ -629,6 +629,21 @@ describe('admin routes', () => {
     expect(response.status).toBe(403);
     expect(response.headers.get('X-CMS-Error')).toBe('editor-role-required');
     expect(await response.json()).toEqual({ success: false, error: 'Editor role required' });
+  });
+
+  it('POST /admin/api/presence/:pageId sanitizes invalid avatar and timestamp values', async () => {
+    const response = await fetchWorker('/admin/api/presence/101', {
+      method: 'POST',
+      body: JSON.stringify({ lastActive: 'not-a-date', userAvatar: `javascript:${'x'.repeat(600)}` }),
+      headers: { Cookie: await authCookie(), 'Content-Type': 'application/json' },
+    });
+
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare('SELECT user_avatar, last_active FROM presence WHERE page_id = ?')
+      .bind(101)
+      .first<{ user_avatar: string | null; last_active: string }>();
+    expect(row?.user_avatar).toBeNull();
+    expect(Number.isFinite(Date.parse(row?.last_active ?? ''))).toBe(true);
   });
 
   it('POST /admin/api/page/:pageId/tag/:tagId reports duplicate tag links', async () => {

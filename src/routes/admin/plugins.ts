@@ -30,14 +30,20 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
   const upstream = `${PLUGIN_ORIGIN}${PLUGIN_PREFIX}/admin${rest}${url.search}`;
 
   const user = c.get('user');
-  const headers = new Headers(c.req.raw.headers);
+  // Forward an explicit allowlist of request headers. Copying everything
+  // would leak CMS cookies and let clients smuggle x-plugin-secret /
+  // x-cms-user values through to the plugin Worker.
+  const FORWARD_HEADERS = ['accept', 'accept-language', 'content-type', 'content-length', 'user-agent', 'x-requested-with'];
+  const headers = new Headers();
+  for (const name of FORWARD_HEADERS) {
+    const value = c.req.header(name);
+    if (value) headers.set(name, value);
+  }
   headers.set(
     'x-cms-user',
     JSON.stringify({ id: user.sub, email: user.email, name: user.name, role: user.role }),
   );
   if (c.env.PLUGIN_SECRET) headers.set('x-plugin-secret', c.env.PLUGIN_SECRET);
-  // Never leak CMS session/auth cookies to the plugin Worker.
-  headers.delete('cookie');
 
   const hasBody = c.req.method !== 'GET' && c.req.method !== 'HEAD';
   return plugin.fetcher.fetch(upstream, {

@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { env, exports } from 'cloudflare:workers';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resolveCmsConfig, clearConfigCache } from '../src/plugins/config';
 import { clearManifestCache } from '../src/plugins/registry';
 import { deliverHook } from '../src/plugins/hooks';
 import { viewsFor } from '../src/plugins/views';
 import { cmsConfig } from '../src/cms-config';
+import { signJWT } from '../src/utils/jwt';
 import type { Env, JWTPayload } from '../src/types';
 
 const EVENTS_MANIFEST = {
@@ -107,5 +109,63 @@ describe('viewsFor', () => {
     const env = envWith(plugin, { VIEWS: { fetch: async () => new Response('CORE') } });
     const res = await viewsFor(env).fetch('https://views.local/layout/default.liquid');
     expect(await res.text()).toBe('CORE');
+  });
+});
+
+describe('plugin admin proxy', () => {
+  const worker = (exports as unknown as { default: Fetcher }).default;
+  const testEnv = env as unknown as Record<string, unknown>;
+  let savedBindings: Record<string, unknown>;
+
+  beforeEach(() => {
+    savedBindings = {
+      PLUGINS: testEnv.PLUGINS,
+      PLUGIN_TEST: testEnv.PLUGIN_TEST,
+      PLUGIN_SECRET: testEnv.PLUGIN_SECRET,
+    };
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedBindings)) {
+      if (value === undefined) delete testEnv[key];
+      else testEnv[key] = value;
+    }
+  });
+
+  it('never forwards client cookies or smuggled trust headers to the plugin', async () => {
+    const captured: Array<{ url: string; headers: Headers }> = [];
+    testEnv.PLUGINS = 'PLUGIN_TEST';
+    delete testEnv.PLUGIN_SECRET;
+    testEnv.PLUGIN_TEST = {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(url).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        captured.push({ url, headers: new Headers(init?.headers) });
+        return new Response('plugin ok');
+      },
+    };
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/events/dashboard', {
+      headers: {
+        Cookie: `access_token=${token}`,
+        'Sec-Fetch-Site': 'same-origin',
+        'x-plugin-secret': 'attacker-value',
+        'x-cms-user': '{"id":"999","role":"admin"}',
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(captured).toHaveLength(1);
+    const forwarded = captured[0].headers;
+    expect(forwarded.get('cookie')).toBeNull();
+    expect(forwarded.get('x-plugin-secret')).toBeNull();
+    // x-cms-user must be the server-derived identity, not the client header.
+    expect(JSON.parse(forwarded.get('x-cms-user') ?? '{}')).toMatchObject({ id: '1', email: 'admin@example.com' });
   });
 });
