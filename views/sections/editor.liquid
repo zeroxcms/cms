@@ -496,22 +496,43 @@
     if (!container) return;
     var now = Date.now();
     var IDLE_MS = 5 * 60 * 1000;
-    container.innerHTML = editors.map(function (e) {
+    container.replaceChildren();
+    editors.forEach(function (e) {
+      var userId = String(e.user_id || '');
+      var userName = String(e.user_name || '');
+      var userAvatar = String(e.user_avatar || '');
       var idle = (now - new Date(e.last_active).getTime()) > IDLE_MS;
-      var color = userColor(e.user_id);
+      var color = userColor(userId);
       var ring = idle ? '2px solid #9ca3af' : '2px solid ' + color;
       var opacity = idle ? '0.4' : '1';
-      var label = e.user_name + (idle ? ' (idle)' : '') + (e.user_id === currentUserId ? ' (you)' : '');
-      if (e.user_avatar) {
-        return '<img src="' + e.user_avatar + '" title="' + label + '" alt="' + e.user_name +
-          '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;outline:' + ring +
-          ';opacity:' + opacity + ';transition:opacity .3s">';
+      var label = userName + (idle ? ' (idle)' : '') + (userId === currentUserId ? ' (you)' : '');
+      var node;
+      if (userAvatar) {
+        node = document.createElement('img');
+        node.src = userAvatar;
+        node.alt = userName;
+        node.style.objectFit = 'cover';
+      } else {
+        node = document.createElement('div');
+        node.textContent = initials(userName);
+        node.setAttribute('aria-label', label);
+        node.style.background = color;
+        node.style.display = 'flex';
+        node.style.alignItems = 'center';
+        node.style.justifyContent = 'center';
+        node.style.fontSize = '11px';
+        node.style.fontWeight = '700';
+        node.style.color = '#fff';
       }
-      return '<div title="' + label + '" aria-label="' + label +
-        '" style="width:32px;height:32px;border-radius:50%;background:' + color +
-        ';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;outline:' +
-        ring + ';opacity:' + opacity + ';transition:opacity .3s">' + initials(e.user_name) + '</div>';
-    }).join('');
+      node.title = label;
+      node.style.width = '32px';
+      node.style.height = '32px';
+      node.style.borderRadius = '50%';
+      node.style.outline = ring;
+      node.style.opacity = opacity;
+      node.style.transition = 'opacity .3s';
+      container.appendChild(node);
+    });
     // Enable CRDT only while at least one other editor is present.
     if (editors.length > 1) {
       window.__cmsSync && window.__cmsSync.enable();
@@ -676,12 +697,6 @@
     return (name || '?').trim().split(/\s+/).map(function (w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"]/g, function (ch) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch];
-    });
-  }
-
   function positionBadge(path) {
     var badge = badgeEls[path];
     var el = findField(path);
@@ -712,17 +727,35 @@
       highlightOverlay.appendChild(badge);
       badgeEls[path] = badge;
     }
-    badge.innerHTML = users.map(function (uid) {
+    badge.replaceChildren();
+    users.forEach(function (uid) {
       var info = editorsByPath[path][uid];
-      var title = escapeHtml(info.name + ' is editing');
-      var dot = 'width:18px;height:18px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px ' + info.color + ';object-fit:cover';
+      var title = info.name + ' is editing';
+      var node;
       if (info.avatar) {
-        return '<img src="' + escapeHtml(info.avatar) + '" title="' + title + '" alt="" style="' + dot + '">';
+        node = document.createElement('img');
+        node.src = info.avatar;
+        node.alt = '';
+        node.style.objectFit = 'cover';
+      } else {
+        node = document.createElement('div');
+        node.textContent = initials(info.name);
+        node.style.background = info.color;
+        node.style.color = '#fff';
+        node.style.fontSize = '9px';
+        node.style.fontWeight = '700';
+        node.style.display = 'flex';
+        node.style.alignItems = 'center';
+        node.style.justifyContent = 'center';
       }
-      return '<div title="' + title + '" style="' + dot + ';background:' + info.color +
-        ';color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">' +
-        escapeHtml(initials(info.name)) + '</div>';
-    }).join('');
+      node.title = title;
+      node.style.width = '18px';
+      node.style.height = '18px';
+      node.style.borderRadius = '50%';
+      node.style.border = '2px solid #fff';
+      node.style.boxShadow = '0 0 0 1px ' + info.color;
+      badge.appendChild(node);
+    });
     positionBadge(path);
   }
 

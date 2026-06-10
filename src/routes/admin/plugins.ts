@@ -29,6 +29,14 @@ pluginAdminRoutes.all('/plugins/:pluginId/*', (c) => proxyToPlugin(c));
 async function proxyToPlugin(c: AppContext): Promise<Response> {
   const pluginId = c.req.param('pluginId');
   if (!pluginId) return c.notFound();
+  if (!c.env.PLUGIN_SECRET) {
+    console.error('PLUGIN_SECRET is required before plugin admin routes can be served');
+    return new Response('Server misconfigured', {
+      status: 500,
+      headers: { 'X-CMS-Error': 'plugin-secret-required' },
+    });
+  }
+
   const plugin = await pluginById(c.env, pluginId);
   if (!plugin) return c.notFound();
 
@@ -51,7 +59,7 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
     'x-cms-user',
     JSON.stringify({ id: user.sub, email: user.email, name: user.name, role: user.role }),
   );
-  if (c.env.PLUGIN_SECRET) headers.set('x-plugin-secret', c.env.PLUGIN_SECRET);
+  headers.set('x-plugin-secret', c.env.PLUGIN_SECRET);
 
   warnSharedOrigin();
 

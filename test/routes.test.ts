@@ -70,6 +70,18 @@ describe('app shell routes', () => {
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 
+  it('marks auth and admin responses no-store while keeping assets cacheable', async () => {
+    const [login, admin, asset] = await Promise.all([
+      fetchWorker('/auth/login'),
+      fetchWorker('/admin', { headers: { Cookie: await authCookie() } }),
+      fetchWorker('/assets/admin.css'),
+    ]);
+
+    expect(login.headers.get('Cache-Control')).toBe('no-store');
+    expect(admin.headers.get('Cache-Control')).toBe('no-store');
+    expect(asset.headers.get('Cache-Control')).toBe('public, max-age=86400');
+  });
+
   it('rejects cross-origin mutations before protected routes run', async () => {
     const response = await fetchWorker('/admin/pages', {
       method: 'POST',

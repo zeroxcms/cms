@@ -3,6 +3,7 @@ import {
   canonicalHostResponse,
   rejectCrossOriginMutation,
   rejectCrossSiteRequest,
+  withSensitiveCacheHeaders,
   withSecurityHeaders,
 } from '../src/utils/security';
 import { hasPermission, permissionsFor } from '../src/utils/roles';
@@ -209,6 +210,21 @@ describe('security utilities', () => {
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(response.headers.get('Content-Security-Policy')).toContain("default-src 'self'");
+  });
+
+  it('marks authenticated surfaces as no-store without touching static paths', () => {
+    const admin = withSensitiveCacheHeaders(
+      new Response('ok'),
+      new Request('https://cms.example.com/admin'),
+    );
+    const asset = withSensitiveCacheHeaders(
+      new Response('ok', { headers: { 'Cache-Control': 'public, max-age=86400' } }),
+      new Request('https://cms.example.com/assets/admin.css'),
+    );
+
+    expect(admin.headers.get('Cache-Control')).toBe('no-store');
+    expect(admin.headers.get('Pragma')).toBe('no-cache');
+    expect(asset.headers.get('Cache-Control')).toBe('public, max-age=86400');
   });
 });
 

@@ -14,6 +14,7 @@ import { errorPage } from './templates/errors';
 import {
   canonicalHostResponse,
   rejectCrossOriginMutation,
+  withSensitiveCacheHeaders,
   withSecurityHeaders,
 } from './utils/security';
 import { applyMediaResponseHeaders } from './utils/media';
@@ -34,7 +35,10 @@ app.use('*', async (c, next) => {
       console.error(`JWT_SECRET is missing or shorter than ${MIN_JWT_SECRET_LENGTH} characters`);
     }
     if (!isLocalHost(new URL(c.req.url).hostname)) {
-      return withSecurityHeaders(new Response('Server misconfigured', { status: 500 }));
+      return withSensitiveCacheHeaders(
+        withSecurityHeaders(new Response('Server misconfigured', { status: 500 })),
+        c.req.raw,
+      );
     }
   }
 
@@ -43,14 +47,18 @@ app.use('*', async (c, next) => {
     c.req.raw,
     canonicalOrigin,
   );
-  if (canonicalResponse) return withSecurityHeaders(canonicalResponse);
+  if (canonicalResponse) {
+    return withSensitiveCacheHeaders(withSecurityHeaders(canonicalResponse), c.req.raw);
+  }
 
   const crossOriginMutation = rejectCrossOriginMutation(c.req.raw, [canonicalOrigin]);
-  if (crossOriginMutation) return withSecurityHeaders(crossOriginMutation);
+  if (crossOriginMutation) {
+    return withSensitiveCacheHeaders(withSecurityHeaders(crossOriginMutation), c.req.raw);
+  }
 
   const cspNonce = generateCspNonce();
   await requestContext.run({ cspNonce }, () => next());
-  c.res = withSecurityHeaders(c.res, cspNonce);
+  c.res = withSensitiveCacheHeaders(withSecurityHeaders(c.res, cspNonce), c.req.raw);
   return undefined;
 });
 
