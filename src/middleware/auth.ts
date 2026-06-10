@@ -12,18 +12,20 @@
 // ============================================================
 
 import { createMiddleware } from 'hono/factory';
-import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { signJWT, verifyJWT, hashToken, generateTokenId } from '../utils/jwt';
 import { hasAnyRole } from '../utils/roles';
+import {
+  accessCookieName,
+  clearAuthCookie,
+  readAuthCookie,
+  refreshCookieName,
+  setAuthCookie,
+} from '../utils/cookies';
 import { EDITOR_ROLES } from '../types';
 import type { Env, Variables, JWTPayload } from '../types';
 
 const ACCESS_TOKEN_TTL = 15 * 60;       // 15 minutes
 const REFRESH_TOKEN_TTL = 7 * 24 * 3600; // 7 days
-
-function isSecureRequest(request: Request): boolean {
-  return new URL(request.url).protocol === 'https:';
-}
 
 function wantsJsonResponse(request: Request): boolean {
   const url = new URL(request.url);
@@ -47,7 +49,7 @@ export const authMiddleware = createMiddleware<{
 
   // Helper: read access token and verify
   const readAccess = async (): Promise<JWTPayload | null> => {
-    const token = getCookie(c, 'access_token');
+    const token = readAuthCookie(c, accessCookieName);
     if (!token) return null;
     const payload = await verifyJWT(token, secret);
     if (!payload || payload.type !== 'access') return null;
@@ -56,7 +58,7 @@ export const authMiddleware = createMiddleware<{
 
   // Helper: perform refresh flow
   const tryRefresh = async (): Promise<JWTPayload | null> => {
-    const refreshToken = getCookie(c, 'refresh_token');
+    const refreshToken = readAuthCookie(c, refreshCookieName);
     if (!refreshToken) return null;
 
     const refreshPayload = await verifyJWT(refreshToken, secret);
@@ -120,20 +122,8 @@ export const authMiddleware = createMiddleware<{
       .run();
 
     // Set cookies
-    const cookieOpts = {
-      httpOnly: true,
-      secure: isSecureRequest(c.req.raw),
-      sameSite: 'Lax' as const,
-      path: '/',
-    };
-    setCookie(c, 'access_token', newAccessToken, {
-      ...cookieOpts,
-      maxAge: ACCESS_TOKEN_TTL,
-    });
-    setCookie(c, 'refresh_token', newRefreshToken, {
-      ...cookieOpts,
-      maxAge: REFRESH_TOKEN_TTL,
-    });
+    setAuthCookie(c, accessCookieName, newAccessToken, ACCESS_TOKEN_TTL);
+    setAuthCookie(c, refreshCookieName, newRefreshToken, REFRESH_TOKEN_TTL);
 
     return accessPayload;
   };
@@ -144,8 +134,8 @@ export const authMiddleware = createMiddleware<{
   }
 
   if (!user) {
-    deleteCookie(c, 'access_token', { path: '/' });
-    deleteCookie(c, 'refresh_token', { path: '/' });
+    clearAuthCookie(c, accessCookieName);
+    clearAuthCookie(c, refreshCookieName);
     if (wantsJsonResponse(c.req.raw)) {
       return jsonError({ success: false, error: 'Authentication required' }, 401, 'authentication-required');
     }

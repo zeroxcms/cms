@@ -54,31 +54,23 @@ export function canonicalHostResponse(request: Request, canonicalOrigin: string)
 
 export function rejectCrossOriginMutation(request: Request, allowedOrigins: string[] = []): Response | null {
   if (SAFE_METHODS.has(request.method.toUpperCase())) return null;
-
-  const url = new URL(request.url);
-  const validOrigins = new Set([url.origin, ...allowedOrigins]);
-  const origin = request.headers.get('Origin');
-  if (origin) {
-    if (!validOrigins.has(origin)) {
-      return forbiddenResponse(request, 'Origin is not allowed');
-    }
-    return null;
-  }
-
-  if (isAllowedReferer(request.headers.get('Referer'), validOrigins)) {
-    return null;
-  }
-
-  if (request.headers.get('Sec-Fetch-Site') === 'cross-site') {
-    return forbiddenResponse(request, 'Cross-site request rejected');
-  }
-
-  return null;
+  return checkCrossSite(request, allowedOrigins);
 }
 
 export function rejectCrossSiteRequest(request: Request, allowedOrigins: string[] = []): Response | null {
+  return checkCrossSite(request, allowedOrigins);
+}
+
+/**
+ * Fail-closed cross-site check: a request is allowed only when at least one
+ * browser signal (Origin, Referer, Sec-Fetch-Site) positively identifies it
+ * as same-origin. Headerless clients (curl scripts) must send an Origin
+ * header matching the canonical origin.
+ */
+function checkCrossSite(request: Request, allowedOrigins: string[]): Response | null {
   const url = new URL(request.url);
   const validOrigins = new Set([url.origin, ...allowedOrigins]);
+
   const origin = request.headers.get('Origin');
   if (origin) {
     if (!validOrigins.has(origin)) {
@@ -91,10 +83,12 @@ export function rejectCrossSiteRequest(request: Request, allowedOrigins: string[
     return null;
   }
 
-  if (request.headers.get('Sec-Fetch-Site') === 'cross-site') {
-    return forbiddenResponse(request, 'Cross-site request rejected');
+  const secFetchSite = request.headers.get('Sec-Fetch-Site');
+  if (secFetchSite === 'same-origin' || secFetchSite === 'same-site' || secFetchSite === 'none') {
+    return null;
   }
-  return null;
+
+  return forbiddenResponse(request, 'Cross-site request rejected');
 }
 
 function forbiddenResponse(request: Request, error: string): Response {

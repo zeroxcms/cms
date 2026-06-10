@@ -31,7 +31,7 @@ async function upload(file: File): Promise<Response> {
   return worker.fetch(new Request('http://localhost/admin/upload', {
     method: 'POST',
     body,
-    headers: { Cookie: await authCookie() },
+    headers: { Cookie: await authCookie(), 'Sec-Fetch-Site': 'same-origin' },
   }));
 }
 

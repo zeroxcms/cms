@@ -11,8 +11,16 @@ import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { signJWT, verifyJWT, hashToken, generateTokenId } from '../utils/jwt';
 import { generateCodeVerifier, generateCodeChallenge, generateState } from '../utils/pkce';
-import { rejectCrossSiteRequest } from '../utils/security';
 import { rateLimitByIP } from '../middleware/rate-limit';
+import {
+  accessCookieName,
+  clearAuthCookie,
+  isSecureRequest,
+  oauthStateCookieName,
+  readAuthCookie,
+  refreshCookieName,
+  setAuthCookie,
+} from '../utils/cookies';
 import { normalizeRoles } from '../utils/roles';
 import { loginPage } from '../templates/login';
 import type { Env, Variables, JWTPayload } from '../types';
@@ -62,10 +70,6 @@ interface OAuthStatePayload extends JWTPayload {
   state?: string;
   code_verifier?: string;
   provider?: string;
-}
-
-function isSecureRequest(request: Request): boolean {
-  return new URL(request.url).protocol === 'https:';
 }
 
 /** Returns the enabled providers in declaration order. */
@@ -195,11 +199,13 @@ authRoutes.get('/start', async (c) => {
   };
   const stateCookie = await signJWT(statePayload, c.env.JWT_SECRET);
   const secureCookie = isSecureRequest(c.req.raw);
-  setCookie(c, 'oauth_state', stateCookie, {
+  // __Host- requires Path=/; SameSite=None so the cookie is sent on the
+  // cross-site top-level redirect back from the OAuth provider.
+  setCookie(c, oauthStateCookieName(secureCookie), stateCookie, {
     httpOnly: true,
     secure: secureCookie,
     sameSite: secureCookie ? 'None' : 'Lax',
-    path: '/auth',
+    path: '/',
     maxAge: 600,
   });
 
@@ -227,14 +233,17 @@ authRoutes.get('/callback', async (c) => {
     return c.redirect('/auth/login?error=missing_params');
   }
 
-  // Verify PKCE state cookie
-  const stateCookie = getCookie(c, 'oauth_state');
+  // Verify PKCE state cookie (legacy unprefixed name accepted for one release)
   const secureCookie = isSecureRequest(c.req.raw);
-  deleteCookie(c, 'oauth_state', {
+  const stateCookie = getCookie(c, oauthStateCookieName(secureCookie))
+    ?? (secureCookie ? getCookie(c, oauthStateCookieName(false)) : undefined)
+    ?? getCookie(c, 'oauth_state');
+  deleteCookie(c, oauthStateCookieName(secureCookie), {
     secure: secureCookie,
     sameSite: secureCookie ? 'None' : 'Lax',
-    path: '/auth',
+    path: '/',
   });
+  deleteCookie(c, 'oauth_state', { path: '/auth' });
   if (!stateCookie) {
     return c.redirect('/auth/login?error=missing_state');
   }
@@ -381,30 +390,17 @@ authRoutes.get('/callback', async (c) => {
     .bind(dbUser.id, tokenHash)
     .run();
 
-  const cookieOpts = {
-    httpOnly: true,
-    secure: isSecureRequest(c.req.raw),
-    sameSite: 'Lax' as const,
-    path: '/',
-  };
-  setCookie(c, 'access_token', accessToken, {
-    ...cookieOpts,
-    maxAge: ACCESS_TOKEN_TTL,
-  });
-  setCookie(c, 'refresh_token', refreshToken, {
-    ...cookieOpts,
-    maxAge: REFRESH_TOKEN_TTL,
-  });
+  setAuthCookie(c, accessCookieName, accessToken, ACCESS_TOKEN_TTL);
+  setAuthCookie(c, refreshCookieName, refreshToken, REFRESH_TOKEN_TTL);
 
   return c.redirect('/admin');
 });
 
-// GET /auth/logout – revoke session and clear cookies
-authRoutes.get('/logout', async (c) => {
-  const crossSite = rejectCrossSiteRequest(c.req.raw);
-  if (crossSite) return crossSite;
-
-  const refreshToken = getCookie(c, 'refresh_token');
+// POST /auth/logout – revoke session and clear cookies.
+// Logout is a state change: POST only, protected by the global
+// cross-site mutation check in index.ts.
+authRoutes.post('/logout', async (c) => {
+  const refreshToken = readAuthCookie(c, refreshCookieName);
   if (refreshToken) {
     const payload = await verifyJWT(refreshToken, c.env.JWT_SECRET);
     if (payload?.jti) {
@@ -417,15 +413,17 @@ authRoutes.get('/logout', async (c) => {
     }
   }
 
-  deleteCookie(c, 'access_token', { path: '/' });
-  deleteCookie(c, 'refresh_token', { path: '/' });
+  clearAuthCookie(c, accessCookieName);
+  clearAuthCookie(c, refreshCookieName);
 
   return c.redirect('/auth/login');
 });
 
+authRoutes.get('/logout', (c) => c.text('Method Not Allowed', 405));
+
 // POST /auth/refresh – programmatic silent refresh (JSON)
 authRoutes.post('/refresh', async (c) => {
-  const refreshToken = getCookie(c, 'refresh_token');
+  const refreshToken = readAuthCookie(c, refreshCookieName);
   if (!refreshToken) {
     return c.json({ error: 'no_refresh_token' }, 401);
   }
@@ -491,20 +489,8 @@ authRoutes.post('/refresh', async (c) => {
     .bind(newTokenHash, session.id)
     .run();
 
-  const cookieOpts = {
-    httpOnly: true,
-    secure: isSecureRequest(c.req.raw),
-    sameSite: 'Lax' as const,
-    path: '/',
-  };
-  setCookie(c, 'access_token', newAccessToken, {
-    ...cookieOpts,
-    maxAge: ACCESS_TOKEN_TTL,
-  });
-  setCookie(c, 'refresh_token', newRefreshToken, {
-    ...cookieOpts,
-    maxAge: REFRESH_TOKEN_TTL,
-  });
+  setAuthCookie(c, accessCookieName, newAccessToken, ACCESS_TOKEN_TTL);
+  setAuthCookie(c, refreshCookieName, newRefreshToken, REFRESH_TOKEN_TTL);
 
   return c.json({ ok: true, expires_in: ACCESS_TOKEN_TTL });
 });

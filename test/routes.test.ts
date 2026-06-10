@@ -79,6 +79,61 @@ describe('app shell routes', () => {
     await expect(response.text()).resolves.toBe('Forbidden');
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
   });
+
+  it('rejects mutations with no browser origin signals (fail closed)', async () => {
+    // Raw request without Origin, Referer or Sec-Fetch-Site — e.g. a script
+    // replaying stolen cookies. Must be rejected even with valid auth.
+    const response = await worker.fetch(new IncomingRequest('http://localhost/admin/pages', {
+      method: 'POST',
+      redirect: 'manual',
+      body: form({ name: 'Sneaky', slug: 'sneaky', page_type: 'default' }),
+      headers: { Cookie: await authCookie() },
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it('allows mutations with an explicit cross-site Sec-Fetch-Site of none (address bar)', async () => {
+    const response = await fetchWorker('/admin/pages', {
+      method: 'POST',
+      body: form({ name: 'Direct', slug: 'direct', page_type: 'default' }),
+      headers: { Cookie: await authCookie(), 'Sec-Fetch-Site': 'none' },
+    });
+
+    expect(response.status).toBe(302);
+  });
+
+  it('rejects mutations marked cross-site by Sec-Fetch-Site', async () => {
+    const response = await fetchWorker('/admin/pages', {
+      method: 'POST',
+      headers: { Cookie: await authCookie(), 'Sec-Fetch-Site': 'cross-site' },
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('issues __Host- prefixed auth cookies on https', async () => {
+    const jti = 'host-cookie-refresh';
+    const token = await signTestToken({ type: 'refresh', jti });
+    await env.DB.prepare(
+      "INSERT INTO sessions (user_id, refresh_token_hash, expires_at) VALUES (?, ?, datetime('now', '+1 day'))",
+    )
+      .bind(1, await hashToken(jti))
+      .run();
+
+    const response = await fetchWorker('/auth/refresh', {
+      method: 'POST',
+      host: 'https://cms.eventuai.com',
+      headers: { Cookie: `refresh_token=${token}` },
+    });
+    const setCookies = response.headers.getSetCookie().join('\n');
+
+    expect(response.status).toBe(200);
+    expect(setCookies).toContain('__Host-access_token=');
+    expect(setCookies).toContain('__Host-refresh_token=');
+    // Legacy unprefixed cookie still accepted (read fallback) but replaced.
+    expect(setCookies).toMatch(/(^|\n)access_token=;/);
+  });
 });
 
 describe('auth routes', () => {
@@ -86,7 +141,8 @@ describe('auth routes', () => {
     { name: 'GET /auth/login', path: '/auth/login', expectedStatus: 200 },
     { name: 'GET /auth/start', path: '/auth/start?provider=eventuai', expectedStatus: 302, location: /^https:\/\/id\.eventuai\.com\/oauth\/authorize/ },
     { name: 'GET /auth/callback missing params', path: '/auth/callback', expectedStatus: 302, location: '/auth/login?error=missing_params' },
-    { name: 'GET /auth/logout', path: '/auth/logout', expectedStatus: 302, location: '/auth/login' },
+    { name: 'POST /auth/logout', method: 'POST', path: '/auth/logout', expectedStatus: 302, location: '/auth/login' },
+    { name: 'GET /auth/logout is rejected', path: '/auth/logout', expectedStatus: 405 },
     { name: 'POST /auth/refresh without token', method: 'POST', path: '/auth/refresh', expectedStatus: 401, json: { error: 'no_refresh_token' } },
   ])('$name', async (route) => {
     await expectRoute(route);
@@ -668,9 +724,16 @@ async function fetchWorker(
   init: RequestInit & { host?: string } = {},
 ): Promise<Response> {
   const host = init.host ?? 'http://localhost';
+  // Real browsers always send Sec-Fetch-Site; mirror that so the fail-closed
+  // cross-site check sees a same-origin signal unless a test overrides it.
+  const headers = new Headers(init.headers);
+  if (!headers.has('Sec-Fetch-Site') && !headers.has('Origin')) {
+    headers.set('Sec-Fetch-Site', 'same-origin');
+  }
   const request = new IncomingRequest(new URL(path, host), {
     redirect: 'manual',
     ...init,
+    headers,
   });
   return worker.fetch(request);
 }
