@@ -6,6 +6,7 @@ import { getLectLocalizedValue, safeParseLect } from '../../utils/lect';
 import type { Env, Variables, Tag, TagType } from '../../types';
 import { num, slugify, str } from '../../utils/forms';
 import { validateUpload } from '../../utils/media';
+import { rateLimitByIP } from '../../middleware/rate-limit';
 import type { AppContext } from '../../utils/context';
 
 export const apiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -174,6 +175,8 @@ apiRoutes.delete('/api/presence/:pageId', async (c) => {
 });
 
 // ── Upload ───────────────────────────────────────────────────────────────────
+
+apiRoutes.use('/upload', rateLimitByIP((env) => env.UPLOAD_RATE_LIMITER));
 
 apiRoutes.post('/upload', async (c) => {
   if (!c.env.MEDIA_BUCKET) {

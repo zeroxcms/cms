@@ -12,6 +12,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { signJWT, verifyJWT, hashToken, generateTokenId } from '../utils/jwt';
 import { generateCodeVerifier, generateCodeChallenge, generateState } from '../utils/pkce';
 import { rejectCrossSiteRequest } from '../utils/security';
+import { rateLimitByIP } from '../middleware/rate-limit';
 import { normalizeRoles } from '../utils/roles';
 import { loginPage } from '../templates/login';
 import type { Env, Variables, JWTPayload } from '../types';
@@ -136,6 +137,12 @@ function normalizeUser(provider: string, data: Record<string, unknown>): Normali
 // ── Route handlers ─────────────────────────────────────────────────────────────
 
 export const authRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Throttle the endpoints involved in credential issuance.
+const authRateLimit = rateLimitByIP((env) => env.AUTH_RATE_LIMITER);
+authRoutes.use('/start', authRateLimit);
+authRoutes.use('/callback', authRateLimit);
+authRoutes.use('/refresh', authRateLimit);
 
 // GET /auth/login – show the login page (HTML)
 authRoutes.get('/login', async (c) => {

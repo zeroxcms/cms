@@ -178,6 +178,14 @@ export interface Env {
   OAUTH_REDIRECT_URI: string;
   CANONICAL_ORIGIN?: string;
   SITE_TITLE: string;
+  /** Workers Rate Limiting bindings (optional – absent in local dev/tests). */
+  AUTH_RATE_LIMITER?: RateLimiter;
+  UPLOAD_RATE_LIMITER?: RateLimiter;
+}
+
+/** Shape of a Workers Rate Limiting binding. */
+export interface RateLimiter {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 
 // Hono context variables set by the auth middleware
