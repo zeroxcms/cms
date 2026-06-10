@@ -7,6 +7,7 @@ import { userIdFromContext } from '../../utils/forms';
 import { fetchUserAvatar, savePageVersion } from '../../utils/admin-queries';
 import { buildBaseProps } from '../../utils/admin-render';
 import { logAudit } from '../../utils/audit';
+import { requirePermission } from '../../middleware/auth';
 
 export const trashRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -29,7 +30,7 @@ trashRoutes.get('/trash', async (c) => {
 
 // ── Restore page from trash → draft ──────────────────────────────────────────
 
-trashRoutes.post('/trash/:id/restore', async (c) => {
+trashRoutes.post('/trash/:id/restore', requirePermission('trash:restore'), async (c) => {
   const trashId = parseInt(c.req.param('id'), 10);
 
   const trashedPage = await c.env.DB.prepare('SELECT * FROM trash_pages WHERE id = ?')
@@ -109,7 +110,7 @@ trashRoutes.post('/trash/:id/restore', async (c) => {
 
 // ── Permanently delete from trash ─────────────────────────────────────────────
 
-trashRoutes.post('/trash/:id/delete', async (c) => {
+trashRoutes.post('/trash/:id/delete', requirePermission('trash:purge'), async (c) => {
   const trashId = parseInt(c.req.param('id'), 10);
   await c.env.DB.prepare('DELETE FROM trash_pages WHERE id = ?').bind(trashId).run();
   logAudit(c, 'page.purge', 'page', trashId);

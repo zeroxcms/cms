@@ -13,7 +13,8 @@
 
 import { createMiddleware } from 'hono/factory';
 import { signJWT, verifyJWT, hashToken, generateTokenId } from '../utils/jwt';
-import { hasAnyRole } from '../utils/roles';
+import { hasAnyRole, hasPermission } from '../utils/roles';
+import type { Permission } from '../types';
 import {
   accessCookieName,
   clearAuthCookie,
@@ -165,3 +166,20 @@ export const editorGuard = createMiddleware<{
   }
   return next();
 });
+
+/**
+ * Middleware factory that enforces a specific capability. Apply per-route on
+ * top of editorGuard so each mutation requires the least privilege it needs.
+ */
+export function requirePermission(permission: Permission) {
+  return createMiddleware<{ Bindings: Env; Variables: Variables }>(async (c, next) => {
+    const user = c.get('user');
+    if (!hasPermission(user.role, permission)) {
+      if (wantsJsonResponse(c.req.raw)) {
+        return jsonError({ success: false, error: 'Insufficient permissions' }, 403, 'insufficient-permissions');
+      }
+      return c.text('Forbidden: insufficient permissions', 403);
+    }
+    return next();
+  });
+}

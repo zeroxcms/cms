@@ -20,7 +20,7 @@ const EVENTS_MANIFEST = {
 
 interface FakePlugin {
   fetcher: Fetcher;
-  hookCalls: Array<{ event: string; body: Record<string, unknown> | null }>;
+  hookCalls: Array<{ event: string; body: Record<string, unknown> | null; headers: Headers }>;
 }
 
 function makePlugin(manifest: unknown, views: Record<string, string> = {}): FakePlugin {
@@ -33,6 +33,7 @@ function makePlugin(manifest: unknown, views: Record<string, string> = {}): Fake
       hookCalls.push({
         event: path.split('/').pop() ?? '',
         body: init?.body ? JSON.parse(String(init.body)) : null,
+        headers: new Headers(init?.headers),
       });
       return new Response('ok');
     }
@@ -82,8 +83,15 @@ describe('deliverHook', () => {
     await deliverHook(envWith(plugin, { PLUGIN_SECRET: 's' }), USER, 'publish', { id: 5, slug: 'x' });
     expect(plugin.hookCalls).toHaveLength(1);
     expect(plugin.hookCalls[0].event).toBe('publish');
+    expect(plugin.hookCalls[0].headers.get('x-plugin-secret')).toBe('s');
     expect(plugin.hookCalls[0].body?.page).toMatchObject({ id: 5, slug: 'x' });
     expect(plugin.hookCalls[0].body?.user).toMatchObject({ id: '7', role: 'admin' });
+  });
+
+  it('does not deliver subscribed hooks when PLUGIN_SECRET is missing', async () => {
+    const plugin = makePlugin(EVENTS_MANIFEST);
+    await deliverHook(envWith(plugin), USER, 'publish', { id: 5, slug: 'x' });
+    expect(plugin.hookCalls).toHaveLength(0);
   });
 
   it('does not deliver events the plugin did not subscribe to', async () => {
@@ -135,7 +143,7 @@ describe('plugin admin proxy', () => {
   it('never forwards client cookies or smuggled trust headers to the plugin', async () => {
     const captured: Array<{ url: string; headers: Headers }> = [];
     testEnv.PLUGINS = 'PLUGIN_TEST';
-    delete testEnv.PLUGIN_SECRET;
+    testEnv.PLUGIN_SECRET = 'server-secret';
     testEnv.PLUGIN_TEST = {
       fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -164,8 +172,32 @@ describe('plugin admin proxy', () => {
     expect(captured).toHaveLength(1);
     const forwarded = captured[0].headers;
     expect(forwarded.get('cookie')).toBeNull();
-    expect(forwarded.get('x-plugin-secret')).toBeNull();
+    expect(forwarded.get('x-plugin-secret')).toBe('server-secret');
     // x-cms-user must be the server-derived identity, not the client header.
     expect(JSON.parse(forwarded.get('x-cms-user') ?? '{}')).toMatchObject({ id: '1', email: 'admin@example.com' });
+  });
+
+  it('fails closed when plugin admin routes are enabled without PLUGIN_SECRET', async () => {
+    testEnv.PLUGINS = 'PLUGIN_TEST';
+    delete testEnv.PLUGIN_SECRET;
+    testEnv.PLUGIN_TEST = {
+      fetch: async (): Promise<Response> => new Response('unexpected plugin call', { status: 500 }),
+    };
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/events/dashboard', {
+      headers: {
+        Cookie: `access_token=${token}`,
+        'Sec-Fetch-Site': 'same-origin',
+      },
+    }));
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get('X-CMS-Error')).toBe('plugin-secret-required');
   });
 });

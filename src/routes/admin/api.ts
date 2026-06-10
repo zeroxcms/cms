@@ -8,6 +8,7 @@ import { num, slugify, str } from '../../utils/forms';
 import { validateUpload } from '../../utils/media';
 import { rateLimitByIP } from '../../middleware/rate-limit';
 import { logAudit } from '../../utils/audit';
+import { requirePermission } from '../../middleware/auth';
 import type { AppContext } from '../../utils/context';
 
 export const apiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -71,7 +72,7 @@ apiRoutes.get('/api/tags/:type', async (c) => {
   })));
 });
 
-apiRoutes.post('/api/page/:pageId/tag/:tagId', async (c) => {
+apiRoutes.post('/api/page/:pageId/tag/:tagId', requirePermission('content:write'), async (c) => {
   const pageId = parseInt(c.req.param('pageId'), 10);
   const tagId = parseInt(c.req.param('tagId'), 10);
   const existing = await c.env.DB.prepare(
@@ -92,8 +93,8 @@ apiRoutes.post('/api/page/:pageId/tag/:tagId', async (c) => {
   return c.json({ type: 'ADD_PAGE_TAG', payload: { success: true, id: pageTag?.id } });
 });
 
-apiRoutes.delete('/api/page/remove/page_tag/:id', async (c) => deletePageTagApi(c));
-apiRoutes.delete('/api/page_tag/:id', async (c) => deletePageTagApi(c));
+apiRoutes.delete('/api/page/remove/page_tag/:id', requirePermission('content:write'), async (c) => deletePageTagApi(c));
+apiRoutes.delete('/api/page_tag/:id', requirePermission('content:write'), async (c) => deletePageTagApi(c));
 
 async function deletePageTagApi(c: AppContext) {
   const id = parseInt(c.req.param('id') ?? '', 10);
@@ -191,6 +192,7 @@ apiRoutes.delete('/api/presence/:pageId', async (c) => {
 // ── Upload ───────────────────────────────────────────────────────────────────
 
 apiRoutes.use('/upload', rateLimitByIP((env) => env.UPLOAD_RATE_LIMITER));
+apiRoutes.use('/upload', requirePermission('media:upload'));
 
 apiRoutes.post('/upload', async (c) => {
   if (!c.env.MEDIA_BUCKET) {

@@ -59,6 +59,11 @@ export async function deliverHook(
 ): Promise<void> {
   const plugins = await pluginsForHook(env, event);
   if (plugins.length === 0) return;
+  if (!env.PLUGIN_SECRET) {
+    console.error('PLUGIN_SECRET is required before plugin hooks can be delivered');
+    return;
+  }
+  const pluginSecret = env.PLUGIN_SECRET;
 
   const body = JSON.stringify({
     event,
@@ -77,7 +82,7 @@ export async function deliverHook(
             method: 'POST',
             headers: {
               'content-type': 'application/json',
-              ...(env.PLUGIN_SECRET ? { 'x-plugin-secret': env.PLUGIN_SECRET } : {}),
+              'x-plugin-secret': pluginSecret,
             },
             body,
           },

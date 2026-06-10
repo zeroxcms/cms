@@ -43,6 +43,7 @@ import {
   unpublishPage,
 } from '../../utils/admin-queries';
 import { buildBaseProps, dashboardPagination, exportPageList } from '../../utils/admin-render';
+import { requirePermission } from '../../middleware/auth';
 
 export const pagesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -161,7 +162,7 @@ pagesRoutes.get('/pages/create_by_type/:pageType', async (c) => {
   return c.redirect(`/admin/pages/new?page_type=${encodeURIComponent(pageType)}`);
 });
 
-pagesRoutes.post('/pages/new_post/:pageType', async (c) => {
+pagesRoutes.post('/pages/new_post/:pageType', requirePermission('content:write'), async (c) => {
   const pageType = c.req.param('pageType');
   const form = await c.req.formData();
   const language = languageFromRequest(c, form);
@@ -239,7 +240,7 @@ pagesRoutes.get('/pages/new', async (c) => {
 
 // ── Create page ───────────────────────────────────────────────────────────────
 
-pagesRoutes.post('/pages', async (c) => {
+pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
   const form = await c.req.formData();
   const language = languageFromRequest(c, form);
 
@@ -424,7 +425,7 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
   );
 });
 
-pagesRoutes.post('/pages/:id/weight', async (c) => {
+pagesRoutes.post('/pages/:id/weight', requirePermission('content:write'), async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
   const form = await c.req.formData();
   const weight = num(form.get('weight'));
@@ -442,7 +443,7 @@ pagesRoutes.post('/pages/:id/weight', async (c) => {
 
 // ── Update page ───────────────────────────────────────────────────────────────
 
-pagesRoutes.post('/pages/:id', async (c) => {
+pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
   const form = await c.req.formData();
   const language = languageFromRequest(c, form);
@@ -598,7 +599,7 @@ pagesRoutes.post('/pages/:id', async (c) => {
 
 // ── Publish (DRAFT → PUBLISHED) ───────────────────────────────────────────────
 
-pagesRoutes.post('/pages/:id/publish', async (c) => {
+pagesRoutes.post('/pages/:id/publish', requirePermission('content:publish'), async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
   const published = await publishPage(c.env.DB, c.env.PUBLISHED_DB, pageId);
   if (!published) return c.notFound();
@@ -619,7 +620,7 @@ pagesRoutes.post('/pages/:id/publish', async (c) => {
 
 // ── Unpublish (remove from published DB) ──────────────────────────────────────
 
-pagesRoutes.post('/pages/:id/unpublish', async (c) => {
+pagesRoutes.post('/pages/:id/unpublish', requirePermission('content:publish'), async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
 
   const page = await c.env.DB.prepare('SELECT uuid, name, slug, page_type FROM draft_pages WHERE id = ?')
@@ -642,7 +643,7 @@ pagesRoutes.post('/pages/:id/unpublish', async (c) => {
 
 // ── Delete page → move to TRASH (soft-delete) ────────────────────────────────
 
-pagesRoutes.post('/pages/:id/delete', async (c) => {
+pagesRoutes.post('/pages/:id/delete', requirePermission('content:delete'), async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
 
   const page = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
