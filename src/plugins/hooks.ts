@@ -10,6 +10,7 @@
 import type { AppContext } from '../utils/context';
 import type { Env, JWTPayload } from '../types';
 import { pluginsForHook, PLUGIN_ORIGIN, PLUGIN_PREFIX } from './registry';
+import { logAudit } from '../utils/audit';
 
 /** A minimal page snapshot delivered to plugins. Plugins receive whatever the
  *  triggering handler has on hand — `id` is always present. */
@@ -29,6 +30,14 @@ export type HookEvent = 'create' | 'update' | 'publish' | 'unpublish' | 'delete'
  * throws and never blocks the response.
  */
 export function dispatchHook(c: AppContext, event: HookEvent, page: HookPage): void {
+  // Every page lifecycle event flows through here — the natural choke point
+  // for the audit trail.
+  logAudit(c, `page.${event}`, 'page', page.id, {
+    name: page.name,
+    slug: page.slug,
+    page_type: page.page_type,
+  });
+
   const promise = deliverHook(c.env, c.get('user'), event, page);
   try {
     c.executionCtx.waitUntil(promise);

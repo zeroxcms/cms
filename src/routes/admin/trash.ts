@@ -6,6 +6,7 @@ import type { Env, Variables, Page, PageTag } from '../../types';
 import { userIdFromContext } from '../../utils/forms';
 import { fetchUserAvatar, savePageVersion } from '../../utils/admin-queries';
 import { buildBaseProps } from '../../utils/admin-render';
+import { logAudit } from '../../utils/audit';
 
 export const trashRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -99,6 +100,10 @@ trashRoutes.post('/trash/:id/restore', async (c) => {
   // Remove from TRASH
   await c.env.DB.prepare('DELETE FROM trash_pages WHERE id = ?').bind(trashId).run();
 
+  logAudit(c, 'page.restore', 'page', draftPage?.id ?? trashedPage.uuid, {
+    name: trashedPage.name,
+    slug: trashedPage.slug,
+  });
   return c.redirect('/admin/trash?flash=Page+restored+to+draft');
 });
 
@@ -107,5 +112,6 @@ trashRoutes.post('/trash/:id/restore', async (c) => {
 trashRoutes.post('/trash/:id/delete', async (c) => {
   const trashId = parseInt(c.req.param('id'), 10);
   await c.env.DB.prepare('DELETE FROM trash_pages WHERE id = ?').bind(trashId).run();
+  logAudit(c, 'page.purge', 'page', trashId);
   return c.redirect('/admin/trash?flash=Page+permanently+deleted');
 });

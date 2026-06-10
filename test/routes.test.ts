@@ -7,6 +7,7 @@ import type { JWTPayload } from '../src/types';
 
 const IncomingRequest = Request;
 const worker = (exports as unknown as { default: Fetcher }).default;
+let ipCounter = 0;
 
 interface RouteCase {
   name: string;
@@ -183,6 +184,93 @@ describe('auth routes', () => {
       .bind('eventuai:eventuai-user')
       .first<{ role: string }>()).toEqual({ role: 'editor' });
     expect((await env.DB.prepare('SELECT id FROM sessions').all()).results).toHaveLength(1);
+  });
+
+  it('purges expired sessions during refresh', async () => {
+    const jti = 'hygiene-refresh';
+    const token = await signTestToken({ type: 'refresh', jti });
+    await env.DB.prepare(
+      "INSERT INTO sessions (user_id, refresh_token_hash, expires_at) VALUES (?, ?, datetime('now', '+1 day'))",
+    )
+      .bind(1, await hashToken(jti))
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO sessions (user_id, refresh_token_hash, expires_at) VALUES (?, ?, datetime('now', '-1 day'))",
+    )
+      .bind(1, 'stale-hash')
+      .run();
+
+    const response = await fetchWorker('/auth/refresh', {
+      method: 'POST',
+      headers: { Cookie: `refresh_token=${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    // The purge runs via waitUntil; poll briefly for it to land.
+    await expect.poll(async () => {
+      const row = await env.DB.prepare('SELECT id FROM sessions WHERE refresh_token_hash = ?')
+        .bind('stale-hash')
+        .first();
+      return row;
+    }, { timeout: 2000 }).toBeNull();
+  });
+
+  it('caps concurrent sessions per user at login', async () => {
+    // Pre-create the user the mocked OAuth login signs in as.
+    await env.DB.prepare(
+      'INSERT INTO users (id, oauth_id, email, name, avatar_url, role) VALUES (?, ?, ?, ?, ?, ?)',
+    )
+      .bind(50, 'eventuai:eventuai-user', 'eventuai@example.com', 'Eventuai User', '', 'editor')
+      .run();
+    for (let i = 0; i < 7; i++) {
+      await env.DB.prepare(
+        "INSERT INTO sessions (user_id, refresh_token_hash, expires_at) VALUES (?, ?, datetime('now', '+1 day'))",
+      )
+        .bind(50, `old-session-${i}`)
+        .run();
+    }
+
+    const callback = await completeMockedOAuthLogin();
+    expect(callback.status).toBe(302);
+
+    await expect.poll(async () => {
+      const rows = await env.DB.prepare('SELECT COUNT(*) AS n FROM sessions WHERE user_id = 50').first<{ n: number }>();
+      return rows?.n;
+    }, { timeout: 2000 }).toBe(5);
+  });
+
+  it('rejects new sign-ups outside ALLOWED_EMAIL_DOMAINS', async () => {
+    const testEnv = env as unknown as Record<string, unknown>;
+    testEnv.ALLOWED_EMAIL_DOMAINS = 'cowise.co';
+    try {
+      const callback = await completeMockedOAuthLogin();
+
+      expect(callback.status).toBe(302);
+      expect(callback.headers.get('Location')).toBe('/auth/login?error=email_not_allowed');
+      expect(await env.DB.prepare('SELECT id FROM users WHERE oauth_id = ?')
+        .bind('eventuai:eventuai-user')
+        .first()).toBeNull();
+    } finally {
+      delete testEnv.ALLOWED_EMAIL_DOMAINS;
+    }
+  });
+
+  it('lets existing users sign in even when their domain is not allowlisted', async () => {
+    await env.DB.prepare(
+      'INSERT INTO users (oauth_id, email, name, avatar_url, role) VALUES (?, ?, ?, ?, ?)',
+    )
+      .bind('eventuai:eventuai-user', 'eventuai@example.com', 'Eventuai User', '', 'editor')
+      .run();
+    const testEnv = env as unknown as Record<string, unknown>;
+    testEnv.ALLOWED_EMAIL_DOMAINS = 'cowise.co';
+    try {
+      const callback = await completeMockedOAuthLogin();
+
+      expect(callback.status).toBe(302);
+      expect(callback.headers.get('Location')).toBe('/admin');
+    } finally {
+      delete testEnv.ALLOWED_EMAIL_DOMAINS;
+    }
   });
 
   it('POST /auth/refresh rotates a valid refresh token session', async () => {
@@ -631,6 +719,35 @@ describe('admin routes', () => {
     expect(await response.json()).toEqual({ success: false, error: 'Editor role required' });
   });
 
+  it('records page mutations in the audit log', async () => {
+    const response = await fetchWorker('/admin/pages', {
+      method: 'POST',
+      body: form({ name: 'Audited Page', slug: 'audited-page', page_type: 'default' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    await expect.poll(async () => {
+      return env.DB.prepare("SELECT user_email, action, entity_type FROM audit_log WHERE action = 'page.create' ORDER BY id DESC LIMIT 1")
+        .first<{ user_email: string; action: string; entity_type: string }>();
+    }, { timeout: 2000 }).toMatchObject({
+      user_email: 'admin@example.com',
+      action: 'page.create',
+      entity_type: 'page',
+    });
+  });
+
+  it('rejects malformed legacy JSON imports without a server error', async () => {
+    const response = await fetchWorker('/admin/pages/import/default', {
+      method: 'POST',
+      body: form({ items: '{not json' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=Invalid+JSON+import+payload');
+  });
+
   it('POST /admin/api/presence/:pageId sanitizes invalid avatar and timestamp values', async () => {
     const response = await fetchWorker('/admin/api/presence/101', {
       method: 'POST',
@@ -745,6 +862,12 @@ async function fetchWorker(
   if (!headers.has('Sec-Fetch-Site') && !headers.has('Origin')) {
     headers.set('Sec-Fetch-Site', 'same-origin');
   }
+  // Unique client IP per request so the (real, miniflare-simulated) rate
+  // limiter never throttles unrelated tests.
+  if (!headers.has('CF-Connecting-IP')) {
+    ipCounter += 1;
+    headers.set('CF-Connecting-IP', `10.0.${Math.floor(ipCounter / 250)}.${(ipCounter % 250) + 1}`);
+  }
   const request = new IncomingRequest(new URL(path, host), {
     redirect: 'manual',
     ...init,
@@ -785,6 +908,34 @@ function cookieValue(header: string | null, name: string): string {
   return match?.[1] ?? '';
 }
 
+/** Runs the full PKCE flow against a mocked eventuai provider and returns the callback response. */
+async function completeMockedOAuthLogin(): Promise<Response> {
+  const start = await fetchWorker('/auth/start?provider=eventuai');
+  const location = new URL(start.headers.get('Location') ?? '');
+  const state = location.searchParams.get('state') ?? '';
+  const stateCookie = cookieValue(start.headers.get('Set-Cookie'), 'oauth_state');
+
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = input.toString();
+    if (url === 'https://id.eventuai.com/oauth/token') {
+      return Response.json({ access_token: 'provider-token' });
+    }
+    if (url === 'https://id.eventuai.com/oauth/userinfo') {
+      return Response.json({
+        sub: 'eventuai-user',
+        email: 'eventuai@example.com',
+        preferred_username: 'Eventuai User',
+        roles: ['editor'],
+      });
+    }
+    return new Response('Unexpected fetch', { status: 500 });
+  }));
+
+  return fetchWorker(`/auth/callback?code=abc&state=${encodeURIComponent(state)}`, {
+    headers: { Cookie: `oauth_state=${stateCookie}` },
+  });
+}
+
 async function resetData(): Promise<void> {
   const adminTables = [
     'draft_page_tags',
@@ -797,6 +948,8 @@ async function resetData(): Promise<void> {
     'tag_types',
     'sessions',
     'users',
+    'presence',
+    'audit_log',
   ];
   for (const table of adminTables) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();

@@ -7,6 +7,7 @@ import type { Env, Variables, Tag, TagType } from '../../types';
 import { num, slugify, str } from '../../utils/forms';
 import { validateUpload } from '../../utils/media';
 import { rateLimitByIP } from '../../middleware/rate-limit';
+import { logAudit } from '../../utils/audit';
 import type { AppContext } from '../../utils/context';
 
 export const apiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -228,6 +229,7 @@ apiRoutes.post('/upload', async (c) => {
     )
       .bind(key, url, file.name, validation.contentType, file.size)
       .run();
+    logAudit(c, 'media.upload', 'media', key, { filename: file.name, size: file.size });
     files.push(url);
   }
 

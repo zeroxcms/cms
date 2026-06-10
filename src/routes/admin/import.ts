@@ -29,6 +29,7 @@ import {
   readImportCsvText,
 } from '../../utils/csv';
 import { buildBaseProps } from '../../utils/admin-render';
+import { logAudit } from '../../utils/audit';
 
 export const importRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -86,6 +87,12 @@ importRoutes.post('/pages/import-v2/:pageType/confirm', async (c) => {
 
   const config = await resolveCmsConfig(c.env);
   const result = await importPagesCsv(c.env.DB, pageType, csvText, userIdFromContext(c), mode, config);
+  logAudit(c, 'page.import', 'page', undefined, {
+    page_type: pageType,
+    created: result.created,
+    updated: result.updated,
+    skipped: result.skipped,
+  });
   return c.redirect(
     `/admin/pages/list/${encodeURIComponent(pageType)}?flash=${result.created}+created,+${result.updated}+updated,+${result.skipped}+skipped`,
   );
@@ -106,7 +113,16 @@ importRoutes.post('/pages/import/:pageType', async (c) => {
   const raw = str(form.get('items'));
   const creator = userIdFromContext(c) || null;
   const config = await resolveCmsConfig(c.env);
-  const items = JSON.parse(raw) as Array<{
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return c.redirect(`/admin/pages/list/${encodeURIComponent(pageType)}?flash=Invalid+JSON+import+payload`);
+  }
+  if (!Array.isArray(parsed)) {
+    return c.redirect(`/admin/pages/list/${encodeURIComponent(pageType)}?flash=Invalid+JSON+import+payload`);
+  }
+  const items = parsed as Array<{
     name?: string;
     slug?: string;
     weight?: number;
@@ -163,5 +179,6 @@ importRoutes.post('/pages/import/:pageType', async (c) => {
     imported++;
   }
 
+  logAudit(c, 'page.import', 'page', undefined, { page_type: pageType, created: imported });
   return c.redirect(`/admin/pages/list/${encodeURIComponent(pageType)}?flash=${imported}+item(s)+imported`);
 });

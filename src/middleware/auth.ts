@@ -121,6 +121,11 @@ export const authMiddleware = createMiddleware<{
       .bind(newTokenHash, session.id)
       .run();
 
+    // Opportunistic hygiene: purge expired sessions without blocking the response.
+    c.executionCtx.waitUntil(
+      c.env.DB.prepare('DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP').run(),
+    );
+
     // Set cookies
     setAuthCookie(c, accessCookieName, newAccessToken, ACCESS_TOKEN_TTL);
     setAuthCookie(c, refreshCookieName, newRefreshToken, REFRESH_TOKEN_TTL);

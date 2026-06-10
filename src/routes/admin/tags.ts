@@ -21,6 +21,7 @@ import {
   userIdFromContext,
 } from '../../utils/forms';
 import { ensureDefaultLectName } from '../../utils/page-logic';
+import { logAudit } from '../../utils/audit';
 import { fetchUserAvatar } from '../../utils/admin-queries';
 import { buildBaseProps } from '../../utils/admin-render';
 import type { AppContext } from '../../utils/context';
@@ -48,9 +49,10 @@ tagsRoutes.post('/tag-types', async (c) => {
   const name = str(form.get('name'));
   const slug = str(form.get('slug')) || slugify(name);
   if (!name || !slug) return c.redirect('/admin/tag-types/new?error=missing');
-  await c.env.DB.prepare('INSERT INTO tag_types (name, slug) VALUES (?, ?)')
+  const result = await c.env.DB.prepare('INSERT INTO tag_types (name, slug) VALUES (?, ?)')
     .bind(name, slug)
     .run();
+  logAudit(c, 'tag_type.create', 'tag_type', result.meta.last_row_id, { name, slug });
   return c.redirect('/admin/tag-types');
 });
 
@@ -71,6 +73,7 @@ tagsRoutes.post('/tag-types/:id', async (c) => {
   await c.env.DB.prepare('UPDATE tag_types SET name = ?, slug = ? WHERE id = ?')
     .bind(name, slug, id)
     .run();
+  logAudit(c, 'tag_type.update', 'tag_type', id, { name, slug });
   return c.redirect('/admin/tag-types');
 });
 
@@ -78,6 +81,7 @@ tagsRoutes.post('/tag-types/:id/delete', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   await c.env.DB.prepare('UPDATE tags SET tag_type_id = NULL WHERE tag_type_id = ?').bind(id).run();
   await c.env.DB.prepare('DELETE FROM tag_types WHERE id = ?').bind(id).run();
+  logAudit(c, 'tag_type.delete', 'tag_type', id);
   return c.redirect('/admin/tag-types');
 });
 
@@ -109,11 +113,12 @@ tagsRoutes.post('/tags', async (c) => {
   const slug = str(form.get('slug')) || slugify(name);
   const lect = postToLect(form, language);
   ensureDefaultLectName(lect, name);
-  await c.env.DB.prepare(
+  const result = await c.env.DB.prepare(
     'INSERT INTO tags (name, slug, tag_type_id, parent_tag, lect) VALUES (?, ?, ?, ?, ?)',
   )
     .bind(name, slug, nullableStr(form.get('tag_type_id')) ? num(form.get('tag_type_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyLect(lect))
     .run();
+  logAudit(c, 'tag.create', 'tag', result.meta.last_row_id, { name, slug });
   return c.redirect('/admin/tags');
 });
 
@@ -139,6 +144,7 @@ tagsRoutes.post('/tags/:id', async (c) => {
   )
     .bind(name, slug, nullableStr(form.get('tag_type_id')) ? num(form.get('tag_type_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyLect(lect), id)
     .run();
+  logAudit(c, 'tag.update', 'tag', id, { name, slug });
   return c.redirect('/admin/tags');
 });
 
@@ -151,6 +157,7 @@ tagsRoutes.post('/tags/:id/delete', async (c) => {
     c.env.DB.prepare('UPDATE tags SET parent_tag = NULL WHERE parent_tag = ?').bind(id).run(),
   ]);
   await c.env.DB.prepare('DELETE FROM tags WHERE id = ?').bind(id).run();
+  logAudit(c, 'tag.delete', 'tag', id);
   return c.redirect('/admin/tags');
 });
 

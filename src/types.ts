@@ -180,6 +180,11 @@ export interface Env {
   OAUTH_REDIRECT_URI: string;
   CANONICAL_ORIGIN?: string;
   SITE_TITLE: string;
+  /**
+   * Optional comma-separated email-domain allowlist for new sign-ups,
+   * e.g. "cowise.co,eventuai.com". Unset = open registration (viewer role).
+   */
+  ALLOWED_EMAIL_DOMAINS?: string;
   /** Workers Rate Limiting bindings (optional – absent in local dev/tests). */
   AUTH_RATE_LIMITER?: RateLimiter;
   UPLOAD_RATE_LIMITER?: RateLimiter;

@@ -27,6 +27,7 @@ import type { Env, Variables, JWTPayload } from '../types';
 
 const ACCESS_TOKEN_TTL = 15 * 60;        // 15 minutes
 const REFRESH_TOKEN_TTL = 7 * 24 * 3600; // 7 days
+const MAX_SESSIONS_PER_USER = 5;
 
 // ── OAuth provider config ─────────────────────────────────────────────────────
 
@@ -70,6 +71,17 @@ interface OAuthStatePayload extends JWTPayload {
   state?: string;
   code_verifier?: string;
   provider?: string;
+}
+
+/** True when no allowlist is configured or the email's domain is listed. */
+function isEmailAllowed(env: Env, email: string): boolean {
+  const allowed = (env.ALLOWED_EMAIL_DOMAINS ?? '')
+    .split(',')
+    .map((domain) => domain.trim().toLowerCase())
+    .filter(Boolean);
+  if (allowed.length === 0) return true;
+  const domain = email.split('@').pop()?.toLowerCase() ?? '';
+  return allowed.includes(domain);
 }
 
 /** Returns the enabled providers in declaration order. */
@@ -316,6 +328,18 @@ authRoutes.get('/callback', async (c) => {
     return c.redirect('/auth/login?error=invalid_userinfo');
   }
 
+  // Optional registration allowlist: when ALLOWED_EMAIL_DOMAINS is set, only
+  // matching emails may create a new account. Existing users always pass so a
+  // config change can never lock out current accounts.
+  if (!isEmailAllowed(c.env, normalized.email)) {
+    const existing = await c.env.DB.prepare('SELECT id FROM users WHERE oauth_id = ?')
+      .bind(normalized.oauthId)
+      .first<{ id: number }>();
+    if (!existing) {
+      return c.redirect('/auth/login?error=email_not_allowed');
+    }
+  }
+
   // Upsert user in DB; sync role when the identity provider supplies one
   if (normalized.role) {
     await c.env.DB.prepare(
@@ -389,6 +413,16 @@ authRoutes.get('/callback', async (c) => {
   )
     .bind(dbUser.id, tokenHash)
     .run();
+
+  // Session hygiene: cap concurrent sessions per user and purge expired rows.
+  c.executionCtx.waitUntil(Promise.all([
+    c.env.DB.prepare(
+      `DELETE FROM sessions WHERE user_id = ?1 AND id NOT IN (
+         SELECT id FROM sessions WHERE user_id = ?1 ORDER BY id DESC LIMIT ?2
+       )`,
+    ).bind(dbUser.id, MAX_SESSIONS_PER_USER).run(),
+    c.env.DB.prepare('DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP').run(),
+  ]));
 
   setAuthCookie(c, accessCookieName, accessToken, ACCESS_TOKEN_TTL);
   setAuthCookie(c, refreshCookieName, refreshToken, REFRESH_TOKEN_TTL);
@@ -488,6 +522,11 @@ authRoutes.post('/refresh', async (c) => {
   )
     .bind(newTokenHash, session.id)
     .run();
+
+  // Opportunistic hygiene: purge expired sessions without blocking the response.
+  c.executionCtx.waitUntil(
+    c.env.DB.prepare('DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP').run(),
+  );
 
   setAuthCookie(c, accessCookieName, newAccessToken, ACCESS_TOKEN_TTL);
   setAuthCookie(c, refreshCookieName, newRefreshToken, REFRESH_TOKEN_TTL);

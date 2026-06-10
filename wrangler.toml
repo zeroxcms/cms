@@ -67,6 +67,9 @@ GITHUB_CLIENT_ID = "Ov23lis6jG7x2nBmbFM1"
 OAUTH_REDIRECT_URI = "https://cms.eventuai.com/auth/callback"
 CANONICAL_ORIGIN = "https://cms.eventuai.com"
 SITE_TITLE = "Worker CMS"
+# Optional: restrict new sign-ups to these email domains (comma-separated).
+# Existing users always keep access. Unset = open registration (viewer role).
+# ALLOWED_EMAIL_DOMAINS = "cowise.co"
 
 # Secrets – set via: wrangler secret put JWT_SECRET
 # wrangler secret put EVENTUAI_CLIENT_SECRET
