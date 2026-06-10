@@ -16,6 +16,7 @@ import {
   rejectCrossOriginMutation,
   withSecurityHeaders,
 } from './utils/security';
+import { applyMediaResponseHeaders } from './utils/media';
 import type { Env, Variables } from './types';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -82,6 +83,7 @@ async function mediaObjectResponse(bucket: R2Bucket, key: string): Promise<Respo
   object.writeHttpMetadata(headers);
   headers.set('Cache-Control', 'public, max-age=31536000');
   headers.set('ETag', object.httpEtag);
+  applyMediaResponseHeaders(headers, key);
   return new Response(object.body, { headers });
 }
 

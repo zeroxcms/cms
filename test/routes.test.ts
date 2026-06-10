@@ -177,7 +177,7 @@ describe('admin routes', () => {
     { name: 'POST /admin/api/page/:pageId/tag/:tagId', method: 'POST', path: '/admin/api/page/101/tag/301', authenticated: true, expectedStatus: 200 },
     { name: 'DELETE /admin/api/page/remove/page_tag/:id', method: 'DELETE', path: '/admin/api/page/remove/page_tag/401', authenticated: true, expectedStatus: 200, json: { type: 'DELETE_PAGE_TAG', payload: { success: true, id: 401 } } },
     { name: 'DELETE /admin/api/page_tag/:id', method: 'DELETE', path: '/admin/api/page_tag/401', authenticated: true, expectedStatus: 200, json: { type: 'DELETE_PAGE_TAG', payload: { success: true, id: 401 } } },
-    { name: 'POST /admin/upload', method: 'POST', path: '/admin/upload', body: form({ dir: 'uploads' }), authenticated: true, expectedStatus: 200, json: { success: true, files: [] } },
+    { name: 'POST /admin/upload', method: 'POST', path: '/admin/upload', body: form({ dir: 'uploads' }), authenticated: true, expectedStatus: 200, json: { success: true, files: [], errors: [] } },
     { name: 'GET /admin/tag-types', path: '/admin/tag-types', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/tag-types/new', path: '/admin/tag-types/new', authenticated: true, expectedStatus: 200 },
     { name: 'POST /admin/tag-types', method: 'POST', path: '/admin/tag-types', body: form({ name: 'Topics', slug: 'topics' }), authenticated: true, expectedStatus: 302, location: '/admin/tag-types' },
@@ -595,7 +595,7 @@ describe('admin routes', () => {
   it('POST /admin/upload stores media in R2 and records metadata', async () => {
     const body = new FormData();
     body.append('dir', 'pictures');
-    body.append('file', new File(['tiny image'], 'avatar.png', { type: 'image/png' }));
+    body.append('file', new File([pngBytes()], 'avatar.png', { type: 'image/png' }));
 
     const response = await fetchWorker('/admin/upload', {
       method: 'POST',
@@ -623,7 +623,7 @@ describe('admin routes', () => {
   it('GET /media-preview/* serves uploaded media for editor thumbnails', async () => {
     const body = new FormData();
     body.append('dir', 'pictures');
-    body.append('file', new File(['tiny image'], 'avatar.png', { type: 'image/png' }));
+    body.append('file', new File([pngBytes()], 'avatar.png', { type: 'image/png' }));
 
     const upload = await fetchWorker('/admin/upload', {
       method: 'POST',
@@ -637,7 +637,7 @@ describe('admin routes', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('image/png');
-    expect(new TextDecoder().decode(await response.arrayBuffer())).toBe('tiny image');
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(pngBytes());
   });
 });
 
@@ -695,6 +695,11 @@ async function signTestToken(overrides: Partial<JWTPayload> = {}): Promise<strin
 
 function form(values: Record<string, string>): URLSearchParams {
   return new URLSearchParams(values);
+}
+
+/** 10 bytes: the PNG signature plus two filler bytes. */
+function pngBytes(): Uint8Array {
+  return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]);
 }
 
 function cookieValue(header: string | null, name: string): string {

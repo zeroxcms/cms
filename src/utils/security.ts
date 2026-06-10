@@ -22,6 +22,8 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export function withSecurityHeaders(response: Response): Response {
   const secured = new Response(response.body, response);
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    // A route may set its own (stricter or nonce-based) CSP; don't clobber it.
+    if (name === 'Content-Security-Policy' && secured.headers.has(name)) continue;
     secured.headers.set(name, value);
   }
   return secured;
