@@ -12,8 +12,16 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../../types';
 import { pluginById, PLUGIN_ORIGIN, PLUGIN_PREFIX } from '../../plugins/registry';
 import type { AppContext } from '../../utils/context';
+import { requirePermission } from '../../middleware/auth';
 
 export const pluginAdminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Plugin admin pages render in the CMS origin (see proxyToPlugin), so a hostile
+// or compromised plugin would run with the CMS's same-origin authority. Until
+// plugins are served from a dedicated origin, restrict access to admins only to
+// minimize who can be exposed to that risk.
+pluginAdminRoutes.use('/plugins/:pluginId', requirePermission('plugin:access'));
+pluginAdminRoutes.use('/plugins/:pluginId/*', requirePermission('plugin:access'));
 
 pluginAdminRoutes.all('/plugins/:pluginId', (c) => proxyToPlugin(c));
 pluginAdminRoutes.all('/plugins/:pluginId/*', (c) => proxyToPlugin(c));
@@ -45,10 +53,43 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
   );
   if (c.env.PLUGIN_SECRET) headers.set('x-plugin-secret', c.env.PLUGIN_SECRET);
 
+  warnSharedOrigin();
+
   const hasBody = c.req.method !== 'GET' && c.req.method !== 'HEAD';
-  return plugin.fetcher.fetch(upstream, {
+  const upstreamResponse = await plugin.fetcher.fetch(upstream, {
     method: c.req.method,
     headers,
     body: hasBody ? await c.req.raw.arrayBuffer() : undefined,
   });
+
+  // Give plugin documents their own CSP so (a) the CMS's strict nonce CSP
+  // isn't imposed on plugin HTML (which would break legitimate plugin
+  // scripts) and (b) plugin pages still get baseline hardening. This is NOT
+  // origin isolation — see warnSharedOrigin() — it only limits injection
+  // into an otherwise-benign plugin.
+  const response = new Response(upstreamResponse.body, upstreamResponse);
+  if (!response.headers.has('Content-Security-Policy')) {
+    response.headers.set(
+      'Content-Security-Policy',
+      [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: https:",
+        "object-src 'none'",
+        "base-uri 'none'",
+      ].join('; '),
+    );
+  }
+  return response;
+}
+
+let sharedOriginWarned = false;
+function warnSharedOrigin(): void {
+  if (sharedOriginWarned) return;
+  sharedOriginWarned = true;
+  console.warn(
+    'Plugin admin pages are served on the CMS origin; a compromised plugin would '
+    + 'gain same-origin authority. Serve plugins from a dedicated origin to isolate them.',
+  );
 }

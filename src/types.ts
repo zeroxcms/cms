@@ -10,6 +10,23 @@ export type UserRole = typeof USER_ROLES[number];
 
 export const EDITOR_ROLES: UserRole[] = ['admin', 'editor', 'moderator'];
 
+// ── Capability-based authorization ────────────────────────────────────────────
+// Roles are mapped to a least-privilege set of capabilities; routes require a
+// specific capability rather than just "is an editor". See utils/roles.ts.
+export const PERMISSIONS = [
+  'content:write',    // create / edit pages, weight, page-tag associations
+  'content:publish',  // publish / unpublish
+  'content:delete',   // move a page to trash (soft delete)
+  'content:import',   // CSV / JSON bulk import
+  'trash:restore',    // restore a page from trash
+  'trash:purge',      // permanently delete from trash (destructive)
+  'taxonomy:write',   // create / edit / delete tags and tag types
+  'media:upload',     // upload media to R2
+  'plugin:access',    // reach the plugin admin proxy
+] as const;
+
+export type Permission = typeof PERMISSIONS[number];
+
 export interface User {
   id: number;
   oauth_id: string;

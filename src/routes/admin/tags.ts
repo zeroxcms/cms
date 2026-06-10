@@ -22,6 +22,7 @@ import {
 } from '../../utils/forms';
 import { ensureDefaultLectName } from '../../utils/page-logic';
 import { logAudit } from '../../utils/audit';
+import { requirePermission } from '../../middleware/auth';
 import { fetchUserAvatar } from '../../utils/admin-queries';
 import { buildBaseProps } from '../../utils/admin-render';
 import type { AppContext } from '../../utils/context';
@@ -44,7 +45,7 @@ tagsRoutes.get('/tag-types', async (c) => {
 
 tagsRoutes.get('/tag-types/new', async (c) => tagTypeForm(c));
 
-tagsRoutes.post('/tag-types', async (c) => {
+tagsRoutes.post('/tag-types', requirePermission('taxonomy:write'), async (c) => {
   const form = await c.req.formData();
   const name = str(form.get('name'));
   const slug = str(form.get('slug')) || slugify(name);
@@ -65,7 +66,7 @@ tagsRoutes.get('/tag-types/:id/edit', async (c) => {
   return tagTypeForm(c, tagType);
 });
 
-tagsRoutes.post('/tag-types/:id', async (c) => {
+tagsRoutes.post('/tag-types/:id', requirePermission('taxonomy:write'), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   const form = await c.req.formData();
   const name = str(form.get('name'));
@@ -77,7 +78,7 @@ tagsRoutes.post('/tag-types/:id', async (c) => {
   return c.redirect('/admin/tag-types');
 });
 
-tagsRoutes.post('/tag-types/:id/delete', async (c) => {
+tagsRoutes.post('/tag-types/:id/delete', requirePermission('taxonomy:write'), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   await c.env.DB.prepare('UPDATE tags SET tag_type_id = NULL WHERE tag_type_id = ?').bind(id).run();
   await c.env.DB.prepare('DELETE FROM tag_types WHERE id = ?').bind(id).run();
@@ -106,7 +107,7 @@ tagsRoutes.get('/tags', async (c) => {
 
 tagsRoutes.get('/tags/new', async (c) => tagForm(c));
 
-tagsRoutes.post('/tags', async (c) => {
+tagsRoutes.post('/tags', requirePermission('taxonomy:write'), async (c) => {
   const form = await c.req.formData();
   const language = languageFromRequest(c, form);
   const name = str(form.get('name'));
@@ -129,7 +130,7 @@ tagsRoutes.get('/tags/:id/edit', async (c) => {
   return tagForm(c, tag);
 });
 
-tagsRoutes.post('/tags/:id', async (c) => {
+tagsRoutes.post('/tags/:id', requirePermission('taxonomy:write'), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   const form = await c.req.formData();
   const language = languageFromRequest(c, form);
@@ -148,7 +149,7 @@ tagsRoutes.post('/tags/:id', async (c) => {
   return c.redirect('/admin/tags');
 });
 
-tagsRoutes.post('/tags/:id/delete', async (c) => {
+tagsRoutes.post('/tags/:id/delete', requirePermission('taxonomy:write'), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   await Promise.all([
     c.env.DB.prepare('DELETE FROM draft_page_tags WHERE tag_id = ?').bind(id).run(),

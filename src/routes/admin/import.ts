@@ -30,6 +30,7 @@ import {
 } from '../../utils/csv';
 import { buildBaseProps } from '../../utils/admin-render';
 import { logAudit } from '../../utils/audit';
+import { requirePermission } from '../../middleware/auth';
 
 export const importRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -50,7 +51,7 @@ importRoutes.get('/pages/import-v2/:pageType', async (c) => {
   }));
 });
 
-importRoutes.post('/pages/import-v2/:pageType', async (c) => {
+importRoutes.post('/pages/import-v2/:pageType', requirePermission('content:import'), async (c) => {
   const pageType = c.req.param('pageType');
   const form = await c.req.formData();
   const csvText = await readImportCsvText(form);
@@ -76,7 +77,7 @@ importRoutes.post('/pages/import-v2/:pageType', async (c) => {
   }));
 });
 
-importRoutes.post('/pages/import-v2/:pageType/confirm', async (c) => {
+importRoutes.post('/pages/import-v2/:pageType/confirm', requirePermission('content:import'), async (c) => {
   const pageType = c.req.param('pageType');
   const form = await c.req.formData();
   const csvText = str(form.get('csv'));
@@ -107,7 +108,7 @@ importRoutes.get('/pages/import/:pageType', async (c) => {
   }));
 });
 
-importRoutes.post('/pages/import/:pageType', async (c) => {
+importRoutes.post('/pages/import/:pageType', requirePermission('content:import'), async (c) => {
   const pageType = c.req.param('pageType');
   const form = await c.req.formData();
   const raw = str(form.get('items'));

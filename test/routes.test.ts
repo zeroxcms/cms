@@ -829,6 +829,87 @@ describe('admin routes', () => {
   });
 });
 
+describe('capability enforcement', () => {
+  it('lets a moderator publish but not create or edit content', async () => {
+    const publish = await fetchWorker('/admin/pages/101/publish', {
+      method: 'POST',
+      headers: { Cookie: await authCookie('moderator') },
+    });
+    expect(publish.status).toBe(302);
+
+    const create = await fetchWorker('/admin/pages', {
+      method: 'POST',
+      body: form({ name: 'Mod Page', slug: 'mod-page', page_type: 'default' }),
+      headers: { Cookie: await authCookie('moderator') },
+    });
+    expect(create.status).toBe(403);
+  });
+
+  it('lets a moderator move to trash and restore but not purge', async () => {
+    const restore = await fetchWorker('/admin/trash/201/restore', {
+      method: 'POST',
+      headers: { Cookie: await authCookie('moderator') },
+    });
+    expect(restore.status).toBe(302);
+
+    const purge = await fetchWorker('/admin/trash/201/delete', {
+      method: 'POST',
+      headers: { Cookie: await authCookie('moderator') },
+    });
+    expect(purge.status).toBe(403);
+  });
+
+  it('lets an editor create content but not purge trash or reach plugins', async () => {
+    const create = await fetchWorker('/admin/pages', {
+      method: 'POST',
+      body: form({ name: 'Editor Page', slug: 'editor-page', page_type: 'default' }),
+      headers: { Cookie: await authCookie('editor') },
+    });
+    expect(create.status).toBe(302);
+
+    const purge = await fetchWorker('/admin/trash/201/delete', {
+      method: 'POST',
+      headers: { Cookie: await authCookie('editor') },
+    });
+    expect(purge.status).toBe(403);
+
+    const plugin = await fetchWorker('/admin/plugins/events/dashboard', {
+      headers: { Cookie: await authCookie('editor') },
+    });
+    expect(plugin.status).toBe(403);
+  });
+
+  it('returns JSON 403 with insufficient-permissions for moderator uploads', async () => {
+    const response = await fetchWorker('/admin/upload', {
+      method: 'POST',
+      headers: { Accept: 'application/json', Cookie: await authCookie('moderator') },
+      body: form({ dir: 'pictures' }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get('X-CMS-Error')).toBe('insufficient-permissions');
+    expect(await response.json()).toEqual({ success: false, error: 'Insufficient permissions' });
+  });
+
+  it('blocks editors from managing taxonomy-free actions they lack', async () => {
+    // Editors do have taxonomy:write — confirm the positive case too.
+    const tag = await fetchWorker('/admin/tags', {
+      method: 'POST',
+      body: form({ name: 'Editor Tag', slug: 'editor-tag', tag_type_id: '300' }),
+      headers: { Cookie: await authCookie('editor') },
+    });
+    expect(tag.status).toBe(302);
+
+    // Moderators do not.
+    const modTag = await fetchWorker('/admin/tags', {
+      method: 'POST',
+      body: form({ name: 'Mod Tag', slug: 'mod-tag', tag_type_id: '300' }),
+      headers: { Cookie: await authCookie('moderator') },
+    });
+    expect(modTag.status).toBe(403);
+  });
+});
+
 async function expectRoute(route: RouteCase): Promise<Response> {
   const headers = new Headers(route.headers);
   if (route.authenticated) headers.set('Cookie', await authCookie());

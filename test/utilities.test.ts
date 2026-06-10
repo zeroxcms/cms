@@ -5,6 +5,7 @@ import {
   rejectCrossSiteRequest,
   withSecurityHeaders,
 } from '../src/utils/security';
+import { hasPermission, permissionsFor } from '../src/utils/roles';
 import {
   blueprintToLect,
   getLectBlocks,
@@ -208,5 +209,39 @@ describe('security utilities', () => {
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(response.headers.get('Content-Security-Policy')).toContain("default-src 'self'");
+  });
+});
+
+describe('role capabilities', () => {
+  it('grants admins every capability including destructive/global ops', () => {
+    expect(hasPermission('admin', 'trash:purge')).toBe(true);
+    expect(hasPermission('admin', 'plugin:access')).toBe(true);
+    expect(hasPermission('admin', 'content:write')).toBe(true);
+  });
+
+  it('lets editors author content but not purge or reach plugins', () => {
+    expect(hasPermission('editor', 'content:write')).toBe(true);
+    expect(hasPermission('editor', 'media:upload')).toBe(true);
+    expect(hasPermission('editor', 'taxonomy:write')).toBe(true);
+    expect(hasPermission('editor', 'trash:purge')).toBe(false);
+    expect(hasPermission('editor', 'plugin:access')).toBe(false);
+  });
+
+  it('limits moderators to review actions only', () => {
+    expect(hasPermission('moderator', 'content:publish')).toBe(true);
+    expect(hasPermission('moderator', 'content:delete')).toBe(true);
+    expect(hasPermission('moderator', 'trash:restore')).toBe(true);
+    expect(hasPermission('moderator', 'content:write')).toBe(false);
+    expect(hasPermission('moderator', 'taxonomy:write')).toBe(false);
+    expect(hasPermission('moderator', 'media:upload')).toBe(false);
+  });
+
+  it('grants viewers nothing', () => {
+    expect(permissionsFor('viewer').size).toBe(0);
+  });
+
+  it('unions capabilities across multiple roles', () => {
+    expect(hasPermission('moderator,editor', 'content:write')).toBe(true);
+    expect(hasPermission('moderator,editor', 'trash:purge')).toBe(false);
   });
 });
