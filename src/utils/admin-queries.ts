@@ -28,6 +28,16 @@ export async function fetchUserAvatar(db: D1Database, userId: number): Promise<s
   return row?.avatar_url ?? null;
 }
 
+/** Display name for a user id (e.g. the page's `_modifier`); null when missing or unknown. */
+export async function fetchUserName(db: D1Database, userId: number | null | undefined): Promise<string | null> {
+  if (!userId) return null;
+  const row = await db.prepare('SELECT name, email FROM users WHERE id = ?')
+    .bind(userId)
+    .first<{ name: string | null; email: string | null }>();
+  if (!row) return null;
+  return row.name?.trim() || row.email || null;
+}
+
 export async function parentPageOption(db: D1Database, pageId: string | number | null | undefined): Promise<Page[]> {
   const id = num(pageId, 0);
   if (!id) return [];

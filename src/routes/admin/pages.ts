@@ -6,7 +6,7 @@ import { editorPage } from '../../templates/editor';
 import { resolveCmsConfig } from '../../plugins/config';
 import { dispatchHook } from '../../plugins/hooks';
 import { viewsFor } from '../../plugins/views';
-import { blueprintToLect, stringifyLect } from '../../utils/lect';
+import { blueprintToLect, safeParseLect, stringifyLect } from '../../utils/lect';
 import type { Env, Variables, Page, PageVersion, PageTag } from '../../types';
 import {
   dashboardPageHref,
@@ -35,6 +35,7 @@ import {
 import {
   editorTaxonomy,
   fetchUserAvatar,
+  fetchUserName,
   listDashboardDraftPages,
   liveMapForDraftPages,
   parentPageOption,
@@ -397,12 +398,16 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
   const config = await resolveCmsConfig(c.env);
   const lect = lectForPage(config, pageType, version?.lect ?? page.lect);
   const displayPage = { ...page, lect: stringifyLect(lect) };
-  const parentPages = await parentPageOption(c.env.DB, page.page_id);
+  const [parentPages, modifierName] = await Promise.all([
+    parentPageOption(c.env.DB, page.page_id),
+    fetchUserName(c.env.DB, num(lect._modifier, 0)),
+  ]);
 
   return c.html(
     await editorPage(viewsFor(c.env), {
       ...(await buildBaseProps(c, userAvatar)),
       page: displayPage,
+      modifierName: modifierName ?? undefined,
       version: version ?? undefined,
       isVersionPreview: Number.isFinite(requestedVersionId) && !!version,
       liveVersionId: versions.results.find((candidate) => candidate.lect === livePage?.lect)?.id,
@@ -466,8 +471,11 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
       .bind(pageId, versionId)
       .first<PageVersion>();
     if (!version) return c.notFound();
+    const revertedLect = stringifyLect(
+      withDraftMetadata(safeParseLect(version.lect ?? page.lect), userIdFromContext(c)),
+    );
     await c.env.DB.prepare('UPDATE draft_pages SET lect = ?, current_page_version_id = ? WHERE id = ?')
-      .bind(version.lect ?? page.lect, version.id, pageId)
+      .bind(revertedLect, version.id, pageId)
       .run();
     return c.redirect(`/admin/pages/${pageId}/edit?flash=Version+restored`);
   }

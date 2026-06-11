@@ -368,6 +368,7 @@ export async function editorPage(views: Fetcher, opts: {
   userAvatar: string;
   currentUserId: string;
   page?: Page;
+  modifierName?: string;
   version?: PageVersion;
   isVersionPreview?: boolean;
   liveVersionId?: number;
@@ -396,6 +397,7 @@ export async function editorPage(views: Fetcher, opts: {
     userAvatar,
     currentUserId,
     page,
+    modifierName,
     version,
     isVersionPreview = false,
     liveVersionId,
@@ -464,6 +466,8 @@ export async function editorPage(views: Fetcher, opts: {
       editors: page?.editors ?? '',
       editorChips: pageEditorChips,
       hasEditorChips: pageEditorChips.length > 0,
+      modifierName: modifierName ?? '',
+      hasModifier: !!modifierName,
       lect: page?.lect ?? '',
     },
     parentOptions,

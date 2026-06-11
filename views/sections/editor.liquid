@@ -202,6 +202,17 @@
         </div>
       </div>
 
+      {% if page.hasModifier %}
+      <div class="flex min-w-0 items-center gap-2 border-t border-gray-200 px-4 py-2.5 sm:px-5">
+        <svg class="h-4 w-4 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+        </svg>
+        <span class="text-xs text-gray-500">Last modified by</span>
+        <span class="min-w-0 truncate text-xs font-medium text-gray-700">{{ page.modifierName | escape }}</span>
+      </div>
+      {% endif %}
+
       <div class="flex min-w-0 gap-2 border-t border-gray-200 px-4 py-3 sm:px-5">
         <svg class="mt-1 h-4 w-4 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
