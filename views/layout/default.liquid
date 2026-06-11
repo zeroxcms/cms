@@ -29,13 +29,17 @@
 
     // Avatar fallback (CSP-safe replacement for the inline onerror handler).
     document.addEventListener('DOMContentLoaded', function() {
-      const avatar = document.querySelector('[data-avatar-img]');
-      if (avatar) {
-        avatar.addEventListener('error', function() {
+      document.querySelectorAll('[data-avatar-img]').forEach(function(avatar) {
+        function showAvatarFallback() {
           avatar.classList.add('hidden');
-          avatar.nextElementSibling?.classList.remove('hidden');
-        });
-      }
+          avatar.parentElement?.querySelector('[data-avatar-fallback]')?.classList.remove('hidden');
+        }
+
+        avatar.addEventListener('error', showAvatarFallback);
+        if (avatar.complete && avatar.naturalWidth === 0) {
+          showAvatarFallback();
+        }
+      });
     });
   </script>
 </head>
@@ -95,16 +99,18 @@
       </nav>
       <div class="flex items-center justify-between gap-3 px-4 py-3 border-t border-gray-700 md:block md:py-4">
         <div class="hidden min-w-0 items-center gap-3 sm:flex md:mb-3">
-          {% if userAvatar %}
+          {% if hasUserAvatar %}
             <div class="relative w-8 h-8 shrink-0">
               <img src="{{ userAvatar | escape }}"
                    class="w-8 h-8 rounded-full object-cover"
                    alt="avatar"
                    data-avatar-img>
-              <div class="hidden w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-sm font-bold">{{ userInitial | escape }}</div>
+              <div class="hidden w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-sm font-bold"
+                   data-avatar-fallback>{{ userInitial | escape }}</div>
             </div>
           {% else %}
-            <div class="w-8 h-8 shrink-0 rounded-full bg-indigo-500 flex items-center justify-center text-sm font-bold">{{ userInitial | escape }}</div>
+            <div class="w-8 h-8 shrink-0 rounded-full bg-indigo-500 flex items-center justify-center text-sm font-bold"
+                 data-avatar-fallback>{{ userInitial | escape }}</div>
           {% endif %}
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-white truncate">{{ userName | escape }}</p>

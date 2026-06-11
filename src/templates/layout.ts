@@ -13,6 +13,8 @@ export interface LayoutOptions {
 
 export async function layout(views: Fetcher, opts: LayoutOptions): Promise<string> {
   const { admin = false, userName = '', userRole = '', userAvatar = '' } = opts;
+  const normalizedUserAvatar = userAvatar.trim();
+  const hasUserAvatar = normalizedUserAvatar.length > 0;
   const userRoleLabel = userRole.split(',').map((role) => role.trim()).filter(Boolean).join(', ');
 
   return renderLiquid(views, '/layout/default.liquid', {
@@ -20,7 +22,8 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     admin,
     userName,
     userRole,
-    userAvatar,
+    userAvatar: normalizedUserAvatar,
+    hasUserAvatar,
     userRoleLabel,
     userInitial: userName.trim().charAt(0).toUpperCase() || '?',
     contentClass: admin ? 'md:ml-64' : '',

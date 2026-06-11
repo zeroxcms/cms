@@ -393,10 +393,20 @@ describe('admin routes', () => {
       .first<{ id: number }>()).toBeNull();
   });
 
-  it('CMS DB migration does not create live tables', async () => {
+  it('renders a solid sidebar initial when the user has no avatar image', async () => {
+    const response = await fetchWorker('/admin', {
+      headers: { Cookie: await authCookie() },
+    });
+    const html = await response.text();
+
+    expect(html).toContain('data-avatar-fallback');
+    expect(html).not.toMatch(/<img[^>]+data-avatar-img/);
+  });
+
+  it('CMS DB migration does not create live or runtime presence tables', async () => {
     const tables = await env.DB.prepare(
       `SELECT name FROM sqlite_master
-       WHERE type = 'table' AND name IN ('live_pages', 'live_page_tags')
+       WHERE type = 'table' AND name IN ('live_pages', 'live_page_tags', 'presence')
        ORDER BY name`,
     ).all<{ name: string }>();
 
@@ -785,11 +795,6 @@ describe('admin routes', () => {
       user_avatar: null,
     });
     expect(Number.isFinite(Date.parse(rows[0].last_active))).toBe(true);
-
-    const d1Row = await env.DB.prepare('SELECT user_avatar, last_active FROM presence WHERE page_id = ?')
-      .bind(101)
-      .first<{ user_avatar: string | null; last_active: string }>();
-    expect(d1Row).toBeNull();
   });
 
   it('POST /admin/api/page/:pageId/tag/:tagId reports duplicate tag links', async () => {
@@ -1058,7 +1063,6 @@ async function resetData(): Promise<void> {
     'tag_types',
     'sessions',
     'users',
-    'presence',
     'audit_log',
   ];
   for (const table of adminTables) {
