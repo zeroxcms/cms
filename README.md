@@ -10,7 +10,8 @@ Content management system on Workers
 - **Page versioning** – every save creates a new `page_versions` row; `draft_pages.current_page_version_id` points to the active version
 - **Private R2 media uploads** – picture fields upload to a private R2 bucket and are served back through the Worker at `/media/...`
 - **Tailwind CSS + VanillaJS** admin UI with inline HTML toolbar for content editing
-- **Plugins** – extend the CMS with separate Worker plugins (lifecycle hooks, content types, fields/blocks, admin pages). See [Plugins](#plugins).
+- **Plugins** – extend the CMS with separate Worker plugins (lifecycle hooks, content types, fields/blocks, admin pages, publish targets). See [Plugins](#plugins).
+- **Pluggable publish targets** – publishing fans out to one or more adapters: the published D1 database (default), static JSON in an R2 bucket, or any plugin Worker (IPFS, webhooks, search indexes). See [Publish targets](#publish-targets).
 
 ---
 
@@ -213,7 +214,7 @@ npm run deploy
 
 The CMS can be extended with **plugins**, each of which is a separate Cloudflare
 Worker bound to the CMS as a [service binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/).
-A plugin can add four things:
+A plugin can add five things:
 
 - **Lifecycle hooks** – run on page `create`/`update`/`publish`/`unpublish`/`delete`
   (webhooks, external search indexing, cache purge, notifications). Hooks are
@@ -224,6 +225,11 @@ A plugin can add four things:
   snippets, which render through the CMS editor.
 - **Admin routes + nav** – add an admin page (proxied at
   `/admin/plugins/<id>/...`) and a navigation entry.
+- **Publish targets** – declare `publishTarget: true` in the manifest to receive
+  full page snapshots whenever a page is published or unpublished (pin to IPFS,
+  push to a search index, trigger a static-site rebuild). Unlike hooks, publish
+  calls are awaited and failures surface in the editor. See
+  [Publish targets](#publish-targets).
 
 Adding a plugin is a `wrangler.toml` change plus a redeploy — there is no runtime
 install. With no plugins configured (`PLUGINS` unset) the system is inert and adds
@@ -240,7 +246,7 @@ fetches and caches their manifests, forwards the signed-in user plus a shared
 ### Adding a plugin
 
 1. Build/deploy the plugin Worker (see [`examples/plugin-events`](examples/plugin-events)
-   for a complete reference implementing all four capabilities).
+   for a complete reference implementing all five capabilities).
 2. Bind it in `wrangler.toml` and list its binding name in `PLUGINS`:
    ```toml
    [[services]]
@@ -290,16 +296,56 @@ fetches and caches their manifests, forwards the signed-in user plus a shared
 ### Publish / un-publish flow
 
 ```
-DB.draft_pages ──── Publish ────▶  PUBLISHED_DB.live_pages
-              ◀─── Un-publish ───
+                       ┌────▶  d1      PUBLISHED_DB.live_pages (default)
+DB.draft_pages ── Publish ──▶  r2      PUBLISH_BUCKET pages/<uuid>.json + index.json
+                       └────▶  plugin  /__plugin/publish/* (IPFS, webhooks, …)
 ```
 
-Publish reads a row from `DB.draft_pages` and upserts the published snapshot
-into `PUBLISHED_DB.live_pages` by `uuid`, then copies draft tag links into
-`PUBLISHED_DB.live_page_tags`.
+Publish builds one snapshot from `DB.draft_pages` (page row + denormalized tag
+links) and fans it out to every configured **publish target**; un-publish and
+page deletion remove the page from every target the same way. See
+[Publish targets](#publish-targets).
 
-Un-publish deletes the matching `PUBLISHED_DB.live_pages` row by `uuid` and
-removes its published tag links.
+The default `d1` target upserts the snapshot into `PUBLISHED_DB.live_pages` by
+`uuid` and replaces its `live_page_tags` links; un-publish deletes both.
+
+## Publish targets
+
+Publishing is adapter-based (`src/publish/`). Built-in targets are selected with
+the `PUBLISH_TARGETS` var (comma-separated, defaults to `"d1"`):
+
+| Target | Requires | What it does |
+|--------|----------|--------------|
+| `d1` | `PUBLISHED_DB` binding | Upserts `live_pages` / `live_page_tags` in the published database (the original flow) |
+| `r2` | `PUBLISH_BUCKET` binding | Writes static JSON: `pages/<uuid>.json` (full snapshot, `lect` parsed) plus `index.json` (listing of all live pages) |
+
+```toml
+[[r2_buckets]]
+binding = "PUBLISH_BUCKET"
+bucket_name = "worker-cms-published"
+
+[vars]
+PUBLISH_TARGETS = "d1,r2"
+```
+
+**Plugin targets** are not listed in `PUBLISH_TARGETS`; any plugin whose
+manifest declares `publishTarget: true` automatically receives publish traffic
+(requires `PLUGIN_SECRET`). The contract is three POST endpoints, JSON body,
+`x-plugin-secret` header:
+
+| Endpoint | Body | When |
+|----------|------|------|
+| `/__plugin/publish/page` | `{ page, tags, publishedAt }` | page published |
+| `/__plugin/publish/remove` | `{ uuid }` | page unpublished or deleted |
+| `/__plugin/publish/remove-tag` | `{ tagId }` | tag deleted (optional — a 404 is ignored) |
+
+All targets are awaited on publish; per-target failures are logged and reported
+in the editor flash message (`Page published, but these targets failed: …`)
+without blocking the targets that succeeded.
+
+The admin UI's publish-status badges read live state from the first configured
+target that supports reads (`d1`, or `r2` when `d1` is absent). Plugin targets
+are write-only.
 
 ---
 
@@ -315,6 +361,12 @@ removes its published tag links.
 │   ├── types.ts       # Shared TypeScript types & Env bindings
 │   ├── middleware/
 │   │   └── auth.ts    # Dual-JWT auth + editor-role guard
+│   ├── publish/
+│   │   ├── adapter.ts # PublishAdapter contract + snapshot types
+│   │   ├── d1.ts      # D1 target (published database, default)
+│   │   ├── r2.ts      # R2 target (static JSON snapshots)
+│   │   ├── plugin.ts  # Plugin-Worker target (/__plugin/publish/*)
+│   │   └── index.ts   # Registry: resolves targets, fans out publishes
 │   ├── routes/
 │   │   ├── auth.ts    # OAuth 2.1 login / callback / logout / refresh
 │   │   └── admin.ts   # Protected CMS admin UI routes

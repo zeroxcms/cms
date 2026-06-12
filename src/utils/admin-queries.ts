@@ -1,7 +1,7 @@
 // Centralized D1 access helpers used across the admin routes.
 // SQL stays raw here — this module just removes the duplication of issuing it.
 
-import type { Page, PageTag, Tag, TagType } from '../types';
+import type { Page, Tag, TagType } from '../types';
 import { num } from './forms';
 
 export interface DashboardListResult {
@@ -12,12 +12,6 @@ export interface DashboardListResult {
     currentPage: number;
     limit: number;
   };
-}
-
-export interface LivePageSnapshot {
-  uuid: string;
-  lect: string | null;
-  weight: number;
 }
 
 /** Avatar URL for the signed-in user — replaces the avatar lookup duplicated across handlers. */
@@ -75,76 +69,6 @@ export async function savePageVersion(
   return row!.id;
 }
 
-export async function publishPage(draftDb: D1Database, publishedDb: D1Database, pageId: number): Promise<boolean> {
-  const page = await draftDb.prepare('SELECT * FROM draft_pages WHERE id = ?')
-    .bind(pageId)
-    .first<Page>();
-  if (!page) return false;
-
-  await publishedDb.prepare(
-    `INSERT INTO live_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id, creator, editors)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(uuid) DO UPDATE SET
-       name = excluded.name,
-       slug = excluded.slug,
-       weight = excluded.weight,
-       start = excluded.start,
-       end = excluded.end,
-       page_type = excluded.page_type,
-       lect = excluded.lect,
-       page_id = excluded.page_id,
-       creator = excluded.creator,
-       editors = excluded.editors`,
-  )
-    .bind(
-      page.uuid,
-      page.name,
-      page.slug,
-      page.weight,
-      page.start,
-      page.end,
-      page.page_type,
-      page.lect,
-      page.page_id,
-      page.creator,
-      page.editors,
-    )
-    .run();
-
-  const livePage = await publishedDb.prepare('SELECT id FROM live_pages WHERE uuid = ?')
-    .bind(page.uuid)
-    .first<{ id: number }>();
-  if (!livePage) return true;
-
-  await publishedDb.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run();
-
-  const pageTags = await draftDb.prepare('SELECT * FROM draft_page_tags WHERE page_id = ?')
-    .bind(pageId)
-    .all<PageTag>();
-  for (const pageTag of pageTags.results) {
-    await publishedDb.prepare(
-      'INSERT INTO live_page_tags (uuid, page_id, tag_id, weight) VALUES (?, ?, ?, ?)',
-    )
-      .bind(pageTag.uuid, livePage.id, pageTag.tag_id, pageTag.weight)
-      .run();
-  }
-
-  return true;
-}
-
-export async function unpublishPage(publishedDb: D1Database, pageUuid: string): Promise<void> {
-  const livePage = await publishedDb.prepare('SELECT id FROM live_pages WHERE uuid = ?')
-    .bind(pageUuid)
-    .first<{ id: number }>();
-  if (livePage) {
-    await publishedDb.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run();
-  }
-
-  await publishedDb.prepare('DELETE FROM live_pages WHERE uuid = ?')
-    .bind(pageUuid)
-    .run();
-}
-
 export async function listDashboardDraftPages(
   db: D1Database,
   options: { pageType?: string; page: number; limit: number },
@@ -178,16 +102,3 @@ export async function listDashboardDraftPages(
   };
 }
 
-export async function liveMapForDraftPages(publishedDb: D1Database, draftPages: Page[]): Promise<Map<string, LivePageSnapshot>> {
-  const uuids = Array.from(new Set(draftPages.map((page) => page.uuid)));
-  if (!uuids.length) return new Map();
-
-  const placeholders = uuids.map(() => '?').join(',');
-  const livePages = await publishedDb.prepare(
-    `SELECT uuid, lect, weight FROM live_pages WHERE uuid IN (${placeholders})`,
-  )
-    .bind(...uuids)
-    .all<LivePageSnapshot>();
-
-  return new Map(livePages.results.map((page) => [page.uuid, page]));
-}

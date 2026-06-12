@@ -24,6 +24,7 @@ import { ensureDefaultLectName } from '../../utils/page-logic';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 import { fetchUserAvatar } from '../../utils/admin-queries';
+import { removeTagFromTargets } from '../../publish';
 import { buildBaseProps } from '../../utils/admin-render';
 import type { AppContext } from '../../utils/context';
 
@@ -153,7 +154,7 @@ tagsRoutes.post('/tags/:id/delete', requirePermission('taxonomy:write'), async (
   const id = parseInt(c.req.param('id'), 10);
   await Promise.all([
     c.env.DB.prepare('DELETE FROM draft_page_tags WHERE tag_id = ?').bind(id).run(),
-    c.env.PUBLISHED_DB.prepare('DELETE FROM live_page_tags WHERE tag_id = ?').bind(id).run(),
+    removeTagFromTargets(c.env, id),
     c.env.DB.prepare('DELETE FROM trash_page_tags WHERE tag_id = ?').bind(id).run(),
     c.env.DB.prepare('UPDATE tags SET parent_tag = NULL WHERE parent_tag = ?').bind(id).run(),
   ]);

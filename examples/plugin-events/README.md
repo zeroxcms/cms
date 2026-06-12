@@ -2,7 +2,7 @@
 
 Reference plugin for the Worker CMS. It is a standalone Cloudflare Worker that the
 CMS calls over a [service binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/).
-It demonstrates all four plugin extension points in one small file
+It demonstrates all five plugin extension points in one small file
 (`src/index.ts`):
 
 | Capability | What this plugin does |
@@ -11,6 +11,7 @@ It demonstrates all four plugin extension points in one small file
 | Fields & blocks | Registers an `events-map` field type and serves its Liquid snippet. |
 | Lifecycle hooks | Subscribes to `publish` / `unpublish` / `delete` and logs the payload. |
 | Admin routes + nav | Adds an **Events** nav item and renders a page at `/admin/plugins/events/dashboard`. |
+| Publish target | Declares `publishTarget: true` and logs each full page snapshot — replace the log lines with an IPFS pin, webhook, or search-index push. |
 
 ## The plugin contract
 
@@ -23,9 +24,15 @@ A plugin is any Worker that answers these requests under the reserved
 | `GET /__plugin/views/*` | Serves the plugin's Liquid templates (field/block snippets). |
 | `ALL /__plugin/admin/*` | Renders the plugin's admin pages. Receives `x-cms-user`. |
 | `POST /__plugin/hooks/<event>` | Receives `{ event, page, user }` for a subscribed lifecycle event. |
+| `POST /__plugin/publish/page` | Receives the full `{ page, tags, publishedAt }` snapshot when a page publishes (only if the manifest sets `publishTarget: true`). |
+| `POST /__plugin/publish/remove` | Receives `{ uuid }` when a page is unpublished or deleted. |
+| `POST /__plugin/publish/remove-tag` | Receives `{ tagId }` when a tag is deleted (optional — 404 is ignored). |
 
-Hook and admin calls carry an `x-plugin-secret` header equal to the CMS
-`PLUGIN_SECRET`, so the plugin can verify the request came from the CMS.
+Hook, publish, and admin calls carry an `x-plugin-secret` header equal to the
+CMS `PLUGIN_SECRET`, so the plugin can verify the request came from the CMS.
+
+Hooks are fire-and-forget notifications; **publish calls are awaited** and a
+non-2xx response is reported in the CMS editor as a failed publish target.
 
 ## Deploy + wire into the CMS
 
