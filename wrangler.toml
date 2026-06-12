@@ -25,6 +25,14 @@ migrations_dir = "migrations/published"
 binding = "MEDIA_BUCKET"
 bucket_name = "worker-cms-media"
 
+# ── Publish targets (optional) ────────────────────────────────────────────────
+# Publishing fans out to the targets in the PUBLISH_TARGETS var (see [vars]).
+# The "r2" target writes static JSON snapshots (pages/<uuid>.json + index.json)
+# to this bucket. Create it with `wrangler r2 bucket create worker-cms-published`.
+# [[r2_buckets]]
+# binding = "PUBLISH_BUCKET"
+# bucket_name = "worker-cms-published"
+
 [[durable_objects.bindings]]
 name = "PAGE_SYNC"
 class_name = "PageSyncDO"
@@ -57,6 +65,11 @@ simple = { limit = 30, period = 60 }
 # Comma-separated plugin service-binding names, e.g. "PLUGIN_EVENTS,PLUGIN_SEO".
 # Leave unset to disable the plugin system entirely (zero overhead).
 # PLUGINS = "PLUGIN_EVENTS"
+# Comma-separated built-in publish targets: "d1" (published D1 database) and/or
+# "r2" (static JSON in PUBLISH_BUCKET). Defaults to "d1" when unset. Plugin
+# publish targets are discovered from plugin manifests (publishTarget: true)
+# and do not need to be listed here.
+# PUBLISH_TARGETS = "d1,r2"
 # Comma-separated list of enabled OAuth providers: "github", "google", "eventuai"
 ENABLED_PROVIDERS = "eventuai,github"
 # Per-provider OAuth client IDs – add the ones you use

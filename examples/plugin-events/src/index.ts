@@ -3,11 +3,13 @@
 //
 // A self-contained Cloudflare Worker that implements the CMS plugin
 // contract over the reserved /__plugin/* prefix. It exercises all
-// four extension points:
+// five extension points:
 //   - content types  : registers an `event` blueprint
 //   - fields & blocks : registers an `events-map` field + its snippet
 //   - lifecycle hooks : logs publish/unpublish/delete
 //   - admin + nav     : an "Events" nav item + a proxied admin page
+//   - publish target  : receives full page snapshots on publish —
+//     swap the log lines for an IPFS pin, webhook, search index, …
 //
 // Bind it into the CMS as a service binding and list its binding name
 // in the CMS `PLUGINS` var. See README.md.
@@ -23,6 +25,7 @@ const MANIFEST = {
   name: 'Events',
   version: '1.0.0',
   hooks: ['publish', 'unpublish', 'delete'],
+  publishTarget: true,
   nav: [{ label: 'Events', href: 'dashboard', roles: ['admin', 'editor'] }],
   contentTypes: {
     blueprint: {
@@ -48,9 +51,11 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // Defense in depth: hooks and admin require the shared secret. Manifest and
-    // view files are harmless to serve, and the binding is private anyway.
-    const secretRequired = path.startsWith('/__plugin/hooks/') || path.startsWith('/__plugin/admin');
+    // Defense in depth: hooks, publish, and admin require the shared secret.
+    // Manifest and view files are harmless to serve, and the binding is private anyway.
+    const secretRequired = path.startsWith('/__plugin/hooks/')
+      || path.startsWith('/__plugin/publish/')
+      || path.startsWith('/__plugin/admin');
     if (secretRequired && env.PLUGIN_SECRET && request.headers.get('x-plugin-secret') !== env.PLUGIN_SECRET) {
       return new Response('forbidden', { status: 403 });
     }
@@ -61,6 +66,25 @@ export default {
 
     if (path === '/__plugin/views/snippets/pagefield/events-map/basic.liquid') {
       return new Response(EVENTS_MAP_SNIPPET, { headers: { 'content-type': 'text/plain' } });
+    }
+
+    // Publish target: the CMS awaits these calls and treats non-2xx responses
+    // as a failed target, so do the real work (pin to IPFS, push to a search
+    // index, call a webhook) before returning.
+    if (path === '/__plugin/publish/page') {
+      const snapshot = await request.json().catch(() => null);
+      console.log('[events plugin] publish page:', JSON.stringify(snapshot));
+      return new Response('ok');
+    }
+    if (path === '/__plugin/publish/remove') {
+      const body = await request.json().catch(() => null);
+      console.log('[events plugin] unpublish:', JSON.stringify(body));
+      return new Response('ok');
+    }
+    if (path === '/__plugin/publish/remove-tag') {
+      const body = await request.json().catch(() => null);
+      console.log('[events plugin] remove tag:', JSON.stringify(body));
+      return new Response('ok');
     }
 
     if (path.startsWith('/__plugin/hooks/')) {

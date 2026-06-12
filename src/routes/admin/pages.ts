@@ -37,12 +37,17 @@ import {
   fetchUserAvatar,
   fetchUserName,
   listDashboardDraftPages,
-  liveMapForDraftPages,
   parentPageOption,
-  publishPage,
   savePageVersion,
-  unpublishPage,
 } from '../../utils/admin-queries';
+import {
+  describeFailures,
+  getLiveLect,
+  liveMapForDraftPages,
+  publishPageToTargets,
+  unpublishPageFromTargets,
+} from '../../publish';
+import type { PublishOutcome } from '../../publish';
 import { buildBaseProps, dashboardPagination, exportPageList } from '../../utils/admin-render';
 import { requirePermission } from '../../middleware/auth';
 
@@ -57,6 +62,14 @@ async function notifyPageSaved(env: Env, pageId: number): Promise<void> {
   } catch {
     // Sync is a non-critical overlay; never block a save on it.
   }
+}
+
+// Flash message for a publish fan-out: plain success, or success qualified
+// with the targets that failed (failures are already logged by the registry).
+function publishFlash(outcome: PublishOutcome): string {
+  const failed = describeFailures(outcome);
+  if (!failed) return 'Page+published+successfully';
+  return encodeURIComponent(`Page published, but these targets failed: ${failed}`);
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -75,7 +88,7 @@ pagesRoutes.get('/', async (c) => {
     page: requestedPage,
     limit: pageSize,
   });
-  const liveMap = await liveMapForDraftPages(c.env.PUBLISHED_DB, draftPages.results);
+  const liveMap = await liveMapForDraftPages(c.env, draftPages.results);
 
   const pages = draftPages.results.map((p) => ({
     ...p,
@@ -118,7 +131,7 @@ pagesRoutes.get('/pages/list/:pageType', async (c) => {
     page: requestedPage,
     limit: pageSize,
   });
-  const liveMap = await liveMapForDraftPages(c.env.PUBLISHED_DB, draftPages.results);
+  const liveMap = await liveMapForDraftPages(c.env, draftPages.results);
   const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
   const routeBase = `/admin/pages/list/${encodeURIComponent(pageType)}`;
 
@@ -374,7 +387,7 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
 
   if (!page) return c.notFound();
 
-  const [version, versions, livePage, pageTags] = await Promise.all([
+  const [version, versions, liveLect, pageTags] = await Promise.all([
     Number.isFinite(requestedVersionId)
       ? c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? AND id = ?')
           .bind(pageId, requestedVersionId)
@@ -387,9 +400,7 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
     c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
       .bind(pageId)
       .all<PageVersion>(),
-    c.env.PUBLISHED_DB.prepare('SELECT lect FROM live_pages WHERE uuid = ?')
-      .bind(page.uuid)
-      .first<{ lect: string | null }>(),
+    getLiveLect(c.env, page.uuid),
     c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?')
       .bind(pageId)
       .all<{ tag_id: number }>(),
@@ -410,7 +421,7 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
       modifierName: modifierName ?? undefined,
       version: version ?? undefined,
       isVersionPreview: Number.isFinite(requestedVersionId) && !!version,
-      liveVersionId: versions.results.find((candidate) => candidate.lect === livePage?.lect)?.id,
+      liveVersionId: versions.results.find((candidate) => candidate.lect === liveLect)?.id,
       parentPages,
       tags: taxonomy.tags,
       tagTypes: taxonomy.tagTypes,
@@ -481,7 +492,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
   }
 
   if (errors.length) {
-    const [parentPages, taxonomy, version, versions, livePage, pageTags, userAvatar] = await Promise.all([
+    const [parentPages, taxonomy, version, versions, liveLect, pageTags, userAvatar] = await Promise.all([
       parentPageOption(c.env.DB, nullableStr(form.get('page_id')) ?? page.page_id),
       editorTaxonomy(c.env.DB),
       page.current_page_version_id
@@ -492,9 +503,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
       c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
         .bind(pageId)
         .all<PageVersion>(),
-      c.env.PUBLISHED_DB.prepare('SELECT lect FROM live_pages WHERE uuid = ?')
-        .bind(page.uuid)
-        .first<{ lect: string | null }>(),
+      getLiveLect(c.env, page.uuid),
       c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?').bind(pageId).all<{ tag_id: number }>(),
       fetchUserAvatar(c.env.DB, userIdFromContext(c)),
     ]);
@@ -505,7 +514,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
         ...(await buildBaseProps(c, userAvatar)),
         page,
         version: version ?? undefined,
-        liveVersionId: versions.results.find((candidate) => candidate.lect === livePage?.lect)?.id,
+        liveVersionId: versions.results.find((candidate) => candidate.lect === liveLect)?.id,
         parentPages,
         tags: taxonomy.tags,
         tagTypes: taxonomy.tagTypes,
@@ -591,9 +600,10 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
   }
 
   if (action === 'publish') {
-    await publishPage(c.env.DB, c.env.PUBLISHED_DB, pageId);
+    const outcome = await publishPageToTargets(c.env, pageId);
+    if (!outcome) return c.notFound();
     dispatchHook(c, 'publish', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug });
-    return c.redirect('/admin?flash=Page+published+successfully');
+    return c.redirect(`/admin?flash=${publishFlash(outcome)}`);
   }
 
   if (isStructuredEditorAction(action)) {
@@ -609,8 +619,8 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
 
 pagesRoutes.post('/pages/:id/publish', requirePermission('content:publish'), async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
-  const published = await publishPage(c.env.DB, c.env.PUBLISHED_DB, pageId);
-  if (!published) return c.notFound();
+  const outcome = await publishPageToTargets(c.env, pageId);
+  if (!outcome) return c.notFound();
 
   const page = await c.env.DB.prepare('SELECT uuid, name, slug, page_type FROM draft_pages WHERE id = ?')
     .bind(pageId)
@@ -623,7 +633,7 @@ pagesRoutes.post('/pages/:id/publish', requirePermission('content:publish'), asy
     page_type: page?.page_type,
   });
 
-  return c.redirect('/admin?flash=Page+published+successfully');
+  return c.redirect(`/admin?flash=${publishFlash(outcome)}`);
 });
 
 // ── Unpublish (remove from published DB) ──────────────────────────────────────
@@ -636,7 +646,7 @@ pagesRoutes.post('/pages/:id/unpublish', requirePermission('content:publish'), a
     .first<{ uuid: string; name: string; slug: string; page_type: string | null }>();
   if (!page) return c.notFound();
 
-  await unpublishPage(c.env.PUBLISHED_DB, page.uuid);
+  await unpublishPageFromTargets(c.env, page.uuid);
 
   dispatchHook(c, 'unpublish', {
     id: pageId,
@@ -709,8 +719,8 @@ pagesRoutes.post('/pages/:id/delete', requirePermission('content:delete'), async
     }
   }
 
-  // Unpublish from the published DB before deleting the draft copy.
-  await unpublishPage(c.env.PUBLISHED_DB, page.uuid);
+  // Unpublish from every publish target before deleting the draft copy.
+  await unpublishPageFromTargets(c.env, page.uuid);
 
   // Delete from DRAFT
   await c.env.DB.prepare('DELETE FROM draft_pages WHERE id = ?').bind(pageId).run();

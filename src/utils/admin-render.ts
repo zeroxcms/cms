@@ -23,6 +23,7 @@ import { csvDownloadResponse, exportPagesCsv } from './csv';
 import { resolveCmsConfig } from '../plugins/config';
 import { pluginNav } from '../plugins/registry';
 import { editorTaxonomy, fetchUserAvatar } from './admin-queries';
+import { listLiveByTypes } from '../publish';
 import type { DashboardListResult } from './admin-queries';
 import { lectsMatch } from './page-logic';
 import { strParam } from './forms';
@@ -169,11 +170,8 @@ export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all
         },
       };
 
-  const pageTypePlaceholders = pageTypes.map(() => '?').join(',');
-  const livePages = await c.env.PUBLISHED_DB.prepare(`SELECT uuid, lect, weight FROM live_pages WHERE page_type IN (${pageTypePlaceholders})`)
-    .bind(...pageTypes)
-    .all<{ uuid: string; lect: string | null; weight: number }>();
-  const liveMap = new Map(livePages.results.map((page) => [page.uuid, page]));
+  const livePages = await listLiveByTypes(c.env, pageTypes);
+  const liveMap = new Map(livePages.map((page) => [page.uuid, page]));
   const routeBase = selectedPageType === 'all'
     ? '/admin/advanced-search'
     : `/admin/advanced-search/${encodeURIComponent(selectedPageType)}`;

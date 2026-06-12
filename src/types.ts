@@ -153,6 +153,9 @@ export interface PluginManifest {
   version: string;
   /** Lifecycle events the plugin wants to receive (e.g. "publish", "delete"). */
   hooks?: string[];
+  /** When true, the plugin is a publish target: it receives full page
+   *  snapshots on publish/unpublish via /__plugin/publish/*. */
+  publishTarget?: boolean;
   nav?: PluginNavItem[];
   contentTypes?: PluginContentTypes;
   fieldTypes?: PluginFieldType[];
@@ -173,6 +176,11 @@ export interface Env {
   PUBLISHED_DB: D1Database;
   VIEWS: Fetcher;
   MEDIA_BUCKET?: R2Bucket;
+  /** Comma-separated built-in publish targets ("d1", "r2"). Defaults to "d1".
+   *  Plugin publish targets are discovered from manifests, not listed here. */
+  PUBLISH_TARGETS?: string;
+  /** Bucket for the "r2" publish target (static JSON snapshots). */
+  PUBLISH_BUCKET?: R2Bucket;
   PAGE_SYNC: DurableObjectNamespace;
   /** Comma-separated list of plugin service-binding names, e.g. "PLUGIN_EVENTS,PLUGIN_SEO". */
   PLUGINS?: string;
