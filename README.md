@@ -330,8 +330,16 @@ PUBLISH_TARGETS = "d1,r2"
 
 **Plugin targets** are not listed in `PUBLISH_TARGETS`; any plugin whose
 manifest declares `publishTarget: true` automatically receives publish traffic
-(requires `PLUGIN_SECRET`). The contract is three POST endpoints, JSON body,
-`x-plugin-secret` header:
+(requires `PLUGIN_SECRET`). Two ready-to-deploy plugins:
+
+- [`plugin-publish-ipfs`](https://github.com/zeroxcms/plugin-publish-ipfs) — pins
+  each published page to IPFS via the Pinata API, tracks `uuid → CID` in KV so
+  un-publish unpins.
+- [`plugin-publish-webhook`](https://github.com/zeroxcms/plugin-publish-webhook) —
+  forwards publish events to external URLs as HMAC-signed JSON webhooks (search
+  indexers, static-site rebuilds, deploy hooks).
+
+The contract is three POST endpoints, JSON body, `x-plugin-secret` header:
 
 | Endpoint | Body | When |
 |----------|------|------|
