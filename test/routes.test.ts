@@ -346,6 +346,12 @@ describe('admin routes', () => {
     { name: 'GET /admin/tags/:id/edit', path: '/admin/tags/301/edit', authenticated: true, expectedStatus: 200 },
     { name: 'POST /admin/tags/:id', method: 'POST', path: '/admin/tags/301', body: form({ name: 'News Updated', slug: 'news-updated', tag_type_id: '300' }), authenticated: true, expectedStatus: 302, location: '/admin/tags' },
     { name: 'POST /admin/tags/:id/delete', method: 'POST', path: '/admin/tags/301/delete', authenticated: true, expectedStatus: 302, location: '/admin/tags' },
+    { name: 'GET /admin/page_types', path: '/admin/page_types', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/page_types/new', path: '/admin/page_types/new', authenticated: true, expectedStatus: 200 },
+    { name: 'POST /admin/page_types', method: 'POST', path: '/admin/page_types', body: form({ name: 'Press Release', slug: 'press', blueprint: '["@date","name"]' }), authenticated: true, expectedStatus: 302, location: '/admin/page_types' },
+    { name: 'GET /admin/page_types/:id/edit', path: '/admin/page_types/700/edit', authenticated: true, expectedStatus: 200 },
+    { name: 'POST /admin/page_types/:id', method: 'POST', path: '/admin/page_types/700', body: form({ name: 'Event', slug: 'event', blueprint: '["@date","name","location"]' }), authenticated: true, expectedStatus: 302, location: '/admin/page_types' },
+    { name: 'POST /admin/page_types/:id/delete', method: 'POST', path: '/admin/page_types/700/delete', authenticated: true, expectedStatus: 302, location: '/admin/page_types' },
   ])('$name', async (route) => {
     await expectRoute(route);
   });
@@ -913,6 +919,20 @@ describe('capability enforcement', () => {
     expect(plugin.status).toBe(403);
   });
 
+  it('lets an editor view page types but not create them (admin only)', async () => {
+    const view = await fetchWorker('/admin/page_types', {
+      headers: { Cookie: await authCookie('editor') },
+    });
+    expect(view.status).toBe(200);
+
+    const create = await fetchWorker('/admin/page_types', {
+      method: 'POST',
+      body: form({ name: 'Nope', slug: 'nope', blueprint: '["name"]' }),
+      headers: { Cookie: await authCookie('editor') },
+    });
+    expect(create.status).toBe(403);
+  });
+
   it('returns JSON 403 with insufficient-permissions for moderator uploads', async () => {
     const response = await fetchWorker('/admin/upload', {
       method: 'POST',
@@ -1061,6 +1081,7 @@ async function resetData(): Promise<void> {
     'trash_pages',
     'tags',
     'tag_types',
+    'page_types',
     'sessions',
     'users',
     'audit_log',
@@ -1087,6 +1108,10 @@ async function seedBaseData(): Promise<void> {
 
   await env.DB.prepare('INSERT INTO tag_types (id, name, slug) VALUES (?, ?, ?)')
     .bind(300, 'Categories', 'categories')
+    .run();
+
+  await env.DB.prepare('INSERT INTO page_types (id, slug, name, blueprint) VALUES (?, ?, ?, ?)')
+    .bind(700, 'event', 'Event', JSON.stringify(['@date', 'name', 'venue']))
     .run();
   await env.DB.prepare('INSERT INTO tags (id, name, slug, tag_type_id, lect) VALUES (?, ?, ?, ?, ?)')
     .bind(301, 'News', 'news', 300, JSON.stringify({ name: { en: 'News' } }))

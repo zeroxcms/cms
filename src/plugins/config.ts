@@ -10,6 +10,7 @@
 import { cmsConfig } from '../cms-config';
 import type { CmsConfig } from '../cms-config';
 import { getPlugins } from './registry';
+import { dbPageTypeToContentTypes, listDbPageTypes } from '../utils/page-type-store';
 import type { Env, PluginContentTypes } from '../types';
 
 const CONFIG_TTL_MS = 60_000;
@@ -24,16 +25,18 @@ function mergeContentTypes(base: CmsConfig, fragment: PluginContentTypes | undef
 }
 
 /**
- * Returns the CmsConfig with plugin-contributed content types merged in.
- * Falls back to the static base when no plugins are configured, so the
- * zero-plugin path is unchanged. Cached per isolate with a short TTL.
+ * Returns the CmsConfig with plugin- and database-contributed content types
+ * merged in, layered base → plugins → database (so a DB page type can override
+ * a plugin or config type). Falls back to the static base when neither source
+ * contributes anything, keeping the zero-config path unchanged. Cached per
+ * isolate with a short TTL.
  */
 export async function resolveCmsConfig(env: Env): Promise<CmsConfig> {
-  if (!env.PLUGINS) return cmsConfig;
   if (cached && cached.expires > Date.now()) return cached.config;
 
-  const plugins = await getPlugins(env);
-  if (plugins.length === 0) return cmsConfig;
+  const plugins = env.PLUGINS ? await getPlugins(env) : [];
+  const dbPageTypes = env.DB ? await listDbPageTypes(env.DB) : [];
+  if (plugins.length === 0 && dbPageTypes.length === 0) return cmsConfig;
 
   // Shallow-clone the mutable record fields so we never mutate the base.
   const merged: CmsConfig = {
@@ -47,6 +50,10 @@ export async function resolveCmsConfig(env: Env): Promise<CmsConfig> {
 
   for (const plugin of plugins) {
     mergeContentTypes(merged, plugin.manifest.contentTypes);
+  }
+
+  for (const pageType of dbPageTypes) {
+    mergeContentTypes(merged, dbPageTypeToContentTypes(pageType));
   }
 
   cached = { config: merged, expires: Date.now() + CONFIG_TTL_MS };

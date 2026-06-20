@@ -23,6 +23,7 @@ export const PERMISSIONS = [
   'taxonomy:write',   // create / edit / delete tags and tag types
   'media:upload',     // upload media to R2
   'plugin:access',    // reach the plugin admin proxy
+  'pagetype:write',   // create / edit / delete database-defined page types
 ] as const;
 
 export type Permission = typeof PERMISSIONS[number];
@@ -108,6 +109,24 @@ export interface TagType {
   updated_at: string;
   name: string;
   slug: string;
+}
+
+/** A runtime-editable page type stored in the `page_types` table. */
+export interface PageType {
+  id: number;
+  uuid: string;
+  created_at: string;
+  updated_at: string;
+  /** The page-type key (e.g. 'event'); becomes the blueprint map key. */
+  slug: string;
+  name: string;
+  /** JSON array of BlueprintEntry. */
+  blueprint: string;
+  /** Optional JSON fragments. */
+  blocks: string | null;
+  block_lists: string | null;
+  tag_lists: string | null;
+  weight: number;
 }
 
 export interface MediaFile {

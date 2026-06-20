@@ -12,6 +12,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   admin: [
     'content:write', 'content:publish', 'content:delete', 'content:import',
     'trash:restore', 'trash:purge', 'taxonomy:write', 'media:upload', 'plugin:access',
+    'pagetype:write',
   ],
   editor: [
     'content:write', 'content:publish', 'content:delete', 'content:import',

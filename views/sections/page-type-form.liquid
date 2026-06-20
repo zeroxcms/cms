@@ -1,0 +1,47 @@
+<div class="min-w-0 max-w-2xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
+  <h2 class="text-2xl font-bold text-gray-900 mb-6">{{ heading | escape }}</h2>
+  {% if hasError %}
+    <div class="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{{ error | escape }}</div>
+  {% endif %}
+  <form method="POST" action="{{ action | escape }}" class="min-w-0 space-y-4">
+    <label for="page_type_name" class="block min-w-0">
+      <span class="block text-sm font-medium text-gray-700 mb-1">Name</span>
+      <input id="page_type_name" name="name" required value="{{ name | escape }}" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+    </label>
+    <label for="page_type_slug" class="block min-w-0">
+      <span class="block text-sm font-medium text-gray-700 mb-1">Slug</span>
+      <input id="page_type_slug" name="slug" value="{{ slug | escape }}" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono">
+      <span class="block text-xs text-gray-500 mt-1">The page-type key used on pages (e.g. <code>event</code>). Cannot collide with a config or existing type.</span>
+    </label>
+    <label for="page_type_weight" class="block min-w-0">
+      <span class="block text-sm font-medium text-gray-700 mb-1">Weight</span>
+      <input id="page_type_weight" name="weight" type="number" value="{{ weight | escape }}" class="block min-w-0 w-32 max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+    </label>
+    <label for="page_type_blueprint" class="block min-w-0">
+      <span class="block text-sm font-medium text-gray-700 mb-1">Blueprint (JSON array)</span>
+      <textarea id="page_type_blueprint" name="blueprint" rows="8" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono" spellcheck="false">{{ blueprint | escape }}</textarea>
+      <span class="block text-xs text-gray-500 mt-1">Field definitions, e.g. <code>["@date", "name", "body:text", {"items": ["name"]}]</code></span>
+    </label>
+    <label for="page_type_blocks" class="block min-w-0">
+      <span class="block text-sm font-medium text-gray-700 mb-1">Blocks (JSON object, optional)</span>
+      <textarea id="page_type_blocks" name="blocks" rows="4" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono" spellcheck="false">{{ blocks | escape }}</textarea>
+    </label>
+    <label for="page_type_block_lists" class="block min-w-0">
+      <span class="block text-sm font-medium text-gray-700 mb-1">Block lists (JSON array, optional)</span>
+      <textarea id="page_type_block_lists" name="block_lists" rows="3" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono" spellcheck="false">{{ blockLists | escape }}</textarea>
+    </label>
+    <label for="page_type_tag_lists" class="block min-w-0">
+      <span class="block text-sm font-medium text-gray-700 mb-1">Tag lists (JSON array, optional)</span>
+      <textarea id="page_type_tag_lists" name="tag_lists" rows="3" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono" spellcheck="false">{{ tagLists | escape }}</textarea>
+    </label>
+    <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+      <button type="submit" class="w-full shrink-0 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg sm:w-auto">Save</button>
+      <a href="/admin/page_types" class="w-full shrink-0 px-4 py-2 text-center bg-white border border-gray-300 rounded-lg text-sm font-semibold sm:w-auto">Cancel</a>
+    </div>
+  </form>
+  {% if isEdit %}
+    <form method="POST" action="{{ deleteAction | escape }}" data-confirm="Delete this page type? Existing pages keep their type string.">
+      <button type="submit" class="mt-4 w-full px-4 py-2 text-sm font-semibold text-red-600 sm:w-auto">Delete</button>
+    </form>
+  {% endif %}
+</div>
