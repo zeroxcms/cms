@@ -1159,7 +1159,7 @@ describe('structured editor weights', () => {
     expect(editHtml).toContain('value="item-delete:items|1"');
     expect(editHtml).toContain('aria-label="Delete item 2"');
     expect(editHtml).toContain('value="block-delete:0"');
-    expect(editHtml).toContain('<section class="min-w-0 space-y-3">');
+    expect(editHtml).toContain('<section class="min-w-0 space-y-3 [&_input]:bg-[#141a26]">');
     expect(editHtml).toMatch(/<details id="lect_json_details" class="[^"]*">/);
     expect(editHtml).toContain('<span>Lect JSON</span>');
     expect(editHtml).not.toContain('<span class="block text-sm font-medium text-gray-700 mb-1">_weight</span>');
