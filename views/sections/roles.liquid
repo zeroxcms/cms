@@ -1,0 +1,44 @@
+<div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
+  <div class="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900">Roles</h2>
+      <p class="mt-1 text-sm text-gray-500">Assign permissions to roles. The admin role always has every permission.</p>
+    </div>
+    <a href="/admin/roles/new" class="w-full px-4 py-2 text-center bg-indigo-600 text-white text-sm font-semibold rounded-lg sm:w-auto">New Role</a>
+  </div>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
+    <table class="w-full min-w-[560px] text-left">
+      <thead class="bg-gray-50 border-b border-gray-200">
+        <tr>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Permissions</th>
+          <th class="px-6 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% if hasRoles %}
+          {% for role in roles %}
+            <tr class="hover:bg-gray-50">
+              <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ role.label | escape }} <span class="text-gray-400 font-mono text-xs">{{ role.name | escape }}</span></td>
+              <td class="px-6 py-3 text-sm">
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">{{ role.badge | escape }}</span>
+              </td>
+              <td class="px-6 py-3 text-sm text-gray-700">{{ role.permissionCount }}</td>
+              <td class="px-6 py-3 text-right whitespace-nowrap">
+                <a href="{{ role.editHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
+                {% if role.canDelete %}
+                  <form method="POST" action="{{ role.deleteAction | escape }}" class="inline" data-confirm="Delete this role? It will be removed from any users that have it.">
+                    <button type="submit" class="ml-3 text-sm font-medium text-red-600 hover:text-red-700">Delete</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="4" class="px-6 py-10 text-center text-gray-400">No roles.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>

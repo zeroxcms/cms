@@ -193,6 +193,27 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 14. Roles – custom roles, plus built-in roles once their permissions are
+--     customized. Built-in roles (admin/editor/moderator/viewer) are implicit
+--     in code (USER_ROLES) and only appear here after being edited.
+CREATE TABLE IF NOT EXISTS roles(
+    name TEXT PRIMARY KEY,           -- slug-like role key
+    label TEXT NOT NULL,
+    -- 1 = a built-in role with customized permissions; 0 = a custom role
+    builtin INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- 15. Role permissions – grants for any role listed in `roles`. A built-in role
+--     with no override here falls back to its code default; the 'admin' role is
+--     always granted every permission in code and is not stored.
+CREATE TABLE IF NOT EXISTS role_permissions(
+    role TEXT NOT NULL,
+    permission TEXT NOT NULL,
+    PRIMARY KEY (role, permission)
+);
+
 -- ============================================================
 -- Indexes
 -- ============================================================
@@ -209,6 +230,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log (entity_type, entit
 -- ============================================================
 CREATE TRIGGER IF NOT EXISTS users_updated_at AFTER UPDATE ON users WHEN old.updated_at < CURRENT_TIMESTAMP BEGIN
     UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS roles_updated_at AFTER UPDATE ON roles WHEN old.updated_at < CURRENT_TIMESTAMP BEGIN
+    UPDATE roles SET updated_at = CURRENT_TIMESTAMP WHERE name = old.name;
 END;
 
 CREATE TRIGGER IF NOT EXISTS taxonomies_updated_at AFTER UPDATE ON taxonomies WHEN old.updated_at < CURRENT_TIMESTAMP BEGIN

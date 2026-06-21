@@ -25,9 +25,37 @@ export const PERMISSIONS = [
   'plugin:access',    // reach the plugin admin proxy
   'pagetype:write',   // create / edit / delete database-defined page types
   'blocktype:write',  // create / edit / delete database-defined block types
+  'users:manage',     // view users and assign their roles
+  'roles:manage',     // create / edit / delete roles and their permissions
 ] as const;
 
 export type Permission = typeof PERMISSIONS[number];
+
+/** Human-readable descriptions for the Roles admin permission picker. */
+export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
+  'content:write': 'Create and edit pages',
+  'content:publish': 'Publish and unpublish pages',
+  'content:delete': 'Move pages to trash',
+  'content:import': 'Bulk import (CSV / JSON)',
+  'trash:restore': 'Restore pages from trash',
+  'trash:purge': 'Permanently delete from trash',
+  'taxonomy:write': 'Manage tags and taxonomies',
+  'media:upload': 'Upload media',
+  'plugin:access': 'Reach the plugin admin',
+  'pagetype:write': 'Manage page types',
+  'blocktype:write': 'Manage block types',
+  'users:manage': 'Manage users and their roles',
+  'roles:manage': 'Manage roles and permissions',
+};
+
+/** A role with a stored permission set (custom role, or a customized built-in). */
+export interface Role {
+  name: string;
+  label: string;
+  builtin: number;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface User {
   id: number;

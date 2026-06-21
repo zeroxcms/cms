@@ -1,5 +1,12 @@
 /* Admin UI stylesheet – compiled by `npm run build:css` into views/assets/admin.css.
-   Replaces the Tailwind Play CDN so the CSP can drop remote and inline script sources. */
+   Replaces the Tailwind Play CDN so the CSP can drop remote and inline script sources.
+
+   Theme: a dark "sports-TV / scoreboard" skin — near-black navy canvas, a single
+   electric-lime accent, monospaced upper-case labels and tight display headings.
+   Because every Tailwind v4 colour utility resolves `var(--color-*)`, the whole
+   palette is reskinned by redefining those tokens below; only the handful of
+   neutrals whose intent conflicts (e.g. text-gray-900 headings vs bg-gray-900
+   sidebar) need explicit overrides at the bottom of this file. No markup changes. */
 
 @import "tailwindcss";
 
@@ -9,7 +16,171 @@
 @source "../utils";
 
 @theme {
-  --color-brand-50: #eef2ff;
-  --color-brand-600: #4f46e5;
-  --color-brand-700: #4338ca;
+  /* ---- Typography ------------------------------------------------------- */
+  /* System stacks only (no remote fonts — keeps the tightened CSP intact). */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+
+  /* ---- Brand: electric lime (replaces indigo everywhere) ---------------- */
+  --color-brand-50:  #1b240c;
+  --color-brand-400: #d8f25e;
+  --color-brand-500: #cbef34;
+  --color-brand-600: #cbef34;
+  --color-brand-700: #b6dc1e;
+
+  /* Indigo utilities are reused across the templates as "the accent"; remap
+     the whole scale to lime so links, buttons, rings and focus states follow. */
+  --color-indigo-50:  #1b240c;
+  --color-indigo-100: #243010;
+  --color-indigo-400: #d8f25e;
+  --color-indigo-500: #cbef34;
+  --color-indigo-600: #cbef34;
+  --color-indigo-700: #b6dc1e;
+  --color-indigo-800: #a6cc18;
+
+  /* ---- Neutrals: inverted navy scale ----------------------------------- */
+  /* Low end = dark surfaces (used as backgrounds), high end = light ink
+     (used as text). A few utilities break this assumption and are overridden
+     explicitly after the import. */
+  --color-gray-50:  #0b0f17;  /* page canvas / insets / row hover            */
+  --color-gray-100: #1c2331;  /* chips, divide & hairline borders            */
+  --color-gray-200: #28313f;  /* card borders                               */
+  --color-gray-300: #323d4e;  /* input borders                              */
+  --color-gray-400: #6c7689;  /* faint text                                 */
+  --color-gray-500: #828d9f;  /* muted text                                 */
+  --color-gray-600: #a4aec0;  /* secondary text                             */
+  --color-gray-700: #c4ccda;  /* body text                                  */
+  --color-gray-800: #d9e0ea;  /* strong text                                */
+  --color-gray-900: #eef2f9;  /* headings                                   */
+
+  /* ---- Status palettes, retuned for a dark canvas ----------------------- */
+  /* Green = live / success */
+  --color-green-50:  #0e2a1d;
+  --color-green-100: #11321f;
+  --color-green-200: #1c4632;
+  --color-green-500: #34d399;
+  --color-green-600: #34d399;
+  --color-green-700: #58d9a4;
+  --color-green-800: #74e0b1;
+
+  /* Red = danger / live dot */
+  --color-red-50:  #2a1116;
+  --color-red-200: #4d1f26;
+  --color-red-500: #f1566f;
+  --color-red-600: #f1566f;
+  --color-red-700: #f5748a;
+
+  /* Yellow = draft */
+  --color-yellow-50:  #2a2410;
+  --color-yellow-100: #322a10;
+  --color-yellow-300: #5a4d1a;
+  --color-yellow-500: #facc15;
+  --color-yellow-600: #e8be3e;
+  --color-yellow-800: #e6c352;
+
+  /* Amber = warning / drift */
+  --color-amber-50:  #2a1f0c;
+  --color-amber-200: #4d3c1a;
+  --color-amber-400: #f0a93b;
+  --color-amber-600: #f0a93b;
+  --color-amber-700: #f5b94f;
+  --color-amber-800: #f6cb6c;
+
+  /* Blue = info */
+  --color-blue-100: #122639;
+  --color-blue-700: #6aa6f0;
 }
+
+/* ========================================================================
+   Reskin overrides (unlayered → win over Tailwind's utility layer).
+   ======================================================================== */
+
+/* Base canvas + default typography. */
+html,
+body {
+  background-color: #090d15;
+  color: var(--color-gray-700);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tight display headings, scoreboard-style. */
+h1, h2, h3 {
+  letter-spacing: -0.02em;
+}
+
+/* Upper-case captions/labels get the monospaced "broadcast" treatment. */
+th,
+.uppercase {
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em !important;
+}
+
+/* Lime selection + accent caret. */
+::selection {
+  background: rgba(203, 239, 52, 0.28);
+  color: #eef2f9;
+}
+:root {
+  accent-color: #cbef34;
+  color-scheme: dark;
+}
+
+/* Surfaces: "white" cards become raised dark panels. */
+.bg-white {
+  background-color: #141a26;
+}
+
+/* Sidebar + any explicitly-dark blocks: deepen rather than invert. */
+.bg-gray-900 {
+  background-color: #0a0e17;
+}
+.bg-gray-700,
+.hover\:bg-gray-700:hover {
+  background-color: rgba(255, 255, 255, 0.07);
+}
+.border-gray-700 {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+/* Sidebar nav links read as light ink, not a dark border colour. */
+.text-gray-300 {
+  color: #9aa4b6;
+}
+
+/* Soften the inverted hairline borders so cards don't look boxed-in. */
+.border-gray-200 { border-color: rgba(255, 255, 255, 0.08); }
+.border-gray-300 { border-color: rgba(255, 255, 255, 0.12); }
+.border-gray-100 { border-color: rgba(255, 255, 255, 0.06); }
+.divide-gray-100 > :not(:last-child) { border-color: rgba(255, 255, 255, 0.06); }
+
+/* Row / button hovers as faint light washes. */
+.hover\:bg-gray-50:hover  { background-color: rgba(255, 255, 255, 0.04); }
+.hover\:bg-gray-100:hover { background-color: rgba(255, 255, 255, 0.06); }
+
+/* Lime primary buttons / avatar need dark ink, not white, for contrast. */
+.bg-indigo-600.text-white,
+.bg-indigo-500 {
+  color: #0a0e17;
+}
+.hover\:bg-indigo-700:hover {
+  color: #0a0e17;
+}
+
+/* Card depth: subtle shadow reads better as a faint glow on dark. */
+.shadow-sm { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+.shadow-xl { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+
+/* Dark, slim scrollbars to match the canvas. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3344 transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: #2a3344;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: #38445a; background-clip: content-box; }

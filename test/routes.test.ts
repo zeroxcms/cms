@@ -4,6 +4,7 @@ import { cmsConfig } from '../src/cms-config';
 import { hashToken, signJWT } from '../src/utils/jwt';
 import { blueprintToLect, stringifyLect } from '../src/utils/lect';
 import { clearConfigCache } from '../src/plugins/config';
+import { clearRolePermissionsCache } from '../src/utils/roles';
 import type { JWTPayload } from '../src/types';
 
 const IncomingRequest = Request;
@@ -48,6 +49,7 @@ const basePageLect = stringifyLect(basePageLectObject);
 
 beforeEach(async () => {
   vi.unstubAllGlobals();
+  clearRolePermissionsCache();
   await resetData();
   await seedBaseData();
 });
@@ -363,6 +365,18 @@ describe('admin routes', () => {
     { name: 'GET /admin/page_types/view/:slug missing', path: '/admin/page_types/view/nope', authenticated: true, expectedStatus: 404 },
     { name: 'GET /admin/block_types/view/:slug (config)', path: '/admin/block_types/view/logos', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/block_types/view/:slug missing', path: '/admin/block_types/view/nope', authenticated: true, expectedStatus: 404 },
+    { name: 'GET /admin/users', path: '/admin/users', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/users/:id/edit', path: '/admin/users/2/edit', authenticated: true, expectedStatus: 200 },
+    { name: 'POST /admin/users/:id', method: 'POST', path: '/admin/users/2', body: form({ roles: 'editor' }), authenticated: true, expectedStatus: 302, location: '/admin/users' },
+    { name: 'GET /admin/roles', path: '/admin/roles', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/roles/new', path: '/admin/roles/new', authenticated: true, expectedStatus: 200 },
+    { name: 'POST /admin/roles', method: 'POST', path: '/admin/roles', body: form({ name: 'reviewers', label: 'Reviewers' }), authenticated: true, expectedStatus: 302, location: '/admin/roles/reviewers/edit' },
+    { name: 'GET /admin/roles/:name/edit (built-in)', path: '/admin/roles/editor/edit', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/roles/:name/edit (custom)', path: '/admin/roles/authors/edit', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/roles/admin/edit (locked)', path: '/admin/roles/admin/edit', authenticated: true, expectedStatus: 200 },
+    { name: 'POST /admin/roles/:name', method: 'POST', path: '/admin/roles/editor', body: form({ permissions: 'content:write' }), authenticated: true, expectedStatus: 302, location: '/admin/roles' },
+    { name: 'POST /admin/roles/admin (locked)', method: 'POST', path: '/admin/roles/admin', body: form({ permissions: 'content:write' }), authenticated: true, expectedStatus: 403 },
+    { name: 'POST /admin/roles/:name/delete (custom)', method: 'POST', path: '/admin/roles/authors/delete', authenticated: true, expectedStatus: 302, location: '/admin/roles' },
   ])('$name', async (route) => {
     await expectRoute(route);
   });
@@ -958,6 +972,37 @@ describe('capability enforcement', () => {
     expect(create.status).toBe(403);
   });
 
+  it('blocks editors from the users and roles admin (admin only)', async () => {
+    expect((await fetchWorker('/admin/users', { headers: { Cookie: await authCookie('editor') } })).status).toBe(403);
+    expect((await fetchWorker('/admin/roles', { headers: { Cookie: await authCookie('editor') } })).status).toBe(403);
+  });
+
+  it('applies role permission changes to the permission gate', async () => {
+    // A moderator cannot write content by default.
+    const before = await fetchWorker('/admin/pages', {
+      method: 'POST',
+      body: form({ name: 'Mod Draft', slug: 'mod-draft', page_type: 'default' }),
+      headers: { Cookie: await authCookie('moderator') },
+    });
+    expect(before.status).toBe(403);
+
+    // An admin grants the moderator role content:write.
+    const grant = await fetchWorker('/admin/roles/moderator', {
+      method: 'POST',
+      body: form({ permissions: 'content:write' }),
+      headers: { Cookie: await authCookie() },
+    });
+    expect(grant.status).toBe(302);
+
+    // Now the moderator can write content.
+    const after = await fetchWorker('/admin/pages', {
+      method: 'POST',
+      body: form({ name: 'Mod Draft', slug: 'mod-draft', page_type: 'default' }),
+      headers: { Cookie: await authCookie('moderator') },
+    });
+    expect(after.status).toBe(302);
+  });
+
   it('returns JSON 403 with insufficient-permissions for moderator uploads', async () => {
     const response = await fetchWorker('/admin/upload', {
       method: 'POST',
@@ -1203,6 +1248,8 @@ async function resetData(): Promise<void> {
     'taxonomies',
     'page_types',
     'block_types',
+    'roles',
+    'role_permissions',
     'sessions',
     'users',
     'audit_log',
@@ -1225,6 +1272,15 @@ async function seedBaseData(): Promise<void> {
     'INSERT INTO users (id, oauth_id, email, name, avatar_url, role) VALUES (?, ?, ?, ?, ?, ?)',
   )
     .bind(1, 'eventuai:admin', 'admin@example.com', 'Admin User', '', 'admin')
+    .run();
+  await env.DB.prepare(
+    'INSERT INTO users (id, oauth_id, email, name, avatar_url, role) VALUES (?, ?, ?, ?, ?, ?)',
+  )
+    .bind(2, 'eventuai:editor', 'editor@example.com', 'Editor User', '', 'editor')
+    .run();
+  // A custom role for the roles-admin route tests.
+  await env.DB.prepare('INSERT INTO roles (name, label, builtin) VALUES (?, ?, 0)')
+    .bind('authors', 'Authors')
     .run();
 
   await env.DB.prepare('INSERT INTO taxonomies (id, name, slug) VALUES (?, ?, ?)')

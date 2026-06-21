@@ -1,0 +1,10 @@
+{
+  "sections": {
+    "main": {
+      "type": "role-form"
+    }
+  },
+  "order": [
+    "main"
+  ]
+}

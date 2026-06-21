@@ -13,7 +13,7 @@
 
 import { createMiddleware } from 'hono/factory';
 import { signJWT, verifyJWT, hashToken, generateTokenId } from '../utils/jwt';
-import { hasAnyRole, hasPermission } from '../utils/roles';
+import { effectivePermissions, resolveRolePermissions } from '../utils/roles';
 import type { Permission } from '../types';
 import {
   accessCookieName,
@@ -22,7 +22,6 @@ import {
   refreshCookieName,
   setAuthCookie,
 } from '../utils/cookies';
-import { EDITOR_ROLES } from '../types';
 import type { Env, Variables, JWTPayload } from '../types';
 
 const ACCESS_TOKEN_TTL = 15 * 60;       // 15 minutes
@@ -152,13 +151,16 @@ export const authMiddleware = createMiddleware<{
   return next();
 });
 
-/** Middleware that enforces admin / editor / moderator role. */
+/** Middleware that gates /admin to anyone whose roles grant at least one
+ *  capability (admin/editor/moderator and any custom role with permissions;
+ *  a permission-less viewer/custom role is blocked). */
 export const editorGuard = createMiddleware<{
   Bindings: Env;
   Variables: Variables;
 }>(async (c, next) => {
   const user = c.get('user');
-  if (!hasAnyRole(user.role, EDITOR_ROLES)) {
+  const map = await resolveRolePermissions(c.env);
+  if (effectivePermissions(map, user.role).size === 0) {
     if (wantsJsonResponse(c.req.raw)) {
       return jsonError({ success: false, error: 'Editor role required' }, 403, 'editor-role-required');
     }
@@ -174,7 +176,8 @@ export const editorGuard = createMiddleware<{
 export function requirePermission(permission: Permission) {
   return createMiddleware<{ Bindings: Env; Variables: Variables }>(async (c, next) => {
     const user = c.get('user');
-    if (!hasPermission(user.role, permission)) {
+    const map = await resolveRolePermissions(c.env);
+    if (!effectivePermissions(map, user.role).has(permission)) {
       if (wantsJsonResponse(c.req.raw)) {
         return jsonError({ success: false, error: 'Insufficient permissions' }, 403, 'insufficient-permissions');
       }

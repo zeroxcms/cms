@@ -1,6 +1,14 @@
-import { USER_ROLES, type Permission, type UserRole } from '../types';
+import { PERMISSIONS, USER_ROLES, type Env, type Permission, type UserRole } from '../types';
 
 const VALID_ROLES = new Set<string>(USER_ROLES);
+
+/** Built-in role display labels, shown in the Users/Roles admin. */
+export const ROLE_LABELS: Record<UserRole, string> = {
+  admin: 'Admin',
+  editor: 'Editor',
+  moderator: 'Moderator',
+  viewer: 'Viewer',
+};
 
 // Least-privilege capability matrix. A user's effective permissions are the
 // union over all roles they hold (roles are a comma-separated list).
@@ -54,4 +62,62 @@ export function permissionsFor(value: string): Set<Permission> {
 
 export function hasPermission(value: string, permission: Permission): boolean {
   return permissionsFor(value).has(permission);
+}
+
+// ── Database-backed role → permission resolution ──────────────────────────────
+// The effective permission map layers:
+//   • built-in roles (USER_ROLES) → their code default (ROLE_PERMISSIONS)
+//   • any role present in the `roles` table → exactly its role_permissions rows
+//     (so a customized built-in or a custom role can have an empty set)
+//   • 'admin' → always every permission (never editable; avoids lockout)
+// Cached per isolate with a short TTL, like resolveCmsConfig.
+
+const ROLE_TTL_MS = 60_000;
+let roleCache: { map: Map<string, Set<Permission>>; expires: number } | null = null;
+
+/** Splits a comma-separated role value without filtering to built-ins (custom roles allowed). */
+export function splitRoles(value: string): string[] {
+  return [...new Set(value.split(',').map((role) => role.trim().toLowerCase()).filter(Boolean))];
+}
+
+/** Resolves the effective role → permission map from the database. */
+export async function resolveRolePermissions(env: Env): Promise<Map<string, Set<Permission>>> {
+  if (roleCache && roleCache.expires > Date.now()) return roleCache.map;
+
+  const map = new Map<string, Set<Permission>>();
+  // Seed built-in defaults.
+  for (const role of USER_ROLES) map.set(role, new Set(ROLE_PERMISSIONS[role]));
+
+  if (env.DB) {
+    // Roles present in the table own their permission set explicitly (start empty).
+    const managed = await env.DB.prepare('SELECT name FROM roles').all<{ name: string }>();
+    for (const row of managed.results) map.set(row.name, new Set());
+
+    const grants = await env.DB.prepare('SELECT role, permission FROM role_permissions').all<{ role: string; permission: string }>();
+    for (const row of grants.results) {
+      const set = map.get(row.role) ?? new Set<Permission>();
+      set.add(row.permission as Permission);
+      map.set(row.role, set);
+    }
+  }
+
+  // Admin is always all-powerful and never stored/editable.
+  map.set('admin', new Set(PERMISSIONS));
+
+  roleCache = { map, expires: Date.now() + ROLE_TTL_MS };
+  return map;
+}
+
+/** Test/dev helper — clears the per-isolate role-permission cache. */
+export function clearRolePermissionsCache(): void {
+  roleCache = null;
+}
+
+/** Union of permissions granted to a comma-separated role value, per the resolved map. */
+export function effectivePermissions(map: Map<string, Set<Permission>>, roleValue: string): Set<Permission> {
+  const permissions = new Set<Permission>();
+  for (const role of splitRoles(roleValue)) {
+    for (const permission of map.get(role) ?? []) permissions.add(permission);
+  }
+  return permissions;
 }
