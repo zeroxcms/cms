@@ -2,7 +2,7 @@
 
 import { cmsConfig } from '../cms-config';
 import type { CmsConfig } from '../cms-config';
-import type { Page, TagType } from '../types';
+import type { Page, Taxonomy } from '../types';
 import {
   blueprintToLect,
   getLectLocalizedValue,
@@ -334,7 +334,7 @@ function setLectPathValue(lect: Lect, path: string, kind: BlueprintPathKind, val
   target[field] = value;
 }
 
-export function exportHeaders(pathColumns: CsvPathSpec[], tagTypes: TagType[]): string[] {
+export function exportHeaders(pathColumns: CsvPathSpec[], taxonomies: Taxonomy[]): string[] {
   return [
     'id',
     'uuid',
@@ -345,23 +345,23 @@ export function exportHeaders(pathColumns: CsvPathSpec[], tagTypes: TagType[]): 
     'end',
     'page_type',
     ...pathColumns.map((spec) => spec.header),
-    ...tagTypes.map((tagType) => `tag:${tagType.name}`),
+    ...taxonomies.map((taxonomy) => `tag:${taxonomy.name}`),
   ];
 }
 
 async function pageTagsForExport(db: D1Database): Promise<Map<number, Record<string, string[]>>> {
   const rows = await db.prepare(
-    `SELECT dpt.page_id, t.name as tag_name, tt.name as tag_type_name
+    `SELECT dpt.page_id, t.name as tag_name, tt.name as taxonomy_name
      FROM draft_page_tags dpt
      JOIN tags t ON t.id = dpt.tag_id
-     LEFT JOIN tag_types tt ON tt.id = t.tag_type_id`,
-  ).all<{ page_id: number; tag_name: string; tag_type_name: string | null }>();
+     LEFT JOIN taxonomies tt ON tt.id = t.taxonomy_id`,
+  ).all<{ page_id: number; tag_name: string; taxonomy_name: string | null }>();
   const result = new Map<number, Record<string, string[]>>();
   for (const row of rows.results) {
-    if (!row.tag_type_name) continue;
+    if (!row.taxonomy_name) continue;
     const pageTags = result.get(row.page_id) ?? {};
-    pageTags[row.tag_type_name] ||= [];
-    pageTags[row.tag_type_name].push(row.tag_name);
+    pageTags[row.taxonomy_name] ||= [];
+    pageTags[row.taxonomy_name].push(row.tag_name);
     result.set(row.page_id, pageTags);
   }
   return result;
@@ -374,7 +374,7 @@ export async function exportPagesCsv(db: D1Database, pages: Page[], pageTypes: s
     lect: lectForPage(config, page.page_type ?? 'default', page.lect),
   }));
   const pathColumns = exportCsvPathSpecs(pageTypes, pageLects.map(({ lect }) => lect));
-  const headers = exportHeaders(pathColumns, taxonomy.tagTypes);
+  const headers = exportHeaders(pathColumns, taxonomy.taxonomies);
   const tagsByPage = await pageTagsForExport(db);
   const rows = [headers];
 
@@ -390,7 +390,7 @@ export async function exportPagesCsv(db: D1Database, pages: Page[], pageTypes: s
       page.end ?? '',
       page.page_type ?? '',
       ...pathColumns.map((spec) => getCsvLectValue(lect, spec)),
-      ...taxonomy.tagTypes.map((tagType) => (tagGroups[tagType.name] ?? []).join('; ')),
+      ...taxonomy.taxonomies.map((taxonomy) => (tagGroups[taxonomy.name] ?? []).join('; ')),
     ]);
   }
 
@@ -551,7 +551,7 @@ function prepareImportedPage(
 async function bulkCreateImportedPages(
   db: D1Database,
   pages: PreparedImportedPage[],
-  taxonomy: { tagTypes: TagType[] },
+  taxonomy: { taxonomies: Taxonomy[] },
 ): Promise<void> {
   for (const chunk of chunkByJsonPayload(pages, IMPORT_BULK_CHUNK_ROWS, IMPORT_BULK_CHUNK_BYTES)) {
     const payload = JSON.stringify(chunk.map((page) => page.payload));
@@ -594,7 +594,7 @@ async function bulkCreateImportedPages(
       .run();
 
     for (const page of chunk) {
-      await importPageTags(db, page.payload.id, page.row, taxonomy.tagTypes, 'replace');
+      await importPageTags(db, page.payload.id, page.row, taxonomy.taxonomies, 'replace');
     }
   }
 }
@@ -609,15 +609,15 @@ async function uniqueTagSlug(db: D1Database, baseSlug: string): Promise<string> 
   return slug;
 }
 
-async function ensureTag(db: D1Database, tagType: TagType, name: string): Promise<number> {
-  const existing = await db.prepare('SELECT id FROM tags WHERE tag_type_id = ? AND name = ?')
-    .bind(tagType.id, name)
+async function ensureTag(db: D1Database, taxonomy: Taxonomy, name: string): Promise<number> {
+  const existing = await db.prepare('SELECT id FROM tags WHERE taxonomy_id = ? AND name = ?')
+    .bind(taxonomy.id, name)
     .first<{ id: number }>();
   if (existing) return existing.id;
 
-  const slug = await uniqueTagSlug(db, slugify(`${tagType.slug || tagType.name}-${name}`));
-  const insert = await db.prepare('INSERT INTO tags (name, slug, tag_type_id) VALUES (?, ?, ?)')
-    .bind(name, slug, tagType.id)
+  const slug = await uniqueTagSlug(db, slugify(`${taxonomy.slug || taxonomy.name}-${name}`));
+  const insert = await db.prepare('INSERT INTO tags (name, slug, taxonomy_id) VALUES (?, ?, ?)')
+    .bind(name, slug, taxonomy.id)
     .run();
   const tag = await db.prepare('SELECT id FROM tags WHERE rowid = ?')
     .bind(insert.meta.last_row_id)
@@ -629,27 +629,27 @@ async function importPageTags(
   db: D1Database,
   pageId: number,
   row: Record<string, string>,
-  tagTypes: TagType[],
+  taxonomies: Taxonomy[],
   mode: 'replace' | 'append' = 'replace',
 ): Promise<boolean> {
   let changed = false;
-  for (const tagType of tagTypes) {
-    const header = `tag:${tagType.name}`;
-    const value = row[header] ?? row[tagType.name];
+  for (const taxonomy of taxonomies) {
+    const header = `tag:${taxonomy.name}`;
+    const value = row[header] ?? row[taxonomy.name];
     if (value === undefined) continue;
 
     if (mode === 'replace') {
       await db.prepare(
         `DELETE FROM draft_page_tags
-         WHERE page_id = ? AND tag_id IN (SELECT id FROM tags WHERE tag_type_id = ?)`,
+         WHERE page_id = ? AND tag_id IN (SELECT id FROM tags WHERE taxonomy_id = ?)`,
       )
-        .bind(pageId, tagType.id)
+        .bind(pageId, taxonomy.id)
         .run();
       changed = true;
     }
 
     for (const tagName of splitListValue(value)) {
-      const tagId = await ensureTag(db, tagType, tagName);
+      const tagId = await ensureTag(db, taxonomy, tagName);
       const existing = await db.prepare('SELECT id FROM draft_page_tags WHERE page_id = ? AND tag_id = ?')
         .bind(pageId, tagId)
         .first<{ id: number }>();
@@ -729,7 +729,7 @@ async function updateImportedPage(
   row: Record<string, string>,
   existing: Page,
   userId: number,
-  taxonomy: { tagTypes: TagType[] },
+  taxonomy: { taxonomies: Taxonomy[] },
   pathSpecs: CsvPathSpec[],
   mode: 'replace' | 'append',
   config: CmsConfig = cmsConfig,
@@ -788,7 +788,7 @@ async function updateImportedPage(
 
   lect._type = pageType;
   const lectValue = stringifyLect(withDraftMetadata(lect, userId));
-  const tagsChanged = await importPageTags(db, existing.id, row, taxonomy.tagTypes, mode);
+  const tagsChanged = await importPageTags(db, existing.id, row, taxonomy.taxonomies, mode);
   if (!changed && !tagsChanged) return false;
 
   if (changed) {

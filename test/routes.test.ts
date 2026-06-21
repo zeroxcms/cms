@@ -335,17 +335,17 @@ describe('admin routes', () => {
     { name: 'DELETE /admin/api/page/remove/page_tag/:id', method: 'DELETE', path: '/admin/api/page/remove/page_tag/401', authenticated: true, expectedStatus: 200, json: { type: 'DELETE_PAGE_TAG', payload: { success: true, id: 401 } } },
     { name: 'DELETE /admin/api/page_tag/:id', method: 'DELETE', path: '/admin/api/page_tag/401', authenticated: true, expectedStatus: 200, json: { type: 'DELETE_PAGE_TAG', payload: { success: true, id: 401 } } },
     { name: 'POST /admin/upload', method: 'POST', path: '/admin/upload', body: form({ dir: 'uploads' }), authenticated: true, expectedStatus: 200, json: { success: true, files: [], errors: [] } },
-    { name: 'GET /admin/tag-types', path: '/admin/tag-types', authenticated: true, expectedStatus: 200 },
-    { name: 'GET /admin/tag-types/new', path: '/admin/tag-types/new', authenticated: true, expectedStatus: 200 },
-    { name: 'POST /admin/tag-types', method: 'POST', path: '/admin/tag-types', body: form({ name: 'Topics', slug: 'topics' }), authenticated: true, expectedStatus: 302, location: '/admin/tag-types' },
-    { name: 'GET /admin/tag-types/:id/edit', path: '/admin/tag-types/300/edit', authenticated: true, expectedStatus: 200 },
-    { name: 'POST /admin/tag-types/:id', method: 'POST', path: '/admin/tag-types/300', body: form({ name: 'Categories', slug: 'categories' }), authenticated: true, expectedStatus: 302, location: '/admin/tag-types' },
-    { name: 'POST /admin/tag-types/:id/delete', method: 'POST', path: '/admin/tag-types/300/delete', authenticated: true, expectedStatus: 302, location: '/admin/tag-types' },
+    { name: 'GET /admin/taxonomies', path: '/admin/taxonomies', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/taxonomies/new', path: '/admin/taxonomies/new', authenticated: true, expectedStatus: 200 },
+    { name: 'POST /admin/taxonomies', method: 'POST', path: '/admin/taxonomies', body: form({ name: 'Topics', slug: 'topics' }), authenticated: true, expectedStatus: 302, location: '/admin/taxonomies' },
+    { name: 'GET /admin/taxonomies/:id/edit', path: '/admin/taxonomies/300/edit', authenticated: true, expectedStatus: 200 },
+    { name: 'POST /admin/taxonomies/:id', method: 'POST', path: '/admin/taxonomies/300', body: form({ name: 'Categories', slug: 'categories' }), authenticated: true, expectedStatus: 302, location: '/admin/taxonomies' },
+    { name: 'POST /admin/taxonomies/:id/delete', method: 'POST', path: '/admin/taxonomies/300/delete', authenticated: true, expectedStatus: 302, location: '/admin/taxonomies' },
     { name: 'GET /admin/tags', path: '/admin/tags', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/tags/new', path: '/admin/tags/new', authenticated: true, expectedStatus: 200 },
-    { name: 'POST /admin/tags', method: 'POST', path: '/admin/tags', body: form({ name: 'Fresh Tag', slug: 'fresh-tag', tag_type_id: '300' }), authenticated: true, expectedStatus: 302, location: '/admin/tags' },
+    { name: 'POST /admin/tags', method: 'POST', path: '/admin/tags', body: form({ name: 'Fresh Tag', slug: 'fresh-tag', taxonomy_id: '300' }), authenticated: true, expectedStatus: 302, location: '/admin/tags' },
     { name: 'GET /admin/tags/:id/edit', path: '/admin/tags/301/edit', authenticated: true, expectedStatus: 200 },
-    { name: 'POST /admin/tags/:id', method: 'POST', path: '/admin/tags/301', body: form({ name: 'News Updated', slug: 'news-updated', tag_type_id: '300' }), authenticated: true, expectedStatus: 302, location: '/admin/tags' },
+    { name: 'POST /admin/tags/:id', method: 'POST', path: '/admin/tags/301', body: form({ name: 'News Updated', slug: 'news-updated', taxonomy_id: '300' }), authenticated: true, expectedStatus: 302, location: '/admin/tags' },
     { name: 'POST /admin/tags/:id/delete', method: 'POST', path: '/admin/tags/301/delete', authenticated: true, expectedStatus: 302, location: '/admin/tags' },
     { name: 'GET /admin/page_types', path: '/admin/page_types', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/page_types/new', path: '/admin/page_types/new', authenticated: true, expectedStatus: 200 },
@@ -950,7 +950,7 @@ describe('capability enforcement', () => {
     // Editors do have taxonomy:write — confirm the positive case too.
     const tag = await fetchWorker('/admin/tags', {
       method: 'POST',
-      body: form({ name: 'Editor Tag', slug: 'editor-tag', tag_type_id: '300' }),
+      body: form({ name: 'Editor Tag', slug: 'editor-tag', taxonomy_id: '300' }),
       headers: { Cookie: await authCookie('editor') },
     });
     expect(tag.status).toBe(302);
@@ -958,7 +958,7 @@ describe('capability enforcement', () => {
     // Moderators do not.
     const modTag = await fetchWorker('/admin/tags', {
       method: 'POST',
-      body: form({ name: 'Mod Tag', slug: 'mod-tag', tag_type_id: '300' }),
+      body: form({ name: 'Mod Tag', slug: 'mod-tag', taxonomy_id: '300' }),
       headers: { Cookie: await authCookie('moderator') },
     });
     expect(modTag.status).toBe(403);
@@ -1141,7 +1141,7 @@ async function resetData(): Promise<void> {
     'draft_pages',
     'trash_pages',
     'tags',
-    'tag_types',
+    'taxonomies',
     'page_types',
     'sessions',
     'users',
@@ -1167,17 +1167,17 @@ async function seedBaseData(): Promise<void> {
     .bind(1, 'eventuai:admin', 'admin@example.com', 'Admin User', '', 'admin')
     .run();
 
-  await env.DB.prepare('INSERT INTO tag_types (id, name, slug) VALUES (?, ?, ?)')
+  await env.DB.prepare('INSERT INTO taxonomies (id, name, slug) VALUES (?, ?, ?)')
     .bind(300, 'Categories', 'categories')
     .run();
 
   await env.DB.prepare('INSERT INTO page_types (id, slug, name, blueprint) VALUES (?, ?, ?, ?)')
     .bind(700, 'event', 'Event', JSON.stringify(['@date', 'name', 'venue']))
     .run();
-  await env.DB.prepare('INSERT INTO tags (id, name, slug, tag_type_id, lect) VALUES (?, ?, ?, ?, ?)')
+  await env.DB.prepare('INSERT INTO tags (id, name, slug, taxonomy_id, lect) VALUES (?, ?, ?, ?, ?)')
     .bind(301, 'News', 'news', 300, JSON.stringify({ name: { en: 'News' } }))
     .run();
-  await env.DB.prepare('INSERT INTO tags (id, name, slug, tag_type_id, lect) VALUES (?, ?, ?, ?, ?)')
+  await env.DB.prepare('INSERT INTO tags (id, name, slug, taxonomy_id, lect) VALUES (?, ?, ?, ?, ?)')
     .bind(302, 'Updates', 'updates', 300, JSON.stringify({ name: { en: 'Updates' } }))
     .run();
 

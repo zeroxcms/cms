@@ -2,7 +2,7 @@
 // Effective CMS config = static base (cms-config.ts) merged with
 // content types contributed by active plugins.
 //
-// Plugins may only extend blueprint/blocks/blockLists/tagLists.
+// Plugins may only extend blueprint/blocks/blockLists/taxonomyLists.
 // languages/defaultLanguage stay site-level (base only), so
 // language-only call sites can keep importing the static cmsConfig.
 // ============================================================
@@ -21,7 +21,7 @@ function mergeContentTypes(base: CmsConfig, fragment: PluginContentTypes | undef
   Object.assign(base.blueprint, fragment.blueprint ?? {});
   Object.assign(base.blocks, fragment.blocks ?? {});
   Object.assign(base.blockLists, fragment.blockLists ?? {});
-  Object.assign(base.tagLists, fragment.tagLists ?? {});
+  Object.assign(base.taxonomyLists, fragment.taxonomyLists ?? {});
 }
 
 /**
@@ -45,7 +45,7 @@ export async function resolveCmsConfig(env: Env): Promise<CmsConfig> {
     blueprint: { ...cmsConfig.blueprint },
     blocks: { ...cmsConfig.blocks },
     blockLists: { ...cmsConfig.blockLists },
-    tagLists: { ...cmsConfig.tagLists },
+    taxonomyLists: { ...cmsConfig.taxonomyLists },
   };
 
   for (const plugin of plugins) {

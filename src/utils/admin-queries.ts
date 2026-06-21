@@ -1,7 +1,7 @@
 // Centralized D1 access helpers used across the admin routes.
 // SQL stays raw here — this module just removes the duplication of issuing it.
 
-import type { Page, Tag, TagType } from '../types';
+import type { Page, Tag, Taxonomy } from '../types';
 import { num } from './forms';
 
 export interface DashboardListResult {
@@ -65,14 +65,14 @@ export async function parentPageOption(db: D1Database, pageId: string | number |
   return page ? [page] : [];
 }
 
-export async function editorTaxonomy(db: D1Database): Promise<{ tags: Tag[]; tagTypes: TagType[] }> {
-  const [tags, tagTypes] = await Promise.all([
+export async function editorTaxonomy(db: D1Database): Promise<{ tags: Tag[]; taxonomies: Taxonomy[] }> {
+  const [tags, taxonomies] = await Promise.all([
     db.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
-    db.prepare('SELECT * FROM tag_types ORDER BY name ASC').all<TagType>(),
+    db.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
   ]);
   return {
     tags: tags.results,
-    tagTypes: tagTypes.results,
+    taxonomies: taxonomies.results,
   };
 }
 

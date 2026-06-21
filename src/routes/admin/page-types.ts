@@ -23,7 +23,7 @@ interface PageTypeFormValues {
   blueprint: string;
   blocks: string;
   blockLists: string;
-  tagLists: string;
+  taxonomyLists: string;
   weight: string;
 }
 
@@ -34,7 +34,7 @@ function formValues(form: FormData): PageTypeFormValues {
     blueprint: str(form.get('blueprint')),
     blocks: str(form.get('blocks')),
     blockLists: str(form.get('block_lists')),
-    tagLists: str(form.get('tag_lists')),
+    taxonomyLists: str(form.get('taxonomy_lists')),
     weight: str(form.get('weight')),
   };
 }
@@ -58,7 +58,7 @@ async function validate(c: AppContext, values: PageTypeFormValues, slug: string,
   } catch {
     return 'Blueprint is not valid JSON.';
   }
-  for (const [label, raw] of [['Blocks', values.blocks], ['Block lists', values.blockLists], ['Tag lists', values.tagLists]] as const) {
+  for (const [label, raw] of [['Blocks', values.blocks], ['Block lists', values.blockLists], ['Taxonomy lists', values.taxonomyLists]] as const) {
     if (!raw.trim()) continue;
     try {
       JSON.parse(raw);
@@ -105,7 +105,7 @@ pageTypesRoutes.post('/page_types', requirePermission('pagetype:write'), async (
   if (error) return pageTypeForm(c, undefined, error, values);
 
   const result = await c.env.DB.prepare(
-    `INSERT INTO page_types (slug, name, blueprint, blocks, block_lists, tag_lists, weight)
+    `INSERT INTO page_types (slug, name, blueprint, blocks, block_lists, taxonomy_lists, weight)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
@@ -114,7 +114,7 @@ pageTypesRoutes.post('/page_types', requirePermission('pagetype:write'), async (
       values.blueprint || '[]',
       nullableJson(values.blocks),
       nullableJson(values.blockLists),
-      nullableJson(values.tagLists),
+      nullableJson(values.taxonomyLists),
       num(values.weight),
     )
     .run();
@@ -150,7 +150,7 @@ pageTypesRoutes.post('/page_types/:id', requirePermission('pagetype:write'), asy
 
   await c.env.DB.prepare(
     `UPDATE page_types
-        SET slug = ?, name = ?, blueprint = ?, blocks = ?, block_lists = ?, tag_lists = ?, weight = ?,
+        SET slug = ?, name = ?, blueprint = ?, blocks = ?, block_lists = ?, taxonomy_lists = ?, weight = ?,
             updated_at = CURRENT_TIMESTAMP
       WHERE id = ?`,
   )
@@ -160,7 +160,7 @@ pageTypesRoutes.post('/page_types/:id', requirePermission('pagetype:write'), asy
       values.blueprint || '[]',
       nullableJson(values.blocks),
       nullableJson(values.blockLists),
-      nullableJson(values.tagLists),
+      nullableJson(values.taxonomyLists),
       num(values.weight),
       id,
     )

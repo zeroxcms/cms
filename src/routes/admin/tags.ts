@@ -1,7 +1,7 @@
-// Tag and tag-type management.
+// Tag and taxonomy management.
 
 import { Hono } from 'hono';
-import { tagTypeFormPage, tagTypesPage } from '../../templates/tag-types';
+import { taxonomyFormPage, taxonomiesPage } from '../../templates/taxonomies';
 import { tagFormPage, tagsPage } from '../../templates/tags';
 import { cmsConfig } from '../../cms-config';
 import {
@@ -11,7 +11,7 @@ import {
   safeParseLect,
   stringifyLect,
 } from '../../utils/lect';
-import type { Env, Variables, Tag, TagType } from '../../types';
+import type { Env, Variables, Tag, Taxonomy } from '../../types';
 import {
   languageFromRequest,
   nullableStr,
@@ -32,77 +32,77 @@ export const tagsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // ── Tag types ─────────────────────────────────────────────────────────────────
 
-tagsRoutes.get('/tag-types', async (c) => {
-  const [tagTypes, userAvatar] = await Promise.all([
-    c.env.DB.prepare('SELECT * FROM tag_types ORDER BY name ASC').all<TagType>(),
+tagsRoutes.get('/taxonomies', async (c) => {
+  const [taxonomies, userAvatar] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
     fetchUserAvatar(c.env.DB, userIdFromContext(c)),
   ]);
 
-  return c.html(await tagTypesPage(c.env.VIEWS, {
+  return c.html(await taxonomiesPage(c.env.VIEWS, {
     ...(await buildBaseProps(c, userAvatar)),
-    tagTypes: tagTypes.results,
+    taxonomies: taxonomies.results,
   }));
 });
 
-tagsRoutes.get('/tag-types/new', async (c) => tagTypeForm(c));
+tagsRoutes.get('/taxonomies/new', async (c) => taxonomyForm(c));
 
-tagsRoutes.post('/tag-types', requirePermission('taxonomy:write'), async (c) => {
+tagsRoutes.post('/taxonomies', requirePermission('taxonomy:write'), async (c) => {
   const form = await c.req.formData();
   const name = str(form.get('name'));
   const slug = str(form.get('slug')) || slugify(name);
-  if (!name || !slug) return c.redirect('/admin/tag-types/new?error=missing');
-  const result = await c.env.DB.prepare('INSERT INTO tag_types (name, slug) VALUES (?, ?)')
+  if (!name || !slug) return c.redirect('/admin/taxonomies/new?error=missing');
+  const result = await c.env.DB.prepare('INSERT INTO taxonomies (name, slug) VALUES (?, ?)')
     .bind(name, slug)
     .run();
-  logAudit(c, 'tag_type.create', 'tag_type', result.meta.last_row_id, { name, slug });
-  return c.redirect('/admin/tag-types');
+  logAudit(c, 'taxonomy.create', 'taxonomy', result.meta.last_row_id, { name, slug });
+  return c.redirect('/admin/taxonomies');
 });
 
-tagsRoutes.get('/tag-types/:id/edit', async (c) => {
+tagsRoutes.get('/taxonomies/:id/edit', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
-  const tagType = await c.env.DB.prepare('SELECT * FROM tag_types WHERE id = ?')
+  const taxonomy = await c.env.DB.prepare('SELECT * FROM taxonomies WHERE id = ?')
     .bind(id)
-    .first<TagType>();
-  if (!tagType) return c.notFound();
-  return tagTypeForm(c, tagType);
+    .first<Taxonomy>();
+  if (!taxonomy) return c.notFound();
+  return taxonomyForm(c, taxonomy);
 });
 
-tagsRoutes.post('/tag-types/:id', requirePermission('taxonomy:write'), async (c) => {
+tagsRoutes.post('/taxonomies/:id', requirePermission('taxonomy:write'), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   const form = await c.req.formData();
   const name = str(form.get('name'));
   const slug = str(form.get('slug')) || slugify(name);
-  await c.env.DB.prepare('UPDATE tag_types SET name = ?, slug = ? WHERE id = ?')
+  await c.env.DB.prepare('UPDATE taxonomies SET name = ?, slug = ? WHERE id = ?')
     .bind(name, slug, id)
     .run();
-  logAudit(c, 'tag_type.update', 'tag_type', id, { name, slug });
-  return c.redirect('/admin/tag-types');
+  logAudit(c, 'taxonomy.update', 'taxonomy', id, { name, slug });
+  return c.redirect('/admin/taxonomies');
 });
 
-tagsRoutes.post('/tag-types/:id/delete', requirePermission('taxonomy:write'), async (c) => {
+tagsRoutes.post('/taxonomies/:id/delete', requirePermission('taxonomy:write'), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
-  await c.env.DB.prepare('UPDATE tags SET tag_type_id = NULL WHERE tag_type_id = ?').bind(id).run();
-  await c.env.DB.prepare('DELETE FROM tag_types WHERE id = ?').bind(id).run();
-  logAudit(c, 'tag_type.delete', 'tag_type', id);
-  return c.redirect('/admin/tag-types');
+  await c.env.DB.prepare('UPDATE tags SET taxonomy_id = NULL WHERE taxonomy_id = ?').bind(id).run();
+  await c.env.DB.prepare('DELETE FROM taxonomies WHERE id = ?').bind(id).run();
+  logAudit(c, 'taxonomy.delete', 'taxonomy', id);
+  return c.redirect('/admin/taxonomies');
 });
 
 // ── Tags ─────────────────────────────────────────────────────────────────────
 
 tagsRoutes.get('/tags', async (c) => {
-  const filterTagType = parseInt(c.req.query('filter_tag_type') ?? '0', 10);
-  const [tagTypes, tags, userAvatar] = await Promise.all([
-    c.env.DB.prepare('SELECT * FROM tag_types ORDER BY name ASC').all<TagType>(),
-    filterTagType
-      ? c.env.DB.prepare('SELECT * FROM tags WHERE tag_type_id = ? ORDER BY name ASC').bind(filterTagType).all<Tag>()
+  const filterTaxonomy = parseInt(c.req.query('filter_taxonomy') ?? '0', 10);
+  const [taxonomies, tags, userAvatar] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
+    filterTaxonomy
+      ? c.env.DB.prepare('SELECT * FROM tags WHERE taxonomy_id = ? ORDER BY name ASC').bind(filterTaxonomy).all<Tag>()
       : c.env.DB.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
     fetchUserAvatar(c.env.DB, userIdFromContext(c)),
   ]);
   return c.html(await tagsPage(c.env.VIEWS, {
     ...(await buildBaseProps(c, userAvatar)),
-    tagTypes: tagTypes.results,
+    taxonomies: taxonomies.results,
     tags: tags.results,
-    filterTagType,
+    filterTaxonomy,
   }));
 });
 
@@ -116,9 +116,9 @@ tagsRoutes.post('/tags', requirePermission('taxonomy:write'), async (c) => {
   const lect = postToLect(form, language);
   ensureDefaultLectName(lect, name);
   const result = await c.env.DB.prepare(
-    'INSERT INTO tags (name, slug, tag_type_id, parent_tag, lect) VALUES (?, ?, ?, ?, ?)',
+    'INSERT INTO tags (name, slug, taxonomy_id, parent_tag, lect) VALUES (?, ?, ?, ?, ?)',
   )
-    .bind(name, slug, nullableStr(form.get('tag_type_id')) ? num(form.get('tag_type_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyLect(lect))
+    .bind(name, slug, nullableStr(form.get('taxonomy_id')) ? num(form.get('taxonomy_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyLect(lect))
     .run();
   logAudit(c, 'tag.create', 'tag', result.meta.last_row_id, { name, slug });
   return c.redirect('/admin/tags');
@@ -142,9 +142,9 @@ tagsRoutes.post('/tags/:id', requirePermission('taxonomy:write'), async (c) => {
   const lect = mergeLects(safeParseLect(existing.lect), postToLect(form, language));
   ensureDefaultLectName(lect, name);
   await c.env.DB.prepare(
-    'UPDATE tags SET name = ?, slug = ?, tag_type_id = ?, parent_tag = ?, lect = ? WHERE id = ?',
+    'UPDATE tags SET name = ?, slug = ?, taxonomy_id = ?, parent_tag = ?, lect = ? WHERE id = ?',
   )
-    .bind(name, slug, nullableStr(form.get('tag_type_id')) ? num(form.get('tag_type_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyLect(lect), id)
+    .bind(name, slug, nullableStr(form.get('taxonomy_id')) ? num(form.get('taxonomy_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyLect(lect), id)
     .run();
   logAudit(c, 'tag.update', 'tag', id, { name, slug });
   return c.redirect('/admin/tags');
@@ -163,18 +163,18 @@ tagsRoutes.post('/tags/:id/delete', requirePermission('taxonomy:write'), async (
   return c.redirect('/admin/tags');
 });
 
-async function tagTypeForm(c: AppContext, tagType?: TagType) {
+async function taxonomyForm(c: AppContext, taxonomy?: Taxonomy) {
   const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
-  return c.html(await tagTypeFormPage(c.env.VIEWS, {
+  return c.html(await taxonomyFormPage(c.env.VIEWS, {
     ...(await buildBaseProps(c, userAvatar)),
-    tagType,
+    taxonomy,
   }));
 }
 
 async function tagForm(c: AppContext, tag?: Tag) {
   const language = languageFromRequest(c);
-  const [tagTypes, tags, userAvatar] = await Promise.all([
-    c.env.DB.prepare('SELECT * FROM tag_types ORDER BY name ASC').all<TagType>(),
+  const [taxonomies, tags, userAvatar] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
     c.env.DB.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
     fetchUserAvatar(c.env.DB, userIdFromContext(c)),
   ]);
@@ -190,7 +190,7 @@ async function tagForm(c: AppContext, tag?: Tag) {
     languages: cmsConfig.languages,
     translatedName,
     translatedPlaceholder,
-    tagTypes: tagTypes.results,
+    taxonomies: taxonomies.results,
     parentTags: tags.results,
   }));
 }

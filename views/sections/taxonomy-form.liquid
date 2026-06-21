@@ -1,17 +1,17 @@
 <div class="min-w-0 max-w-xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <h2 class="text-2xl font-bold text-gray-900 mb-6">{{ heading | escape }}</h2>
   <form method="POST" action="{{ action | escape }}" class="min-w-0 space-y-4">
-    <label for="tag_type_name" class="block min-w-0">
+    <label for="taxonomy_name" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Name</span>
-      <input id="tag_type_name" name="name" required value="{{ name | escape }}" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+      <input id="taxonomy_name" name="name" required value="{{ name | escape }}" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
     </label>
-    <label for="tag_type_slug" class="block min-w-0">
+    <label for="taxonomy_slug" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Slug</span>
-      <input id="tag_type_slug" name="slug" value="{{ slug | escape }}" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+      <input id="taxonomy_slug" name="slug" value="{{ slug | escape }}" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
     </label>
     <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
       <button type="submit" class="w-full shrink-0 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg sm:w-auto">Save</button>
-      <a href="/admin/tag-types" class="w-full shrink-0 px-4 py-2 text-center bg-white border border-gray-300 rounded-lg text-sm font-semibold sm:w-auto">Cancel</a>
+      <a href="/admin/taxonomies" class="w-full shrink-0 px-4 py-2 text-center bg-white border border-gray-300 rounded-lg text-sm font-semibold sm:w-auto">Cancel</a>
     </div>
   </form>
   {% if isEdit %}

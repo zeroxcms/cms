@@ -219,7 +219,7 @@ A plugin can add five things:
 - **Lifecycle hooks** – run on page `create`/`update`/`publish`/`unpublish`/`delete`
   (webhooks, external search indexing, cache purge, notifications). Hooks are
   best-effort and never block the editor.
-- **Content types** – register new `blueprint`/`blocks`/`blockLists`/`tagLists`
+- **Content types** – register new `blueprint`/`blocks`/`blockLists`/`taxonomyLists`
   that merge into the editor's config.
 - **Fields & blocks** – register new pagefield types and serve their Liquid
   snippets, which render through the CMS editor.
@@ -275,8 +275,8 @@ fetches and caches their manifests, forwards the signed-in user plus a shared
 | `page_versions` | Versioned draft structured content per page |
 | `draft_page_tags` | Many-to-many draft page ↔ tag relationships |
 | `trash_page_tags` | Many-to-many trash page ↔ tag relationships |
-| `tag_types` | Tag category definitions |
-| `tags` | Shared tag reference table |
+| `taxonomies` | Taxonomy definitions (groupings that tags belong to) |
+| `tags` | Shared tag reference table (terms within a taxonomy) |
 | `media_files` | Metadata for files uploaded to private R2 |
 
 ### Auth tables (`DB`)

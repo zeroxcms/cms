@@ -47,7 +47,7 @@ importRoutes.get('/pages/import-v2/:pageType', async (c) => {
     pageType,
     mode: 'csv',
     action: `/admin/pages/import-v2/${encodeURIComponent(pageType)}`,
-    sampleHeaders: exportHeaders(csvPathSpecs([pageType], false, config), taxonomy.tagTypes),
+    sampleHeaders: exportHeaders(csvPathSpecs([pageType], false, config), taxonomy.taxonomies),
   }));
 });
 

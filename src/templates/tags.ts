@@ -1,30 +1,30 @@
 import { layout } from './layout';
 import { renderView } from './liquid';
-import type { Tag, TagType } from '../types';
+import type { Tag, Taxonomy } from '../types';
 
 export async function tagsPage(views: Fetcher, opts: {
   siteTitle: string;
   userName: string;
   userRole: string;
   userAvatar: string;
-  tagTypes: TagType[];
+  taxonomies: Taxonomy[];
   tags: Tag[];
-  filterTagType: number;
+  filterTaxonomy: number;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, tagTypes, tags, filterTagType } = opts;
-  const tagTypeMap = new Map(tagTypes.map((type) => [type.id, type.name]));
+  const { siteTitle, userName, userRole, userAvatar, taxonomies, tags, filterTaxonomy } = opts;
+  const taxonomyMap = new Map(taxonomies.map((type) => [type.id, type.name]));
   const body = await renderView(views, '/templates/tags.json', {
     hasTags: tags.length > 0,
-    filterOptions: tagTypes.map((type) => ({
+    filterOptions: taxonomies.map((type) => ({
       id: type.id,
       name: type.name,
-      selected: filterTagType === type.id,
+      selected: filterTaxonomy === type.id,
     })),
     tags: tags.map((tag) => ({
       id: tag.id,
       name: tag.name,
       slug: tag.slug,
-      tagTypeName: tag.tag_type_id ? tagTypeMap.get(tag.tag_type_id) ?? '' : '',
+      taxonomyName: tag.taxonomy_id ? taxonomyMap.get(tag.taxonomy_id) ?? '' : '',
       editHref: `/admin/tags/${tag.id}/edit`,
     })),
   });
@@ -50,7 +50,7 @@ export async function tagFormPage(views: Fetcher, opts: {
   languages: string[];
   translatedName: string;
   translatedPlaceholder: string;
-  tagTypes: TagType[];
+  taxonomies: Taxonomy[];
   parentTags: Tag[];
 }): Promise<string> {
   const {
@@ -63,7 +63,7 @@ export async function tagFormPage(views: Fetcher, opts: {
     languages,
     translatedName,
     translatedPlaceholder,
-    tagTypes,
+    taxonomies,
     parentTags,
   } = opts;
   const body = await renderView(views, '/templates/tag-form.json', {
@@ -80,10 +80,10 @@ export async function tagFormPage(views: Fetcher, opts: {
       value: lang,
       selected: lang === language,
     })),
-    tagTypeOptions: tagTypes.map((type) => ({
+    taxonomyOptions: taxonomies.map((type) => ({
       id: type.id,
       name: type.name,
-      selected: tag?.tag_type_id === type.id,
+      selected: tag?.taxonomy_id === type.id,
     })),
     parentOptions: parentTags
       .filter((candidate) => candidate.id !== tag?.id)

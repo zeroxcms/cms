@@ -61,7 +61,7 @@ export async function pageTypeFormPage(views: Fetcher, opts: {
   userAvatar: string;
   pageType?: PageType;
   error?: string;
-  values?: { name: string; slug: string; blueprint: string; blocks: string; blockLists: string; tagLists: string; weight: string };
+  values?: { name: string; slug: string; blueprint: string; blocks: string; blockLists: string; taxonomyLists: string; weight: string };
 }): Promise<string> {
   const { siteTitle, userName, userRole, userAvatar, pageType, error, values } = opts;
 
@@ -77,7 +77,7 @@ export async function pageTypeFormPage(views: Fetcher, opts: {
     blueprint: values?.blueprint ?? pageType?.blueprint ?? '[]',
     blocks: values?.blocks ?? pageType?.blocks ?? '',
     blockLists: values?.blockLists ?? pageType?.block_lists ?? '',
-    tagLists: values?.tagLists ?? pageType?.tag_lists ?? '',
+    taxonomyLists: values?.taxonomyLists ?? pageType?.taxonomy_lists ?? '',
     weight: values?.weight ?? String(pageType?.weight ?? 5),
   });
 

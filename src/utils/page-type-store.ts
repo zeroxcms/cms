@@ -45,8 +45,8 @@ export function dbPageTypeToContentTypes(row: PageType): PluginContentTypes {
   const blockLists = parseJson<string[]>(row.block_lists, []);
   if (blockLists.length > 0) fragment.blockLists = { [row.slug]: blockLists };
 
-  const tagLists = parseJson<string[]>(row.tag_lists, []);
-  if (tagLists.length > 0) fragment.tagLists = { [row.slug]: tagLists };
+  const taxonomyLists = parseJson<string[]>(row.taxonomy_lists, []);
+  if (taxonomyLists.length > 0) fragment.taxonomyLists = { [row.slug]: taxonomyLists };
 
   return fragment;
 }

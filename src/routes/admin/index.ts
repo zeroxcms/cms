@@ -6,7 +6,7 @@
 //   import  – /pages/import + /pages/import-v2 (+ /confirm)
 //   pages   – dashboard, /pages/* CRUD, list, export, publish, trash-on-delete
 //   trash   – /trash* (list, restore, permanent delete)
-//   tags    – /tags* and /tag-types*
+//   tags    – /tags* and /taxonomies*
 //   api     – /api/* JSON endpoints and /upload
 //
 // NOTE on ordering: Hono matches in registration order, so `search` and

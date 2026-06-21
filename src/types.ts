@@ -20,7 +20,7 @@ export const PERMISSIONS = [
   'content:import',   // CSV / JSON bulk import
   'trash:restore',    // restore a page from trash
   'trash:purge',      // permanently delete from trash (destructive)
-  'taxonomy:write',   // create / edit / delete tags and tag types
+  'taxonomy:write',   // create / edit / delete tags and taxonomies
   'media:upload',     // upload media to R2
   'plugin:access',    // reach the plugin admin proxy
   'pagetype:write',   // create / edit / delete database-defined page types
@@ -97,12 +97,12 @@ export interface Tag {
   updated_at: string;
   name: string;
   slug: string;
-  tag_type_id: number | null;
+  taxonomy_id: number | null;
   parent_tag: number | null;
   lect: string | null;
 }
 
-export interface TagType {
+export interface Taxonomy {
   id: number;
   uuid: string;
   created_at: string;
@@ -125,7 +125,7 @@ export interface PageType {
   /** Optional JSON fragments. */
   blocks: string | null;
   block_lists: string | null;
-  tag_lists: string | null;
+  taxonomy_lists: string | null;
   weight: number;
 }
 
@@ -163,7 +163,7 @@ export interface PluginContentTypes {
   blueprint?: Record<string, BlueprintEntry[]>;
   blocks?: Record<string, BlueprintEntry[]>;
   blockLists?: Record<string, string[]>;
-  tagLists?: Record<string, string[]>;
+  taxonomyLists?: Record<string, string[]>;
 }
 
 export interface PluginManifest {

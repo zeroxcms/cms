@@ -3,7 +3,7 @@
 
 import { cmsConfig } from '../cms-config';
 import type { BlueprintEntry, CmsConfig } from '../cms-config';
-import type { Page, Tag, TagType } from '../types';
+import type { Page, Tag, Taxonomy } from '../types';
 import { num, strParam } from './forms';
 
 export type AdvancedSearchOperator = 'AND' | 'OR' | 'NOT';
@@ -327,15 +327,15 @@ export async function performAdvancedSearch(
   };
 }
 
-export function advancedSearchFormCriteria(criteria: AdvancedSearchCriterion[], tagTypes: TagType[], tags: Tag[]) {
+export function advancedSearchFormCriteria(criteria: AdvancedSearchCriterion[], taxonomies: Taxonomy[], tags: Tag[]) {
   const formCriteria = criteria.length ? criteria : [{ index: 1, term: '', path: '', tags: [] }];
 
   return formCriteria.map((criterion) => ({
     ...criterion,
-    tagGroups: tagTypes.map((tagType) => ({
-      name: tagType.name,
+    tagGroups: taxonomies.map((taxonomy) => ({
+      name: taxonomy.name,
       tags: tags
-        .filter((tag) => tag.tag_type_id === tagType.id)
+        .filter((tag) => tag.taxonomy_id === taxonomy.id)
         .map((tag) => ({
           id: tag.id,
           idString: String(tag.id),
@@ -346,11 +346,11 @@ export function advancedSearchFormCriteria(criteria: AdvancedSearchCriterion[], 
   }));
 }
 
-export function advancedSearchTagGroups(tagTypes: TagType[], tags: Tag[]) {
-  return tagTypes.map((tagType) => ({
-    name: tagType.name,
+export function advancedSearchTagGroups(taxonomies: Taxonomy[], tags: Tag[]) {
+  return taxonomies.map((taxonomy) => ({
+    name: taxonomy.name,
     tags: tags
-      .filter((tag) => tag.tag_type_id === tagType.id)
+      .filter((tag) => tag.taxonomy_id === taxonomy.id)
       .map((tag) => ({
         id: tag.id,
         idString: String(tag.id),

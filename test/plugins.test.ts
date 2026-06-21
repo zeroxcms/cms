@@ -78,14 +78,14 @@ describe('resolveCmsConfig', () => {
 
   it('merges database-defined page types into the config', async () => {
     await env.DB.prepare(
-      `INSERT INTO page_types (slug, name, blueprint, tag_lists) VALUES (?, ?, ?, ?)`,
+      `INSERT INTO page_types (slug, name, blueprint, taxonomy_lists) VALUES (?, ?, ?, ?)`,
     )
       .bind('dbtype', 'DB Type', JSON.stringify(['name', 'body:text']), JSON.stringify(['years']))
       .run();
     try {
       const config = await resolveCmsConfig({ DB: env.DB } as Env);
       expect(config.blueprint.dbtype).toEqual(['name', 'body:text']);
-      expect(config.tagLists.dbtype).toEqual(['years']);
+      expect(config.taxonomyLists.dbtype).toEqual(['years']);
       expect(config.blueprint.default).toBeDefined(); // base content types preserved
       expect(cmsConfig.blueprint.dbtype).toBeUndefined(); // base not mutated
     } finally {

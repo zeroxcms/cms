@@ -1,7 +1,7 @@
 {
   "sections": {
     "main": {
-      "type": "tag-types"
+      "type": "taxonomy-form"
     }
   },
   "order": [

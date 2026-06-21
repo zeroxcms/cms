@@ -2,14 +2,14 @@
   <div class="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
     <h2 class="text-2xl font-bold text-gray-900">Tags</h2>
     <div class="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-      <a href="/admin/tag-types" class="px-4 py-2 text-center bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300">Tag Types</a>
+      <a href="/admin/taxonomies" class="px-4 py-2 text-center bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300">Taxonomies</a>
       <a href="/admin/tags/new" class="px-4 py-2 text-center bg-indigo-600 text-white text-sm font-semibold rounded-lg">New Tag</a>
     </div>
   </div>
   <form method="GET" class="mb-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-    <label for="filter_tag_type" class="sr-only">Filter by tag type</label>
-    <select id="filter_tag_type" name="filter_tag_type" class="min-w-0 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm sm:w-auto">
-      <option value="0">All tag types</option>
+    <label for="filter_taxonomy" class="sr-only">Filter by taxonomy</label>
+    <select id="filter_taxonomy" name="filter_taxonomy" class="min-w-0 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm sm:w-auto">
+      <option value="0">All taxonomies</option>
       {% for option in filterOptions %}
         <option value="{{ option.id }}" {% if option.selected %}selected{% endif %}>{{ option.name | escape }}</option>
       {% endfor %}
@@ -32,7 +32,7 @@
             <tr class="hover:bg-gray-50">
               <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ tag.name | escape }}</td>
               <td class="px-6 py-3 text-sm font-mono text-gray-500">{{ tag.slug | escape }}</td>
-              <td class="px-6 py-3 text-sm text-gray-500">{{ tag.tagTypeName | escape }}</td>
+              <td class="px-6 py-3 text-sm text-gray-500">{{ tag.taxonomyName | escape }}</td>
               <td class="px-6 py-3 text-right">
                 <a href="{{ tag.editHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
               </td>

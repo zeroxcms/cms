@@ -1,6 +1,6 @@
 import { layout, escHtml } from './layout';
 import { renderLiquid, renderView, templateExists } from './liquid';
-import type { Page, PageVersion, Tag, TagType } from '../types';
+import type { Page, PageVersion, Tag, Taxonomy } from '../types';
 import {
   getLectBlocks,
   getLectItems,
@@ -374,7 +374,7 @@ export async function editorPage(views: Fetcher, opts: {
   liveVersionId?: number;
   parentPages: Page[];
   tags: Tag[];
-  tagTypes: TagType[];
+  taxonomies: Taxonomy[];
   selectedTagIds: number[];
   errors?: string[];
   flash?: string;
@@ -403,7 +403,7 @@ export async function editorPage(views: Fetcher, opts: {
     liveVersionId,
     parentPages,
     tags,
-    tagTypes,
+    taxonomies,
     selectedTagIds,
     errors = [],
     flash,
@@ -481,9 +481,9 @@ export async function editorPage(views: Fetcher, opts: {
     structuredBlock,
     ...editorTagGroups(
       tags,
-      tagTypes,
+      taxonomies,
       selectedTagIds,
-      structured?.config.tagLists[pageType] ?? structured?.config.tagLists.default ?? [],
+      structured?.config.taxonomyLists[pageType] ?? structured?.config.taxonomyLists.default ?? [],
     ),
     versions,
     hasVersions: versions.length > 0,
@@ -504,19 +504,19 @@ export async function editorPage(views: Fetcher, opts: {
 
 function editorTagGroups(
   tags: Tag[],
-  tagTypes: TagType[],
+  taxonomies: Taxonomy[],
   selectedTagIds: number[],
-  tagTypeSlugs: string[],
+  taxonomySlugs: string[],
 ) {
   const selected = new Set(selectedTagIds);
-  const tagTypesBySlug = new Map(tagTypes.map((tagType) => [tagType.slug, tagType]));
+  const taxonomiesBySlug = new Map(taxonomies.map((taxonomy) => [taxonomy.slug, taxonomy]));
   const renderedTagIds = new Set<number>();
-  const tagGroups = tagTypeSlugs
+  const tagGroups = taxonomySlugs
     .map((slug) => {
-      const tagType = tagTypesBySlug.get(slug);
-      if (!tagType) return null;
+      const taxonomy = taxonomiesBySlug.get(slug);
+      if (!taxonomy) return null;
       const groupTags = tags
-        .filter((tag) => tag.tag_type_id === tagType.id)
+        .filter((tag) => tag.taxonomy_id === taxonomy.id)
         .map((tag) => {
           renderedTagIds.add(tag.id);
           return {
@@ -526,8 +526,8 @@ function editorTagGroups(
           };
         });
       return {
-        name: tagType.name,
-        slug: tagType.slug,
+        name: taxonomy.name,
+        slug: taxonomy.slug,
         tags: groupTags,
         hasTags: groupTags.length > 0,
       };

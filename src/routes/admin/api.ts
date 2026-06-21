@@ -3,7 +3,7 @@
 import { Hono } from 'hono';
 import { cmsConfig } from '../../cms-config';
 import { getLectLocalizedValue, safeParseLect } from '../../utils/lect';
-import type { Env, Variables, Tag, TagType } from '../../types';
+import type { Env, Variables, Tag, Taxonomy } from '../../types';
 import { num, slugify, str } from '../../utils/forms';
 import { validateUpload } from '../../utils/media';
 import { rateLimitByIP } from '../../middleware/rate-limit';
@@ -59,12 +59,12 @@ apiRoutes.get('/api/pages/:type', async (c) => {
 
 apiRoutes.get('/api/tags/:type', async (c) => {
   const type = c.req.param('type');
-  const tagType = await c.env.DB.prepare('SELECT * FROM tag_types WHERE name = ? OR slug = ?')
+  const taxonomy = await c.env.DB.prepare('SELECT * FROM taxonomies WHERE name = ? OR slug = ?')
     .bind(type, type)
-    .first<TagType>();
-  if (!tagType) return c.json([]);
-  const tags = await c.env.DB.prepare('SELECT * FROM tags WHERE tag_type_id = ? ORDER BY name ASC')
-    .bind(tagType.id)
+    .first<Taxonomy>();
+  if (!taxonomy) return c.json([]);
+  const tags = await c.env.DB.prepare('SELECT * FROM tags WHERE taxonomy_id = ? ORDER BY name ASC')
+    .bind(taxonomy.id)
     .all<Tag>();
   return c.json(tags.results.map((tag) => ({
     value: tag.id,
