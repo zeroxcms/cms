@@ -39,6 +39,12 @@ describe('lect utilities', () => {
     });
   });
 
+  it('coerces a localized value to text when read as a scalar field (blueprint drift)', () => {
+    const lect = { name: { en: 'Main Menu', 'zh-hant': '主選單' } } as never;
+    expect(getLectScalar(lect, 'name')).toBe('Main Menu');
+    expect(getLectScalar({ name: {} } as never, 'name')).toBe('');
+  });
+
   it('maps form field names into nested lect paths, items, pointers, and blocks', () => {
     const lect = postToLect({
       '@published': 'true',

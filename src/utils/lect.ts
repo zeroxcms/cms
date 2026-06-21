@@ -236,7 +236,16 @@ export function stringifyLect(lect: Lect): string {
 }
 
 export function getLectScalar(lect: Lect, rawName: string): string {
-  return scalarToString(getPathValue(lect, fieldPath(rawName)));
+  const value = getPathValue(lect, fieldPath(rawName));
+  // A scalar field can hold a localized record when the stored lect drifted from
+  // the blueprint (e.g. a page saved with a localized `name` is later viewed under
+  // a blueprint that declares `@name`). Coerce to the first language value so the
+  // field renders its text instead of "[object Object]".
+  if (isScalarRecord(value)) {
+    const values = Object.values(value);
+    return values.length ? scalarToString(values[0]) : '';
+  }
+  return scalarToString(value);
 }
 
 export function getLectPointer(lect: Lect, rawName: string): string {
@@ -595,6 +604,10 @@ function normalizeScalarRecord(value: unknown): Record<string, LectScalar> {
 
 function scalarToString(value: unknown): string {
   if (value === null || value === undefined) return '';
+  // Never stringify objects/arrays into "[object Object]"; callers that can hold a
+  // structured value (e.g. getLectScalar) unwrap it first, so anything left here
+  // that is non-scalar has no meaningful text form.
+  if (typeof value === 'object') return '';
   return String(value);
 }
 

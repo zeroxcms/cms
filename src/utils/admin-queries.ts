@@ -32,6 +32,30 @@ export async function fetchUserName(db: D1Database, userId: number | null | unde
   return row.name?.trim() || row.email || null;
 }
 
+/**
+ * Returns a draft-page slug guaranteed not to collide with another draft page,
+ * appending `-2`, `-3`, … to the desired slug until it is free. Pass the page's
+ * own id as `excludeId` on update so it doesn't collide with itself.
+ */
+export async function ensureUniqueDraftSlug(
+  db: D1Database,
+  slug: string,
+  excludeId?: number,
+): Promise<string> {
+  let candidate = slug;
+  let suffix = 2;
+  while (
+    await db
+      .prepare('SELECT 1 FROM draft_pages WHERE slug = ? AND (? IS NULL OR id != ?) LIMIT 1')
+      .bind(candidate, excludeId ?? null, excludeId ?? null)
+      .first()
+  ) {
+    candidate = `${slug}-${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
 export async function parentPageOption(db: D1Database, pageId: string | number | null | undefined): Promise<Page[]> {
   const id = num(pageId, 0);
   if (!id) return [];

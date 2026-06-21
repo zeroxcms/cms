@@ -34,6 +34,7 @@ import {
 } from '../../utils/page-logic';
 import {
   editorTaxonomy,
+  ensureUniqueDraftSlug,
   fetchUserAvatar,
   fetchUserName,
   listDashboardDraftPages,
@@ -182,7 +183,7 @@ pagesRoutes.post('/pages/new_post/:pageType', requirePermission('content:write')
   const language = languageFromRequest(c, form);
   const creator = userIdFromContext(c);
   const name = str(form.get('name')) || `Untitled ${pageType.replace(/[_-]/g, ' ')}`;
-  const slug = str(form.get('slug')) || slugify(name);
+  const slug = await ensureUniqueDraftSlug(c.env.DB, str(form.get('slug')) || slugify(name));
   const config = await resolveCmsConfig(c.env);
   const lect = stringifyLect(
     withDraftMetadata(
@@ -321,13 +322,14 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
   );
 
   // Insert page
+  const uniqueSlug = await ensureUniqueDraftSlug(c.env.DB, slug);
   const pageResult = await c.env.DB.prepare(
     `INSERT INTO draft_pages (name, slug, weight, start, end, page_type, lect, page_id, creator, editors)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       name,
-      slug,
+      uniqueSlug,
       weightVal,
       startVal,
       endVal,
@@ -366,7 +368,7 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
       .run();
   }
 
-  dispatchHook(c, 'create', { id: pageId, page_type: pageTypeVal, name, slug });
+  dispatchHook(c, 'create', { id: pageId, page_type: pageTypeVal, name, slug: uniqueSlug });
 
   return c.redirect('/admin?flash=Page+created+successfully');
 });
@@ -551,12 +553,13 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
   const lectVal = stringifyLect(withDraftMetadata(lect, userIdFromContext(c)));
 
   // Update page metadata
+  const uniqueSlug = await ensureUniqueDraftSlug(c.env.DB, slug, pageId);
   await c.env.DB.prepare(
     `UPDATE draft_pages SET name=?, slug=?, weight=?, start=?, end=?, page_type=?, lect=?, page_id=?, editors=? WHERE id=?`,
   )
     .bind(
       name,
-      slug,
+      uniqueSlug,
       weightVal,
       startVal,
       endVal,
@@ -602,7 +605,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
   if (action === 'publish') {
     const outcome = await publishPageToTargets(c.env, pageId);
     if (!outcome) return c.notFound();
-    dispatchHook(c, 'publish', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug });
+    dispatchHook(c, 'publish', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug: uniqueSlug });
     return c.redirect(`/admin?flash=${publishFlash(outcome)}`);
   }
 
@@ -610,7 +613,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
     return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}`);
   }
 
-  dispatchHook(c, 'update', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug });
+  dispatchHook(c, 'update', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug: uniqueSlug });
 
   return c.redirect('/admin?flash=Page+updated+successfully');
 });

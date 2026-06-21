@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cmsConfig } from '../src/cms-config';
 import { hashToken, signJWT } from '../src/utils/jwt';
 import { blueprintToLect, stringifyLect } from '../src/utils/lect';
+import { clearConfigCache } from '../src/plugins/config';
 import type { JWTPayload } from '../src/types';
 
 const IncomingRequest = Request;
@@ -961,6 +962,66 @@ describe('capability enforcement', () => {
       headers: { Cookie: await authCookie('moderator') },
     });
     expect(modTag.status).toBe(403);
+  });
+});
+
+describe('draft page slug uniqueness on save', () => {
+  async function createPage(name: string, slug: string): Promise<void> {
+    await fetchWorker('/admin/pages', {
+      method: 'POST',
+      body: form({ name, slug, page_type: 'default', weight: '5' }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: await authCookie() },
+    });
+  }
+
+  it('appends a numeric suffix when the slug already exists', async () => {
+    // seedBaseData already created a page with slug 'about'.
+    await createPage('About Two', 'about');
+    await createPage('About Three', 'about');
+
+    const slugs = await env.DB.prepare("SELECT slug FROM draft_pages WHERE slug LIKE 'about%' ORDER BY slug ASC")
+      .all<{ slug: string }>();
+    expect(slugs.results.map((row) => row.slug)).toEqual(['about', 'about-2', 'about-3']);
+  });
+
+  it('keeps a page\'s own slug unchanged on update', async () => {
+    const response = await fetchWorker('/admin/pages/101', {
+      method: 'POST',
+      body: form({ name: 'About Renamed', slug: 'about', page_type: 'default', weight: '5' }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: await authCookie() },
+    });
+    expect(response.status).toBe(302);
+    const row = await env.DB.prepare('SELECT slug FROM draft_pages WHERE id = ?')
+      .bind(101)
+      .first<{ slug: string }>();
+    expect(row?.slug).toBe('about');
+  });
+});
+
+describe('database page type with a scalar @name field', () => {
+  it('renders the scalar name field instead of [object Object] when the lect drifted to a localized value', async () => {
+    await env.DB.prepare('INSERT INTO page_types (id, slug, name, blueprint) VALUES (?, ?, ?, ?)')
+      .bind(900, 'menu', 'Menu', JSON.stringify(['@name', { links: ['label', 'url'] }]))
+      .run();
+    clearConfigCache(); // the row was inserted directly, bypassing the admin route's cache bust
+
+    // Simulates the editor form being rendered for one blueprint (localized `.name|en`)
+    // while the page_type is submitted as `menu` (which declares a scalar `@name`).
+    await fetchWorker('/admin/pages', {
+      method: 'POST',
+      body: form({ name: 'Main Menu', slug: 'main-menu', page_type: 'menu', weight: '5', '.name|en': 'Main Menu', '.links[0].label|en': 'Home', '.links[0].url|en': '/home' }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: await authCookie() },
+    });
+    const row = await env.DB.prepare('SELECT id FROM draft_pages WHERE slug = ?')
+      .bind('main-menu')
+      .first<{ id: number }>();
+
+    const editHtml = await (await fetchWorker(`/admin/pages/${row!.id}/edit`, {
+      headers: { Cookie: await authCookie() },
+    })).text();
+    const nameField = editHtml.match(/name="@name"[^>]*value="([^"]*)"/);
+    expect(nameField?.[1]).toBe('Main Menu');
+    expect(editHtml).not.toContain('[object Object]');
   });
 });
 

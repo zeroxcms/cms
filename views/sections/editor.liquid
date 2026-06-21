@@ -466,7 +466,7 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
     document.execCommand('copy');
   }
 
-  document.getElementById('name')?.addEventListener('input', (event) => autoSlug(event.target.value));
+  document.getElementById('page-name')?.addEventListener('input', (event) => autoSlug(event.target.value));
   document.getElementById('copy-slug-btn')?.addEventListener('click', () => copyToClipboard('#slug'));
   document.getElementById('structured_language')?.addEventListener('change', (event) => switchEditorLanguage(event.target.value));
 </script>

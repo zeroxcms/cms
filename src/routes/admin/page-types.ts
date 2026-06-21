@@ -11,6 +11,7 @@ import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 import { fetchUserAvatar } from '../../utils/admin-queries';
 import { buildBaseProps } from '../../utils/admin-render';
+import { clearConfigCache } from '../../plugins/config';
 import { listDbPageTypes } from '../../utils/page-type-store';
 import type { AppContext } from '../../utils/context';
 
@@ -117,6 +118,7 @@ pageTypesRoutes.post('/page_types', requirePermission('pagetype:write'), async (
       num(values.weight),
     )
     .run();
+  clearConfigCache();
   logAudit(c, 'page_type.create', 'page_type', result.meta.last_row_id, { slug, name: values.name });
   return c.redirect('/admin/page_types');
 });
@@ -163,6 +165,7 @@ pageTypesRoutes.post('/page_types/:id', requirePermission('pagetype:write'), asy
       id,
     )
     .run();
+  clearConfigCache();
   logAudit(c, 'page_type.update', 'page_type', id, { slug, name: values.name });
   return c.redirect('/admin/page_types');
 });
@@ -170,6 +173,7 @@ pageTypesRoutes.post('/page_types/:id', requirePermission('pagetype:write'), asy
 pageTypesRoutes.post('/page_types/:id/delete', requirePermission('pagetype:write'), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   await c.env.DB.prepare('DELETE FROM page_types WHERE id = ?').bind(id).run();
+  clearConfigCache();
   logAudit(c, 'page_type.delete', 'page_type', id);
   return c.redirect('/admin/page_types');
 });
