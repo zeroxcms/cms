@@ -54,6 +54,7 @@ async function renderStructuredEditor(views: Fetcher, opts: {
         withImplicitBlockProps(blockProps[type] ?? blockProps.default),
         language,
         config.defaultLanguage,
+        { omitWeight: true },
       );
       return {
         index,
@@ -61,6 +62,8 @@ async function renderStructuredEditor(views: Fetcher, opts: {
         name: getLectScalar(blockWithDefaults, '_name') || type,
         id: blockWithDefaults._id ?? '',
         weight: blockWeight(blockWithDefaults, index),
+        weightInputName: `#${index}@_weight`,
+        weightInputId: fieldId(`#${index}@_weight`),
         deleteAction: `block-delete:${index}`,
         settingsHtml: blockFields.settingsHtml,
         contentHtml: blockFields.contentHtml,
@@ -141,8 +144,11 @@ async function renderLectFields(
   props: BlueprintProps,
   language: string,
   defaultLanguage: string,
+  options: { omitWeight?: boolean } = {},
 ): Promise<RenderedLectFields> {
-  const attributeFields = (await Promise.all(props.attributes.map((field) => renderPageField(views, {
+  const attributeFields = (await Promise.all(props.attributes
+    .filter((field) => !options.omitWeight || field.name !== '_weight')
+    .map((field) => renderPageField(views, {
     prefix,
     field,
     kind: 'attribute',
@@ -226,12 +232,34 @@ async function renderItemGroup(
         ? `block-item-delete:${blockMatch[1]}|${props.name}|${index}`
         : `item-delete:${props.name}|${index}`;
       const itemWithDefaults = withImplicitItemAttributes(item, index);
-      const itemFields = await renderLectFields(views, itemPrefix, itemWithDefaults, groupProps, language, defaultLanguage);
+      const itemFields = await renderLectFields(
+        views,
+        itemPrefix,
+        itemWithDefaults,
+        groupProps,
+        language,
+        defaultLanguage,
+        { omitWeight: true },
+      );
+      const weightInputName = `${itemPrefix}@_weight`;
+      const deleteButton = rows.length > 1
+        ? `<button type="submit" name="action" value="${escHtml(deleteAction)}"
+                   title="Delete item ${displayIndex + 1}" aria-label="Delete item ${displayIndex + 1}"
+                   class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50 hover:text-red-700">
+             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                     d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166M19.228 5.79L18.16 19.673A2.25 2.25 0 0115.916 21H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .563c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
+             </svg>
+             <span class="sr-only">Delete</span>
+           </button>`
+        : '';
       return `<div class="min-w-0 rounded-lg bg-white border border-gray-200 p-4 space-y-3">
                 <div class="flex items-center justify-between gap-3">
                   <span class="min-w-0 text-xs text-gray-400">Item ${displayIndex + 1}</span>
-                  <button type="submit" name="action" value="${escHtml(deleteAction)}"
-                          class="shrink-0 text-xs font-semibold text-red-600 hover:text-red-700">Delete</button>
+                  <div class="flex shrink-0 items-center gap-3">
+                    ${renderCompactWeightInput(weightInputName, itemWithDefaults._weight, `Weight for item ${displayIndex + 1}`)}
+                    ${deleteButton}
+                  </div>
                 </div>
                 ${
                   itemFields.hasSettings
@@ -255,6 +283,17 @@ async function renderItemGroup(
       </div>
       ${rowHtml}
     </div>`;
+}
+
+function renderCompactWeightInput(name: string, value: unknown, label: string): string {
+  const id = fieldId(name);
+  return `<div class="flex items-center gap-1 text-sm text-gray-500">
+            <span aria-hidden="true">#</span>
+            <label for="${escHtml(id)}" class="sr-only">${escHtml(label)}</label>
+            <input type="number" id="${escHtml(id)}" name="${escHtml(name)}"
+                   value="${escHtml(String(value ?? ''))}"
+                   class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg font-bold focus:border-indigo-500 focus:outline-none">
+          </div>`;
 }
 
 async function renderPageField(views: Fetcher, opts: {

@@ -1129,6 +1129,43 @@ describe('database page type with a scalar @name field', () => {
   });
 });
 
+describe('structured editor weights', () => {
+  it('renders item and block weights as compact header controls', async () => {
+    const lect = JSON.parse(basePageLect) as Record<string, unknown>;
+    const items = lect.items as Array<Record<string, unknown>>;
+    items[0]._weight = 4;
+    lect._blocks = [{ _type: 'label', _weight: 7, subject: { en: 'Featured' } }];
+    await env.DB.prepare('UPDATE draft_pages SET lect = ?, current_page_version_id = NULL WHERE id = ?')
+      .bind(JSON.stringify(lect), 101)
+      .run();
+
+    const singleItemHtml = await (await fetchWorker('/admin/pages/101/edit', {
+      headers: { Cookie: await authCookie() },
+    })).text();
+    expect(singleItemHtml).not.toContain('item-delete:items|0');
+
+    items.push({ _weight: 8, name: { en: 'Second item' } });
+    await env.DB.prepare('UPDATE draft_pages SET lect = ? WHERE id = ?')
+      .bind(JSON.stringify(lect), 101)
+      .run();
+
+    const editHtml = await (await fetchWorker('/admin/pages/101/edit', {
+      headers: { Cookie: await authCookie() },
+    })).text();
+    expect(editHtml).toMatch(/name="\.items\[0\]@_weight"\s+value="4"\s+class="w-12 border-b/);
+    expect(editHtml).toMatch(/name="#0@_weight"\s+value="7"\s+class="w-12 border-b/);
+    expect(editHtml).toContain('value="item-delete:items|0"');
+    expect(editHtml).toContain('aria-label="Delete item 1"');
+    expect(editHtml).toContain('value="item-delete:items|1"');
+    expect(editHtml).toContain('aria-label="Delete item 2"');
+    expect(editHtml).toContain('value="block-delete:0"');
+    expect(editHtml).toContain('<section class="min-w-0 space-y-3">');
+    expect(editHtml).toMatch(/<details id="lect_json_details" class="[^"]*">/);
+    expect(editHtml).toContain('<span>Lect JSON</span>');
+    expect(editHtml).not.toContain('<span class="block text-sm font-medium text-gray-700 mb-1">_weight</span>');
+  });
+});
+
 async function expectRoute(route: RouteCase): Promise<Response> {
   const headers = new Headers(route.headers);
   if (route.authenticated) headers.set('Cookie', await authCookie());

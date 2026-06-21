@@ -196,15 +196,24 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
         </div>
       </div>
 
-      <div class="flex min-w-0 gap-2 border-t border-gray-200 px-4 py-3 sm:px-5">
-        <svg class="mt-1 h-4 w-4 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M8 9l-3 3 3 3m8-6l3 3-3 3M14 5l-4 14"/>
-        </svg>
-        <label for="lect_json" class="sr-only">Lect JSON</label>
-        <textarea id="lect_json" name="lect_json" rows="4"
-                  class="block min-w-0 w-full max-w-full rounded border border-gray-300 bg-gray-50 px-3 py-2 text-xs font-mono text-gray-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y">{{ page.lect | escape }}</textarea>
-      </div>
+      <details id="lect_json_details" class="group min-w-0 border-t border-gray-200">
+        <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-xs font-medium text-gray-500 sm:px-5 [&::-webkit-details-marker]:hidden">
+          <svg class="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+          <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8 9l-3 3 3 3m8-6l3 3-3 3M14 5l-4 14"/>
+          </svg>
+          <span>Lect JSON</span>
+          <span class="text-gray-400">Raw metadata</span>
+        </summary>
+        <div class="flex min-w-0 gap-2 px-4 pb-3 sm:px-5">
+          <label for="lect_json" class="sr-only">Lect JSON</label>
+          <textarea id="lect_json" name="lect_json" rows="4"
+                    class="block min-w-0 w-full max-w-full rounded border border-gray-300 bg-gray-50 px-3 py-2 text-xs font-mono text-gray-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y">{{ page.lect | escape }}</textarea>
+        </div>
+      </details>
     </div>
 
     {{ structuredBlock }}
