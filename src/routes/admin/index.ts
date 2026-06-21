@@ -23,6 +23,7 @@ import { pagesRoutes } from './pages';
 import { trashRoutes } from './trash';
 import { tagsRoutes } from './tags';
 import { pageTypesRoutes } from './page-types';
+import { blockTypesRoutes } from './block-types';
 import { apiRoutes } from './api';
 import { pluginAdminRoutes } from './plugins';
 
@@ -40,4 +41,5 @@ adminRoutes.route('/', pagesRoutes);
 adminRoutes.route('/', trashRoutes);
 adminRoutes.route('/', tagsRoutes);
 adminRoutes.route('/', pageTypesRoutes);
+adminRoutes.route('/', blockTypesRoutes);
 adminRoutes.route('/', apiRoutes);

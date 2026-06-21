@@ -353,6 +353,16 @@ describe('admin routes', () => {
     { name: 'GET /admin/page_types/:id/edit', path: '/admin/page_types/700/edit', authenticated: true, expectedStatus: 200 },
     { name: 'POST /admin/page_types/:id', method: 'POST', path: '/admin/page_types/700', body: form({ name: 'Event', slug: 'event', blueprint: '["@date","name","location"]' }), authenticated: true, expectedStatus: 302, location: '/admin/page_types' },
     { name: 'POST /admin/page_types/:id/delete', method: 'POST', path: '/admin/page_types/700/delete', authenticated: true, expectedStatus: 302, location: '/admin/page_types' },
+    { name: 'GET /admin/block_types', path: '/admin/block_types', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/block_types/new', path: '/admin/block_types/new', authenticated: true, expectedStatus: 200 },
+    { name: 'POST /admin/block_types', method: 'POST', path: '/admin/block_types', body: form({ name: 'Gallery', slug: 'gallery', blueprint: '["label",{"pictures":["url"]}]' }), authenticated: true, expectedStatus: 302, location: '/admin/block_types' },
+    { name: 'GET /admin/block_types/:id/edit', path: '/admin/block_types/800/edit', authenticated: true, expectedStatus: 200 },
+    { name: 'POST /admin/block_types/:id', method: 'POST', path: '/admin/block_types/800', body: form({ name: 'Hero Banner', slug: 'hero', blueprint: '["label",{"pictures":["url","alt"]}]' }), authenticated: true, expectedStatus: 302, location: '/admin/block_types' },
+    { name: 'POST /admin/block_types/:id/delete', method: 'POST', path: '/admin/block_types/800/delete', authenticated: true, expectedStatus: 302, location: '/admin/block_types' },
+    { name: 'GET /admin/page_types/view/:slug (config)', path: '/admin/page_types/view/default', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/page_types/view/:slug missing', path: '/admin/page_types/view/nope', authenticated: true, expectedStatus: 404 },
+    { name: 'GET /admin/block_types/view/:slug (config)', path: '/admin/block_types/view/logos', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/block_types/view/:slug missing', path: '/admin/block_types/view/nope', authenticated: true, expectedStatus: 404 },
   ])('$name', async (route) => {
     await expectRoute(route);
   });
@@ -934,6 +944,20 @@ describe('capability enforcement', () => {
     expect(create.status).toBe(403);
   });
 
+  it('lets an editor view block types but not create them (admin only)', async () => {
+    const view = await fetchWorker('/admin/block_types', {
+      headers: { Cookie: await authCookie('editor') },
+    });
+    expect(view.status).toBe(200);
+
+    const create = await fetchWorker('/admin/block_types', {
+      method: 'POST',
+      body: form({ name: 'Nope', slug: 'nope-block', blueprint: '["label"]' }),
+      headers: { Cookie: await authCookie('editor') },
+    });
+    expect(create.status).toBe(403);
+  });
+
   it('returns JSON 403 with insufficient-permissions for moderator uploads', async () => {
     const response = await fetchWorker('/admin/upload', {
       method: 'POST',
@@ -995,6 +1019,41 @@ describe('draft page slug uniqueness on save', () => {
       .bind(101)
       .first<{ slug: string }>();
     expect(row?.slug).toBe('about');
+  });
+});
+
+describe('page type block/taxonomy multi-select', () => {
+  it('stores checked blocks and taxonomies as JSON arrays', async () => {
+    // seedBaseData provides config blocks (logos, paragraphs) and taxonomy 'categories'.
+    const body = new URLSearchParams([
+      ['name', 'Landing'],
+      ['slug', 'landing'],
+      ['weight', '5'],
+      ['blueprint', '["name"]'],
+      ['block_lists', 'logos'],
+      ['block_lists', 'paragraphs'],
+      ['taxonomy_lists', 'categories'],
+    ]);
+    const response = await fetchWorker('/admin/page_types', {
+      method: 'POST',
+      body,
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: await authCookie() },
+    });
+    expect(response.status).toBe(302);
+
+    const row = await env.DB.prepare('SELECT block_lists, taxonomy_lists FROM page_types WHERE slug = ?')
+      .bind('landing')
+      .first<{ block_lists: string; taxonomy_lists: string }>();
+    expect(JSON.parse(row!.block_lists)).toEqual(['logos', 'paragraphs']);
+    expect(JSON.parse(row!.taxonomy_lists)).toEqual(['categories']);
+
+    const editHtml = await (await fetchWorker(
+      `/admin/page_types/${(await env.DB.prepare('SELECT id FROM page_types WHERE slug = ?').bind('landing').first<{ id: number }>())!.id}/edit`,
+      { headers: { Cookie: await authCookie() } },
+    )).text();
+    // The stored selections render as checked checkboxes.
+    expect(editHtml).toMatch(/name="block_lists" value="logos" checked/);
+    expect(editHtml).toMatch(/name="taxonomy_lists" value="categories" checked/);
   });
 });
 
@@ -1143,6 +1202,7 @@ async function resetData(): Promise<void> {
     'tags',
     'taxonomies',
     'page_types',
+    'block_types',
     'sessions',
     'users',
     'audit_log',
@@ -1173,6 +1233,9 @@ async function seedBaseData(): Promise<void> {
 
   await env.DB.prepare('INSERT INTO page_types (id, slug, name, blueprint) VALUES (?, ?, ?, ?)')
     .bind(700, 'event', 'Event', JSON.stringify(['@date', 'name', 'venue']))
+    .run();
+  await env.DB.prepare('INSERT INTO block_types (id, slug, name, blueprint) VALUES (?, ?, ?, ?)')
+    .bind(800, 'hero', 'Hero', JSON.stringify(['label', { pictures: ['url'] }]))
     .run();
   await env.DB.prepare('INSERT INTO tags (id, name, slug, taxonomy_id, lect) VALUES (?, ?, ?, ?, ?)')
     .bind(301, 'News', 'news', 300, JSON.stringify({ name: { en: 'News' } }))

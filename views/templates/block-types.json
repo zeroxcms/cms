@@ -1,0 +1,10 @@
+{
+  "sections": {
+    "main": {
+      "type": "block-types"
+    }
+  },
+  "order": [
+    "main"
+  ]
+}

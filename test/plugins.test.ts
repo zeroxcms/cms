@@ -92,6 +92,22 @@ describe('resolveCmsConfig', () => {
       await env.DB.prepare('DELETE FROM page_types WHERE slug = ?').bind('dbtype').run();
     }
   });
+
+  it('merges database-defined block types into the config blocks', async () => {
+    await env.DB.prepare(
+      `INSERT INTO block_types (slug, name, blueprint) VALUES (?, ?, ?)`,
+    )
+      .bind('dbblock', 'DB Block', JSON.stringify(['label', { pictures: ['url'] }]))
+      .run();
+    try {
+      const config = await resolveCmsConfig({ DB: env.DB } as Env);
+      expect(config.blocks.dbblock).toEqual(['label', { pictures: ['url'] }]);
+      expect(config.blocks.default).toBeDefined(); // base blocks preserved
+      expect(cmsConfig.blocks.dbblock).toBeUndefined(); // base not mutated
+    } finally {
+      await env.DB.prepare('DELETE FROM block_types WHERE slug = ?').bind('dbblock').run();
+    }
+  });
 });
 
 describe('deliverHook', () => {

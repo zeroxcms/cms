@@ -11,6 +11,7 @@ import { cmsConfig } from '../cms-config';
 import type { CmsConfig } from '../cms-config';
 import { getPlugins } from './registry';
 import { dbPageTypeToContentTypes, listDbPageTypes } from '../utils/page-type-store';
+import { dbBlockTypeToContentTypes, listDbBlockTypes } from '../utils/block-type-store';
 import type { Env, PluginContentTypes } from '../types';
 
 const CONFIG_TTL_MS = 60_000;
@@ -35,8 +36,10 @@ export async function resolveCmsConfig(env: Env): Promise<CmsConfig> {
   if (cached && cached.expires > Date.now()) return cached.config;
 
   const plugins = env.PLUGINS ? await getPlugins(env) : [];
-  const dbPageTypes = env.DB ? await listDbPageTypes(env.DB) : [];
-  if (plugins.length === 0 && dbPageTypes.length === 0) return cmsConfig;
+  const [dbPageTypes, dbBlockTypes] = env.DB
+    ? await Promise.all([listDbPageTypes(env.DB), listDbBlockTypes(env.DB)])
+    : [[], []];
+  if (plugins.length === 0 && dbPageTypes.length === 0 && dbBlockTypes.length === 0) return cmsConfig;
 
   // Shallow-clone the mutable record fields so we never mutate the base.
   const merged: CmsConfig = {
@@ -54,6 +57,10 @@ export async function resolveCmsConfig(env: Env): Promise<CmsConfig> {
 
   for (const pageType of dbPageTypes) {
     mergeContentTypes(merged, dbPageTypeToContentTypes(pageType));
+  }
+
+  for (const blockType of dbBlockTypes) {
+    mergeContentTypes(merged, dbBlockTypeToContentTypes(blockType));
   }
 
   cached = { config: merged, expires: Date.now() + CONFIG_TTL_MS };

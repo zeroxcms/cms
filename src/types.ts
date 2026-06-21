@@ -24,6 +24,7 @@ export const PERMISSIONS = [
   'media:upload',     // upload media to R2
   'plugin:access',    // reach the plugin admin proxy
   'pagetype:write',   // create / edit / delete database-defined page types
+  'blocktype:write',  // create / edit / delete database-defined block types
 ] as const;
 
 export type Permission = typeof PERMISSIONS[number];
@@ -122,10 +123,23 @@ export interface PageType {
   name: string;
   /** JSON array of BlueprintEntry. */
   blueprint: string;
-  /** Optional JSON fragments. */
-  blocks: string | null;
+  /** Optional JSON arrays of names (block-type slugs / taxonomy slugs). */
   block_lists: string | null;
   taxonomy_lists: string | null;
+  weight: number;
+}
+
+/** A runtime-editable block definition stored in the `block_types` table. */
+export interface BlockType {
+  id: number;
+  uuid: string;
+  created_at: string;
+  updated_at: string;
+  /** The block-type key (e.g. 'logos'); becomes the blocks map key. */
+  slug: string;
+  name: string;
+  /** JSON array of BlueprintEntry for this block's fields. */
+  blueprint: string;
   weight: number;
 }
 

@@ -4,6 +4,7 @@
 
 import { Hono } from 'hono';
 import { pageTypeFormPage, pageTypesPage } from '../../templates/page-types';
+import type { PageTypeFormModel } from '../../templates/page-types';
 import { cmsConfig } from '../../cms-config';
 import type { Env, Variables, PageType } from '../../types';
 import { num, slugify, str, userIdFromContext } from '../../utils/forms';
@@ -11,7 +12,7 @@ import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 import { fetchUserAvatar } from '../../utils/admin-queries';
 import { buildBaseProps } from '../../utils/admin-render';
-import { clearConfigCache } from '../../plugins/config';
+import { clearConfigCache, resolveCmsConfig } from '../../plugins/config';
 import { listDbPageTypes } from '../../utils/page-type-store';
 import type { AppContext } from '../../utils/context';
 
@@ -21,9 +22,8 @@ interface PageTypeFormValues {
   name: string;
   slug: string;
   blueprint: string;
-  blocks: string;
-  blockLists: string;
-  taxonomyLists: string;
+  blockLists: string[];
+  taxonomyLists: string[];
   weight: string;
 }
 
@@ -32,11 +32,21 @@ function formValues(form: FormData): PageTypeFormValues {
     name: str(form.get('name')),
     slug: str(form.get('slug')),
     blueprint: str(form.get('blueprint')),
-    blocks: str(form.get('blocks')),
-    blockLists: str(form.get('block_lists')),
-    taxonomyLists: str(form.get('taxonomy_lists')),
+    blockLists: form.getAll('block_lists').map(String),
+    taxonomyLists: form.getAll('taxonomy_lists').map(String),
     weight: str(form.get('weight')),
   };
+}
+
+/** Parses a stored JSON string array, tolerating null/malformed values. */
+function parseStringArray(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Validates a form submission; returns an error message or null. `ignoreId`
@@ -51,26 +61,17 @@ async function validate(c: AppContext, values: PageTypeFormValues, slug: string,
     .first<{ id: number }>();
   if (existing && existing.id !== ignoreId) return `Slug "${slug}" is already in use.`;
 
-  // blueprint must be a JSON array; the optional fragments must parse if present.
   try {
     const blueprint = JSON.parse(values.blueprint || '[]');
     if (!Array.isArray(blueprint)) return 'Blueprint must be a JSON array.';
   } catch {
     return 'Blueprint is not valid JSON.';
   }
-  for (const [label, raw] of [['Blocks', values.blocks], ['Block lists', values.blockLists], ['Taxonomy lists', values.taxonomyLists]] as const) {
-    if (!raw.trim()) continue;
-    try {
-      JSON.parse(raw);
-    } catch {
-      return `${label} is not valid JSON.`;
-    }
-  }
   return null;
 }
 
-function nullableJson(raw: string): string | null {
-  return raw.trim() ? raw.trim() : null;
+function nullableJsonArray(values: string[]): string | null {
+  return values.length ? JSON.stringify(values) : null;
 }
 
 // ── List ────────────────────────────────────────────────────────────────────
@@ -94,7 +95,17 @@ pageTypesRoutes.get('/page_types', async (c) => {
 
 // ── Create ──────────────────────────────────────────────────────────────────
 
-pageTypesRoutes.get('/page_types/new', async (c) => pageTypeForm(c));
+pageTypesRoutes.get('/page_types/new', async (c) =>
+  renderForm(c, {
+    mode: 'new',
+    name: '',
+    slug: '',
+    weight: '5',
+    blueprint: '[]',
+    selectedBlocks: [],
+    selectedTaxonomies: [],
+  }),
+);
 
 pageTypesRoutes.post('/page_types', requirePermission('pagetype:write'), async (c) => {
   const form = await c.req.formData();
@@ -102,25 +113,41 @@ pageTypesRoutes.post('/page_types', requirePermission('pagetype:write'), async (
   const slug = values.slug ? slugify(values.slug) : slugify(values.name);
 
   const error = await validate(c, values, slug);
-  if (error) return pageTypeForm(c, undefined, error, values);
+  if (error) return renderForm(c, modelFromValues('new', values, error));
 
   const result = await c.env.DB.prepare(
-    `INSERT INTO page_types (slug, name, blueprint, blocks, block_lists, taxonomy_lists, weight)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO page_types (slug, name, blueprint, block_lists, taxonomy_lists, weight)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       slug,
       values.name,
       values.blueprint || '[]',
-      nullableJson(values.blocks),
-      nullableJson(values.blockLists),
-      nullableJson(values.taxonomyLists),
+      nullableJsonArray(values.blockLists),
+      nullableJsonArray(values.taxonomyLists),
       num(values.weight),
     )
     .run();
   clearConfigCache();
   logAudit(c, 'page_type.create', 'page_type', result.meta.last_row_id, { slug, name: values.name });
   return c.redirect('/admin/page_types');
+});
+
+// ── View (read-only, config-file page types) ──────────────────────────────────
+
+pageTypesRoutes.get('/page_types/view/:slug', async (c) => {
+  const slug = c.req.param('slug');
+  const blueprint = cmsConfig.blueprint[slug];
+  if (!blueprint) return c.notFound();
+  return renderForm(c, {
+    mode: 'view',
+    name: slug,
+    slug,
+    weight: '',
+    blueprint: JSON.stringify(blueprint, null, 2),
+    selectedBlocks: cmsConfig.blockLists[slug] ?? [],
+    selectedTaxonomies: cmsConfig.taxonomyLists[slug] ?? [],
+  });
 });
 
 // ── Edit ────────────────────────────────────────────────────────────────────
@@ -131,7 +158,7 @@ pageTypesRoutes.get('/page_types/:id/edit', async (c) => {
     .bind(id)
     .first<PageType>();
   if (!pageType) return c.notFound();
-  return pageTypeForm(c, pageType);
+  return renderForm(c, modelFromRow('edit', pageType));
 });
 
 pageTypesRoutes.post('/page_types/:id', requirePermission('pagetype:write'), async (c) => {
@@ -146,11 +173,11 @@ pageTypesRoutes.post('/page_types/:id', requirePermission('pagetype:write'), asy
   const slug = values.slug ? slugify(values.slug) : slugify(values.name);
 
   const error = await validate(c, values, slug, id);
-  if (error) return pageTypeForm(c, existing, error, values);
+  if (error) return renderForm(c, { ...modelFromValues('edit', values, error), id });
 
   await c.env.DB.prepare(
     `UPDATE page_types
-        SET slug = ?, name = ?, blueprint = ?, blocks = ?, block_lists = ?, taxonomy_lists = ?, weight = ?,
+        SET slug = ?, name = ?, blueprint = ?, block_lists = ?, taxonomy_lists = ?, weight = ?,
             updated_at = CURRENT_TIMESTAMP
       WHERE id = ?`,
   )
@@ -158,9 +185,8 @@ pageTypesRoutes.post('/page_types/:id', requirePermission('pagetype:write'), asy
       slug,
       values.name,
       values.blueprint || '[]',
-      nullableJson(values.blocks),
-      nullableJson(values.blockLists),
-      nullableJson(values.taxonomyLists),
+      nullableJsonArray(values.blockLists),
+      nullableJsonArray(values.taxonomyLists),
       num(values.weight),
       id,
     )
@@ -178,14 +204,46 @@ pageTypesRoutes.post('/page_types/:id/delete', requirePermission('pagetype:write
   return c.redirect('/admin/page_types');
 });
 
-// ── Shared form renderer ──────────────────────────────────────────────────────
+// ── Shared form rendering ─────────────────────────────────────────────────────
 
-async function pageTypeForm(c: AppContext, pageType?: PageType, error?: string, values?: PageTypeFormValues): Promise<Response> {
-  const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
+type FormModel = Omit<PageTypeFormModel, 'availableBlocks' | 'availableTaxonomies'>;
+
+function modelFromRow(mode: 'edit', row: PageType): FormModel {
+  return {
+    mode,
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    weight: String(row.weight),
+    blueprint: row.blueprint,
+    selectedBlocks: parseStringArray(row.block_lists),
+    selectedTaxonomies: parseStringArray(row.taxonomy_lists),
+  };
+}
+
+function modelFromValues(mode: 'new' | 'edit', values: PageTypeFormValues, error: string): FormModel {
+  return {
+    mode,
+    error,
+    name: values.name,
+    slug: values.slug,
+    weight: values.weight,
+    blueprint: values.blueprint,
+    selectedBlocks: values.blockLists,
+    selectedTaxonomies: values.taxonomyLists,
+  };
+}
+
+async function renderForm(c: AppContext, model: FormModel): Promise<Response> {
+  const [userAvatar, config, taxonomies] = await Promise.all([
+    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
+    resolveCmsConfig(c.env),
+    c.env.DB.prepare('SELECT slug, name FROM taxonomies ORDER BY name ASC').all<{ slug: string; name: string }>(),
+  ]);
   return c.html(await pageTypeFormPage(c.env.VIEWS, {
     ...(await buildBaseProps(c, userAvatar)),
-    pageType,
-    error,
-    values,
+    ...model,
+    availableBlocks: Object.keys(config.blocks),
+    availableTaxonomies: taxonomies.results,
   }));
 }

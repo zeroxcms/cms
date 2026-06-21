@@ -39,9 +39,6 @@ export function dbPageTypeToContentTypes(row: PageType): PluginContentTypes {
     blueprint: { [row.slug]: parseJson<BlueprintEntry[]>(row.blueprint, []) },
   };
 
-  const blocks = parseJson<Record<string, BlueprintEntry[]>>(row.blocks, {});
-  if (Object.keys(blocks).length > 0) fragment.blocks = blocks;
-
   const blockLists = parseJson<string[]>(row.block_lists, []);
   if (blockLists.length > 0) fragment.blockLists = { [row.slug]: blockLists };
 

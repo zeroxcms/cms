@@ -8,6 +8,7 @@ export interface PageTypeListItem {
   /** 'db' (editable) or 'config' (read-only). */
   source: string;
   editHref: string;
+  viewHref: string;
   isDb: boolean;
 }
 
@@ -27,6 +28,7 @@ export async function pageTypesPage(views: Fetcher, opts: {
       slug: pageType.slug,
       source: 'db',
       editHref: `/admin/page_types/${pageType.id}/edit`,
+      viewHref: '',
       isDb: true,
     })),
     ...configPageTypes.map((pageType) => ({
@@ -34,6 +36,7 @@ export async function pageTypesPage(views: Fetcher, opts: {
       slug: pageType.slug,
       source: 'config',
       editHref: '',
+      viewHref: `/admin/page_types/view/${encodeURIComponent(pageType.slug)}`,
       isDb: false,
     })),
   ];
@@ -54,35 +57,69 @@ export async function pageTypesPage(views: Fetcher, opts: {
   });
 }
 
+export interface PageTypeFormModel {
+  mode: 'new' | 'edit' | 'view';
+  id?: number;
+  error?: string;
+  name: string;
+  slug: string;
+  weight: string;
+  blueprint: string;
+  selectedBlocks: string[];
+  selectedTaxonomies: string[];
+  /** All block-type slugs (config + database) available to choose from. */
+  availableBlocks: string[];
+  /** All taxonomies (database) available to choose from. */
+  availableTaxonomies: Array<{ slug: string; name: string }>;
+}
+
 export async function pageTypeFormPage(views: Fetcher, opts: {
   siteTitle: string;
   userName: string;
   userRole: string;
   userAvatar: string;
-  pageType?: PageType;
-  error?: string;
-  values?: { name: string; slug: string; blueprint: string; blocks: string; blockLists: string; taxonomyLists: string; weight: string };
-}): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, pageType, error, values } = opts;
+} & PageTypeFormModel): Promise<string> {
+  const { siteTitle, userName, userRole, userAvatar, mode, id, error } = opts;
+  const readOnly = mode === 'view';
+  const isEdit = mode === 'edit';
+  const heading = mode === 'view' ? 'View Page Type' : mode === 'edit' ? 'Edit Page Type' : 'New Page Type';
+
+  const selectedBlocks = new Set(opts.selectedBlocks);
+  const selectedTaxonomies = new Set(opts.selectedTaxonomies);
+
+  // Union available with selected so a stored value still shows even if its
+  // definition is missing from the current config.
+  const blockSlugs = [...new Set([...opts.availableBlocks, ...opts.selectedBlocks])];
+  const taxonomyBySlug = new Map(opts.availableTaxonomies.map((taxonomy) => [taxonomy.slug, taxonomy.name]));
+  const taxonomySlugs = [...new Set([...opts.availableTaxonomies.map((taxonomy) => taxonomy.slug), ...opts.selectedTaxonomies])];
+
+  const blockOptions = blockSlugs.map((slug) => ({ value: slug, label: slug, checked: selectedBlocks.has(slug) }));
+  const taxonomyOptions = taxonomySlugs.map((slug) => ({
+    value: slug,
+    label: taxonomyBySlug.get(slug) || slug,
+    checked: selectedTaxonomies.has(slug),
+  }));
 
   const body = await renderView(views, '/templates/page-type-form.json', {
-    isEdit: !!pageType,
-    heading: pageType ? 'Edit Page Type' : 'New Page Type',
-    action: pageType ? `/admin/page_types/${pageType.id}` : '/admin/page_types',
-    deleteAction: pageType ? `/admin/page_types/${pageType.id}/delete` : '',
+    isEdit,
+    readOnly,
+    heading,
+    action: isEdit ? `/admin/page_types/${id}` : '/admin/page_types',
+    deleteAction: isEdit ? `/admin/page_types/${id}/delete` : '',
     error: error ?? '',
     hasError: !!error,
-    name: values?.name ?? pageType?.name ?? '',
-    slug: values?.slug ?? pageType?.slug ?? '',
-    blueprint: values?.blueprint ?? pageType?.blueprint ?? '[]',
-    blocks: values?.blocks ?? pageType?.blocks ?? '',
-    blockLists: values?.blockLists ?? pageType?.block_lists ?? '',
-    taxonomyLists: values?.taxonomyLists ?? pageType?.taxonomy_lists ?? '',
-    weight: values?.weight ?? String(pageType?.weight ?? 5),
+    name: opts.name,
+    slug: opts.slug,
+    blueprint: opts.blueprint,
+    weight: opts.weight,
+    blockOptions,
+    hasBlockOptions: blockOptions.length > 0,
+    taxonomyOptions,
+    hasTaxonomyOptions: taxonomyOptions.length > 0,
   });
 
   return layout(views, {
-    title: pageType ? 'Edit Page Type' : 'New Page Type',
+    title: heading,
     siteTitle,
     body,
     admin: true,
