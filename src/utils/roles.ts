@@ -24,7 +24,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   editor: [
     'content:write', 'content:publish', 'content:delete', 'content:import',
-    'trash:restore', 'taxonomy:write', 'media:upload',
+    'trash:restore', 'tag:write', 'taxonomy:write', 'media:upload',
   ],
   moderator: [
     'content:publish', 'content:delete', 'trash:restore',

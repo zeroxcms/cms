@@ -20,7 +20,8 @@ export const PERMISSIONS = [
   'content:import',   // CSV / JSON bulk import
   'trash:restore',    // restore a page from trash
   'trash:purge',      // permanently delete from trash (destructive)
-  'taxonomy:write',   // create / edit / delete tags and taxonomies
+  'tag:write',        // create / edit / delete tags (terms)
+  'taxonomy:write',   // create / edit / delete taxonomies
   'media:upload',     // upload media to R2
   'plugin:access',    // reach the plugin admin proxy
   'pagetype:write',   // create / edit / delete database-defined page types
@@ -39,7 +40,8 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   'content:import': 'Bulk import (CSV / JSON)',
   'trash:restore': 'Restore pages from trash',
   'trash:purge': 'Permanently delete from trash',
-  'taxonomy:write': 'Manage tags and taxonomies',
+  'tag:write': 'Create and edit tags',
+  'taxonomy:write': 'Manage taxonomies',
   'media:upload': 'Upload media',
   'plugin:access': 'Reach the plugin admin',
   'pagetype:write': 'Manage page types',

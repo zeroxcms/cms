@@ -1015,8 +1015,8 @@ describe('capability enforcement', () => {
     expect(await response.json()).toEqual({ success: false, error: 'Insufficient permissions' });
   });
 
-  it('blocks editors from managing taxonomy-free actions they lack', async () => {
-    // Editors do have taxonomy:write — confirm the positive case too.
+  it('lets editors manage tags but blocks moderators', async () => {
+    // Editors hold tag:write.
     const tag = await fetchWorker('/admin/tags', {
       method: 'POST',
       body: form({ name: 'Editor Tag', slug: 'editor-tag', taxonomy_id: '300' }),
@@ -1031,6 +1031,44 @@ describe('capability enforcement', () => {
       headers: { Cookie: await authCookie('moderator') },
     });
     expect(modTag.status).toBe(403);
+  });
+
+  it('separates tag:write from taxonomy:write', async () => {
+    // A role granted only tag:write can manage tags but not taxonomies.
+    await env.DB.prepare('INSERT INTO roles (name, label, builtin) VALUES (?, ?, 0)').bind('tagger', 'Tagger').run();
+    await env.DB.prepare('INSERT INTO role_permissions (role, permission) VALUES (?, ?)').bind('tagger', 'tag:write').run();
+    // A role granted only taxonomy:write can manage taxonomies but not tags.
+    await env.DB.prepare('INSERT INTO roles (name, label, builtin) VALUES (?, ?, 0)').bind('taxer', 'Taxer').run();
+    await env.DB.prepare('INSERT INTO role_permissions (role, permission) VALUES (?, ?)').bind('taxer', 'taxonomy:write').run();
+    clearRolePermissionsCache();
+
+    const taggerTag = await fetchWorker('/admin/tags', {
+      method: 'POST',
+      body: form({ name: 'T1', slug: 't1', taxonomy_id: '300' }),
+      headers: { Cookie: await authCookie('tagger') },
+    });
+    expect(taggerTag.status).toBe(302);
+
+    const taggerTaxonomy = await fetchWorker('/admin/taxonomies', {
+      method: 'POST',
+      body: form({ name: 'Topics', slug: 'topics' }),
+      headers: { Cookie: await authCookie('tagger') },
+    });
+    expect(taggerTaxonomy.status).toBe(403);
+
+    const taxerTaxonomy = await fetchWorker('/admin/taxonomies', {
+      method: 'POST',
+      body: form({ name: 'Topics', slug: 'topics' }),
+      headers: { Cookie: await authCookie('taxer') },
+    });
+    expect(taxerTaxonomy.status).toBe(302);
+
+    const taxerTag = await fetchWorker('/admin/tags', {
+      method: 'POST',
+      body: form({ name: 'T2', slug: 't2', taxonomy_id: '300' }),
+      headers: { Cookie: await authCookie('taxer') },
+    });
+    expect(taxerTag.status).toBe(403);
   });
 });
 
