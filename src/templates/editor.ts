@@ -1,4 +1,4 @@
-import { layout, escHtml } from './layout';
+import { layout, escHtml, navFlags } from './layout';
 import { renderLiquid, renderView, templateExists } from './liquid';
 import type { Page, PageVersion, Tag, Taxonomy } from '../types';
 import {
@@ -531,6 +531,7 @@ export async function editorPage(views: Fetcher, opts: {
   });
 
   return layout(views, {
+    ...navFlags(opts),
     title: pageTitle,
     siteTitle,
     body,

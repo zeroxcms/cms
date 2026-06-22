@@ -1,4 +1,4 @@
-import { layout } from './layout';
+import { layout, navFlags } from './layout';
 import { renderView } from './liquid';
 import type { BlockType } from '../types';
 
@@ -19,8 +19,9 @@ export async function blockTypesPage(views: Fetcher, opts: {
   userAvatar: string;
   dbBlockTypes: BlockType[];
   configBlockTypes: Array<{ slug: string; name: string }>;
+  canWrite: boolean;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, dbBlockTypes, configBlockTypes } = opts;
+  const { siteTitle, userName, userRole, userAvatar, dbBlockTypes, configBlockTypes, canWrite } = opts;
 
   const items: BlockTypeListItem[] = [
     ...dbBlockTypes.map((blockType) => ({
@@ -44,9 +45,11 @@ export async function blockTypesPage(views: Fetcher, opts: {
   const body = await renderView(views, '/templates/block-types.json', {
     hasBlockTypes: items.length > 0,
     blockTypes: items,
+    canWrite,
   });
 
   return layout(views, {
+    ...navFlags(opts),
     title: 'Block Types',
     siteTitle,
     body,
@@ -93,6 +96,7 @@ export async function blockTypeFormPage(views: Fetcher, opts: {
   });
 
   return layout(views, {
+    ...navFlags(opts),
     title: heading,
     siteTitle,
     body,

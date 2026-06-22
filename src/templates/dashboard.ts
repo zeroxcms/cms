@@ -1,4 +1,4 @@
-import { layout } from './layout';
+import { layout, navFlags } from './layout';
 import { renderView } from './liquid';
 import type { Page } from '../types';
 
@@ -112,6 +112,7 @@ export async function dashboardPage(views: Fetcher, opts: {
   });
 
   return layout(views, {
+    ...navFlags(opts),
     title: 'Dashboard',
     siteTitle,
     body,

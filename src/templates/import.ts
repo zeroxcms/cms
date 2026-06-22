@@ -1,4 +1,4 @@
-import { layout } from './layout';
+import { layout, navFlags } from './layout';
 import { renderView } from './liquid';
 
 interface ImportPreviewRow {
@@ -72,6 +72,7 @@ export async function importPage(views: Fetcher, opts: {
   });
 
   return layout(views, {
+    ...navFlags(opts),
     title: 'Import',
     siteTitle,
     body,

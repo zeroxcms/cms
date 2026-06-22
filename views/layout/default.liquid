@@ -107,6 +107,7 @@
               </svg>
               Block Types
             </a>
+            {% if canManageUsers %}
             <a href="/admin/users"
                class="flex shrink-0 items-center gap-2 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors md:gap-3">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -115,6 +116,8 @@
               </svg>
               Users
             </a>
+            {% endif %}
+            {% if canManageRoles %}
             <a href="/admin/roles"
                class="flex shrink-0 items-center gap-2 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors md:gap-3">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -123,6 +126,7 @@
               </svg>
               Roles
             </a>
+            {% endif %}
           </div>
         </details>
         <a href="/admin/trash"

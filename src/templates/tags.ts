@@ -1,4 +1,4 @@
-import { layout } from './layout';
+import { layout, navFlags } from './layout';
 import { renderView } from './liquid';
 import type { Tag, Taxonomy } from '../types';
 
@@ -30,6 +30,7 @@ export async function tagsPage(views: Fetcher, opts: {
   });
 
   return layout(views, {
+    ...navFlags(opts),
     title: 'Tags',
     siteTitle,
     body,
@@ -96,6 +97,7 @@ export async function tagFormPage(views: Fetcher, opts: {
   });
 
   return layout(views, {
+    ...navFlags(opts),
     title: tag ? 'Edit Tag' : 'New Tag',
     siteTitle,
     body,

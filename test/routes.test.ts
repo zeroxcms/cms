@@ -1072,6 +1072,42 @@ describe('capability enforcement', () => {
   });
 });
 
+describe('permission-aware admin UI', () => {
+  it('shows Users/Roles nav links only to users who can manage them', async () => {
+    const adminHtml = await (await fetchWorker('/admin', { headers: { Cookie: await authCookie() } })).text();
+    expect(adminHtml).toContain('/admin/users');
+    expect(adminHtml).toContain('/admin/roles');
+
+    const editorHtml = await (await fetchWorker('/admin', { headers: { Cookie: await authCookie('editor') } })).text();
+    expect(editorHtml).not.toContain('/admin/users');
+    expect(editorHtml).not.toContain('/admin/roles');
+  });
+
+  it('renders page types read-only for users without pagetype:write', async () => {
+    // Editors lack pagetype:write.
+    const list = await (await fetchWorker('/admin/page_types', { headers: { Cookie: await authCookie('editor') } })).text();
+    expect(list).not.toContain('New Page Type');
+    expect(list).toContain('/admin/page_types/700/edit'); // seeded 'event' type still linked
+
+    // The "new" form is not reachable.
+    const newForm = await fetchWorker('/admin/page_types/new', { headers: { Cookie: await authCookie('editor') } });
+    expect(newForm.status).toBe(302);
+    expect(newForm.headers.get('Location')).toBe('/admin/page_types');
+
+    // The edit route renders read-only (no Save button).
+    const editForm = await (await fetchWorker('/admin/page_types/700/edit', { headers: { Cookie: await authCookie('editor') } })).text();
+    expect(editForm).not.toMatch(/<button[^>]*>Save<\/button>/);
+    expect(editForm).toContain('cannot be edited');
+  });
+
+  it('keeps page types editable for admins', async () => {
+    const list = await (await fetchWorker('/admin/page_types', { headers: { Cookie: await authCookie() } })).text();
+    expect(list).toContain('New Page Type');
+    const editForm = await (await fetchWorker('/admin/page_types/700/edit', { headers: { Cookie: await authCookie() } })).text();
+    expect(editForm).toMatch(/<button[^>]*>Save<\/button>/);
+  });
+});
+
 describe('draft page slug uniqueness on save', () => {
   async function createPage(name: string, slug: string): Promise<void> {
     await fetchWorker('/admin/pages', {

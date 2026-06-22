@@ -1,4 +1,4 @@
-import { layout } from './layout';
+import { layout, navFlags } from './layout';
 import { renderView } from './liquid';
 
 export async function usersPage(views: Fetcher, opts: {
@@ -13,7 +13,8 @@ export async function usersPage(views: Fetcher, opts: {
     hasUsers: users.length > 0,
     users,
   });
-  return layout(views, { title: 'Users', siteTitle, body, admin: true, userName, userRole, userAvatar });
+  return layout(views, {
+    ...navFlags(opts), title: 'Users', siteTitle, body, admin: true, userName, userRole, userAvatar });
 }
 
 export async function userFormPage(views: Fetcher, opts: {
@@ -36,5 +37,6 @@ export async function userFormPage(views: Fetcher, opts: {
     hasError: !!error,
     roleOptions,
   });
-  return layout(views, { title: `Edit ${name || email}`, siteTitle, body, admin: true, userName, userRole, userAvatar });
+  return layout(views, {
+    ...navFlags(opts), title: `Edit ${name || email}`, siteTitle, body, admin: true, userName, userRole, userAvatar });
 }

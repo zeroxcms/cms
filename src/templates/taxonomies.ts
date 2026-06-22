@@ -1,4 +1,4 @@
-import { layout } from './layout';
+import { layout, navFlags } from './layout';
 import { renderView } from './liquid';
 import type { Taxonomy } from '../types';
 
@@ -8,10 +8,12 @@ export async function taxonomiesPage(views: Fetcher, opts: {
   userRole: string;
   userAvatar: string;
   taxonomies: Taxonomy[];
+  canWrite: boolean;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, taxonomies } = opts;
+  const { siteTitle, userName, userRole, userAvatar, taxonomies, canWrite } = opts;
   const body = await renderView(views, '/templates/taxonomies.json', {
     hasTaxonomies: taxonomies.length > 0,
+    canWrite,
     taxonomies: taxonomies.map((taxonomy) => ({
       id: taxonomy.id,
       name: taxonomy.name,
@@ -21,6 +23,7 @@ export async function taxonomiesPage(views: Fetcher, opts: {
   });
 
   return layout(views, {
+    ...navFlags(opts),
     title: 'Taxonomies',
     siteTitle,
     body,
@@ -37,11 +40,14 @@ export async function taxonomyFormPage(views: Fetcher, opts: {
   userRole: string;
   userAvatar: string;
   taxonomy?: Taxonomy;
+  readOnly?: boolean;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, taxonomy } = opts;
+  const { siteTitle, userName, userRole, userAvatar, taxonomy, readOnly = false } = opts;
+  const heading = readOnly ? 'View Taxonomy' : taxonomy ? 'Edit Taxonomy' : 'New Taxonomy';
   const body = await renderView(views, '/templates/taxonomy-form.json', {
     isEdit: !!taxonomy,
-    heading: taxonomy ? 'Edit Taxonomy' : 'New Taxonomy',
+    readOnly,
+    heading,
     action: taxonomy ? `/admin/taxonomies/${taxonomy.id}` : '/admin/taxonomies',
     name: taxonomy?.name ?? '',
     slug: taxonomy?.slug ?? '',
@@ -49,7 +55,8 @@ export async function taxonomyFormPage(views: Fetcher, opts: {
   });
 
   return layout(views, {
-    title: taxonomy ? 'Edit Taxonomy' : 'New Taxonomy',
+    ...navFlags(opts),
+    title: heading,
     siteTitle,
     body,
     admin: true,

@@ -27,7 +27,8 @@ import { listLiveByTypes } from '../publish';
 import type { DashboardListResult } from './admin-queries';
 import { lectsMatch } from './page-logic';
 import { strParam } from './forms';
-import type { Page } from '../types';
+import { effectivePermissions, resolveRolePermissions } from './roles';
+import type { Page, Permission } from '../types';
 
 export interface BaseTemplateProps {
   siteTitle: string;
@@ -37,6 +38,20 @@ export interface BaseTemplateProps {
   currentUserId: string;
   /** Navigation entries contributed by active plugins, filtered to the user's roles. */
   pluginNav: Array<{ label: string; href: string }>;
+  /** Nav-gating flags derived from the signed-in user's effective permissions. */
+  canManageUsers: boolean;
+  canManageRoles: boolean;
+}
+
+/** The signed-in user's effective permission set (built-in defaults + DB overrides). */
+export async function userPermissions(c: AppContext): Promise<Set<Permission>> {
+  const map = await resolveRolePermissions(c.env);
+  return effectivePermissions(map, c.get('user').role);
+}
+
+/** Convenience check used by routes to decide read-only vs editable rendering. */
+export async function userCan(c: AppContext, permission: Permission): Promise<boolean> {
+  return (await userPermissions(c)).has(permission);
 }
 
 /**
@@ -47,7 +62,11 @@ export interface BaseTemplateProps {
 export async function buildBaseProps(c: AppContext, userAvatar: string | null): Promise<BaseTemplateProps> {
   const user = c.get('user');
   const userRoles = user.role.split(',').map((role) => role.trim()).filter(Boolean);
-  const nav = (await pluginNav(c.env))
+  const [navItems, permissions] = await Promise.all([
+    pluginNav(c.env),
+    userPermissions(c),
+  ]);
+  const nav = navItems
     .filter((item) => !item.roles?.length || item.roles.some((role) => userRoles.includes(role)))
     .map((item) => ({ label: item.label, href: item.href }));
   return {
@@ -57,6 +76,8 @@ export async function buildBaseProps(c: AppContext, userAvatar: string | null): 
     userAvatar: userAvatar ?? '',
     currentUserId: String(user.sub),
     pluginNav: nav,
+    canManageUsers: permissions.has('users:manage'),
+    canManageRoles: permissions.has('roles:manage'),
   };
 }
 

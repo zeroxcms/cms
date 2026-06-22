@@ -1,4 +1,4 @@
-import { layout } from './layout';
+import { layout, navFlags } from './layout';
 import { renderView } from './liquid';
 import type { DashboardPage } from './dashboard';
 
@@ -81,6 +81,7 @@ export async function advancedSearchPage(views: Fetcher, opts: {
   });
 
   return layout(views, {
+    ...navFlags(opts),
     title: opts.pageTitle,
     siteTitle: opts.siteTitle,
     body,

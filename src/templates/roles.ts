@@ -1,4 +1,4 @@
-import { layout } from './layout';
+import { layout, navFlags } from './layout';
 import { renderView } from './liquid';
 
 export interface RoleListItem {
@@ -23,7 +23,8 @@ export async function rolesPage(views: Fetcher, opts: {
     hasRoles: roles.length > 0,
     roles,
   });
-  return layout(views, { title: 'Roles', siteTitle, body, admin: true, userName, userRole, userAvatar });
+  return layout(views, {
+    ...navFlags(opts), title: 'Roles', siteTitle, body, admin: true, userName, userRole, userAvatar });
 }
 
 export async function roleFormPage(views: Fetcher, opts: {
@@ -56,5 +57,6 @@ export async function roleFormPage(views: Fetcher, opts: {
     hasError: !!error,
     permissionOptions,
   });
-  return layout(views, { title: heading, siteTitle, body, admin: true, userName, userRole, userAvatar });
+  return layout(views, {
+    ...navFlags(opts), title: heading, siteTitle, body, admin: true, userName, userRole, userAvatar });
 }

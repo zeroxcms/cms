@@ -1,6 +1,19 @@
 import { renderLiquid } from './liquid';
 
-export interface LayoutOptions {
+/** Nav-gating flags forwarded into the sidebar; default false (hidden). */
+export interface NavFlags {
+  canManageUsers?: boolean;
+  canManageRoles?: boolean;
+}
+
+/** Extracts the nav-gating flags from a page's props for forwarding to layout().
+ *  Accepts any props object (the flags come from buildBaseProps at runtime). */
+export function navFlags(opts: unknown): NavFlags {
+  const o = (opts ?? {}) as NavFlags;
+  return { canManageUsers: o.canManageUsers, canManageRoles: o.canManageRoles };
+}
+
+export interface LayoutOptions extends NavFlags {
   title: string;
   siteTitle: string;
   body: string;
@@ -27,6 +40,8 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     userRoleLabel,
     userInitial: userName.trim().charAt(0).toUpperCase() || '?',
     contentClass: admin ? 'md:ml-64' : '',
+    canManageUsers: opts.canManageUsers ?? false,
+    canManageRoles: opts.canManageRoles ?? false,
   });
 }
 

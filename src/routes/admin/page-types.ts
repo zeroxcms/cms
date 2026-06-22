@@ -11,7 +11,7 @@ import { num, slugify, str, userIdFromContext } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 import { fetchUserAvatar } from '../../utils/admin-queries';
-import { buildBaseProps } from '../../utils/admin-render';
+import { buildBaseProps, userCan } from '../../utils/admin-render';
 import { clearConfigCache, resolveCmsConfig } from '../../plugins/config';
 import { listDbPageTypes } from '../../utils/page-type-store';
 import type { AppContext } from '../../utils/context';
@@ -90,13 +90,15 @@ pageTypesRoutes.get('/page_types', async (c) => {
     ...(await buildBaseProps(c, userAvatar)),
     dbPageTypes,
     configPageTypes,
+    canWrite: await userCan(c, 'pagetype:write'),
   }));
 });
 
 // ── Create ──────────────────────────────────────────────────────────────────
 
-pageTypesRoutes.get('/page_types/new', async (c) =>
-  renderForm(c, {
+pageTypesRoutes.get('/page_types/new', async (c) => {
+  if (!(await userCan(c, 'pagetype:write'))) return c.redirect('/admin/page_types');
+  return renderForm(c, {
     mode: 'new',
     name: '',
     slug: '',
@@ -104,8 +106,8 @@ pageTypesRoutes.get('/page_types/new', async (c) =>
     blueprint: '[]',
     selectedBlocks: [],
     selectedTaxonomies: [],
-  }),
-);
+  });
+});
 
 pageTypesRoutes.post('/page_types', requirePermission('pagetype:write'), async (c) => {
   const form = await c.req.formData();
@@ -158,7 +160,8 @@ pageTypesRoutes.get('/page_types/:id/edit', async (c) => {
     .bind(id)
     .first<PageType>();
   if (!pageType) return c.notFound();
-  return renderForm(c, modelFromRow('edit', pageType));
+  const mode = (await userCan(c, 'pagetype:write')) ? 'edit' : 'view';
+  return renderForm(c, modelFromRow(mode, pageType));
 });
 
 pageTypesRoutes.post('/page_types/:id', requirePermission('pagetype:write'), async (c) => {
@@ -208,7 +211,7 @@ pageTypesRoutes.post('/page_types/:id/delete', requirePermission('pagetype:write
 
 type FormModel = Omit<PageTypeFormModel, 'availableBlocks' | 'availableTaxonomies'>;
 
-function modelFromRow(mode: 'edit', row: PageType): FormModel {
+function modelFromRow(mode: 'edit' | 'view', row: PageType): FormModel {
   return {
     mode,
     id: row.id,

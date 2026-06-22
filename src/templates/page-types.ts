@@ -1,4 +1,4 @@
-import { layout } from './layout';
+import { layout, navFlags } from './layout';
 import { renderView } from './liquid';
 import type { PageType } from '../types';
 
@@ -19,8 +19,9 @@ export async function pageTypesPage(views: Fetcher, opts: {
   userAvatar: string;
   dbPageTypes: PageType[];
   configPageTypes: Array<{ slug: string; name: string }>;
+  canWrite: boolean;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, dbPageTypes, configPageTypes } = opts;
+  const { siteTitle, userName, userRole, userAvatar, dbPageTypes, configPageTypes, canWrite } = opts;
 
   const items: PageTypeListItem[] = [
     ...dbPageTypes.map((pageType) => ({
@@ -44,9 +45,11 @@ export async function pageTypesPage(views: Fetcher, opts: {
   const body = await renderView(views, '/templates/page-types.json', {
     hasPageTypes: items.length > 0,
     pageTypes: items,
+    canWrite,
   });
 
   return layout(views, {
+    ...navFlags(opts),
     title: 'Page Types',
     siteTitle,
     body,
@@ -119,6 +122,7 @@ export async function pageTypeFormPage(views: Fetcher, opts: {
   });
 
   return layout(views, {
+    ...navFlags(opts),
     title: heading,
     siteTitle,
     body,

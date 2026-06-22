@@ -11,7 +11,7 @@ import { num, slugify, str, userIdFromContext } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 import { fetchUserAvatar } from '../../utils/admin-queries';
-import { buildBaseProps } from '../../utils/admin-render';
+import { buildBaseProps, userCan } from '../../utils/admin-render';
 import { clearConfigCache } from '../../plugins/config';
 import { listDbBlockTypes } from '../../utils/block-type-store';
 import type { AppContext } from '../../utils/context';
@@ -71,14 +71,16 @@ blockTypesRoutes.get('/block_types', async (c) => {
     ...(await buildBaseProps(c, userAvatar)),
     dbBlockTypes,
     configBlockTypes,
+    canWrite: await userCan(c, 'blocktype:write'),
   }));
 });
 
 // ── Create ──────────────────────────────────────────────────────────────────
 
-blockTypesRoutes.get('/block_types/new', async (c) =>
-  renderForm(c, { mode: 'new', name: '', slug: '', weight: '5', blueprint: '[]' }),
-);
+blockTypesRoutes.get('/block_types/new', async (c) => {
+  if (!(await userCan(c, 'blocktype:write'))) return c.redirect('/admin/block_types');
+  return renderForm(c, { mode: 'new', name: '', slug: '', weight: '5', blueprint: '[]' });
+});
 
 blockTypesRoutes.post('/block_types', requirePermission('blocktype:write'), async (c) => {
   const form = await c.req.formData();
@@ -122,7 +124,7 @@ blockTypesRoutes.get('/block_types/:id/edit', async (c) => {
     .first<BlockType>();
   if (!blockType) return c.notFound();
   return renderForm(c, {
-    mode: 'edit',
+    mode: (await userCan(c, 'blocktype:write')) ? 'edit' : 'view',
     id: blockType.id,
     name: blockType.name,
     slug: blockType.slug,

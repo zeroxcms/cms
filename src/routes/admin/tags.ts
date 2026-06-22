@@ -25,7 +25,7 @@ import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 import { fetchUserAvatar } from '../../utils/admin-queries';
 import { removeTagFromTargets } from '../../publish';
-import { buildBaseProps } from '../../utils/admin-render';
+import { buildBaseProps, userCan } from '../../utils/admin-render';
 import type { AppContext } from '../../utils/context';
 
 export const tagsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -41,10 +41,14 @@ tagsRoutes.get('/taxonomies', async (c) => {
   return c.html(await taxonomiesPage(c.env.VIEWS, {
     ...(await buildBaseProps(c, userAvatar)),
     taxonomies: taxonomies.results,
+    canWrite: await userCan(c, 'taxonomy:write'),
   }));
 });
 
-tagsRoutes.get('/taxonomies/new', async (c) => taxonomyForm(c));
+tagsRoutes.get('/taxonomies/new', async (c) => {
+  if (!(await userCan(c, 'taxonomy:write'))) return c.redirect('/admin/taxonomies');
+  return taxonomyForm(c);
+});
 
 tagsRoutes.post('/taxonomies', requirePermission('taxonomy:write'), async (c) => {
   const form = await c.req.formData();
@@ -64,7 +68,7 @@ tagsRoutes.get('/taxonomies/:id/edit', async (c) => {
     .bind(id)
     .first<Taxonomy>();
   if (!taxonomy) return c.notFound();
-  return taxonomyForm(c, taxonomy);
+  return taxonomyForm(c, taxonomy, !(await userCan(c, 'taxonomy:write')));
 });
 
 tagsRoutes.post('/taxonomies/:id', requirePermission('taxonomy:write'), async (c) => {
@@ -163,11 +167,12 @@ tagsRoutes.post('/tags/:id/delete', requirePermission('tag:write'), async (c) =>
   return c.redirect('/admin/tags');
 });
 
-async function taxonomyForm(c: AppContext, taxonomy?: Taxonomy) {
+async function taxonomyForm(c: AppContext, taxonomy?: Taxonomy, readOnly = false) {
   const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
   return c.html(await taxonomyFormPage(c.env.VIEWS, {
     ...(await buildBaseProps(c, userAvatar)),
     taxonomy,
+    readOnly,
   }));
 }
 
