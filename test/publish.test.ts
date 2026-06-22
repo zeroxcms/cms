@@ -9,7 +9,7 @@ import {
   publishPageToTargets,
   unpublishPageFromTargets,
 } from '../src/publish';
-import { clearManifestCache } from '../src/plugins/registry';
+import { clearManifestCache, __injectPluginFetcher, __clearInjectedFetchers } from '../src/plugins/registry';
 import type { PublishSnapshot } from '../src/publish/adapter';
 import type { Env, Page, ResolvedPlugin } from '../src/types';
 
@@ -39,6 +39,8 @@ function snapshotFor(page: Page): PublishSnapshot {
 }
 
 async function cleanup(): Promise<void> {
+  __clearInjectedFetchers();
+  await env.DB.prepare('DELETE FROM plugins').run();
   await env.DB.prepare('DELETE FROM draft_page_tags WHERE page_id = ?').bind(PAGE.id).run();
   await env.DB.prepare('DELETE FROM draft_pages WHERE id = ?').bind(PAGE.id).run();
   await env.DB.prepare('DELETE FROM tags WHERE id = 42').run();
@@ -294,6 +296,13 @@ describe('publish registry', () => {
     return { ...env, ...extra } as unknown as Env;
   }
 
+  // Registers a plugin in the D1 registry and routes its URL to an in-process
+  // fetcher (the URL-transport equivalent of the old service binding).
+  async function registerPlugin(fetcher: Fetcher, url = 'https://plugin-ipfs.local'): Promise<void> {
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('IPFS', url).run();
+    __injectPluginFetcher(url, fetcher);
+  }
+
   async function seedDraft(): Promise<void> {
     await env.DB.prepare(
       `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, lect, creator)
@@ -316,11 +325,10 @@ describe('publish registry', () => {
     const fetcher = {
       fetch: async () => Response.json({ id: 'ipfs', name: 'IPFS', version: '1.0.0', publishTarget: true }),
     } as unknown as Fetcher;
+    await registerPlugin(fetcher);
     const adapters = await getPublishAdapters(registryEnv({
       PUBLISH_TARGETS: 'd1,r2',
       PUBLISH_BUCKET: env.MEDIA_BUCKET,
-      PLUGINS: 'PLUGIN_IPFS',
-      PLUGIN_IPFS: fetcher,
       PLUGIN_SECRET: 's3cret',
     }));
     expect(adapters.map((adapter) => adapter.id)).toEqual(['d1', 'r2', 'plugin:ipfs']);
@@ -338,9 +346,8 @@ describe('publish registry', () => {
       },
     } as unknown as Fetcher;
 
+    await registerPlugin(failing);
     const testEnv = registryEnv({
-      PLUGINS: 'PLUGIN_IPFS',
-      PLUGIN_IPFS: failing,
       PLUGIN_SECRET: 's3cret',
     });
 

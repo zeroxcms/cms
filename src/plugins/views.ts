@@ -20,8 +20,8 @@ import { getPlugins, PLUGIN_ORIGIN, PLUGIN_PREFIX } from './registry';
  * env.VIEWS, so the common path adds zero overhead.
  */
 export function viewsFor(env: Env): Fetcher {
-  if (!env.PLUGINS) return env.VIEWS;
-
+  // Plugins are resolved from D1 (cached). The fallback chain only runs when the
+  // primary CMS asset misses, so zero-plugin installs add no meaningful overhead.
   const fetch = async (input: RequestInfo | URL): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const primary = await env.VIEWS.fetch(url);

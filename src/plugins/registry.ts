@@ -1,71 +1,102 @@
 // ============================================================
-// Plugin registry — discovers active plugin Workers from the
-// `PLUGINS` env var, fetches and caches their manifests.
+// Plugin registry — resolves active plugins from the `plugins` D1 table
+// (URL transport) and fetches/caches their manifests.
 //
-// Each plugin is a separate Worker bound as a service binding.
-// The binding name is listed (comma-separated) in env.PLUGINS,
-// e.g. PLUGINS = "PLUGIN_EVENTS,PLUGIN_SEO".
+// Each plugin is a standalone Worker reached over HTTPS at its registered
+// base URL: the CMS calls `{url}/__plugin/...`. Plugins are added/enabled
+// from the admin UI (plugin:manage) with no CMS redeploy.
 // ============================================================
 
-import type { Env, PluginManifest, ResolvedPlugin } from '../types';
+import type { Env, PluginManifest, ResolvedPlugin, PluginRecord } from '../types';
+import { listEnabledPlugins } from '../utils/plugin-store';
 
 /** Reserved prefix every plugin Worker serves its CMS-facing endpoints under. */
 export const PLUGIN_PREFIX = '/__plugin';
 
-/** Synthetic origin used when calling a plugin's service binding. */
+/** Synthetic origin call sites use; the URL fetcher rewrites it to the real base. */
 export const PLUGIN_ORIGIN = 'https://plugin.local';
 
-// Manifests rarely change between deploys, so cache them per isolate with a
-// short TTL (same pattern as templateCache in templates/liquid.ts).
+// Manifests rarely change between deploys; cache per isolate with a short TTL.
 const MANIFEST_TTL_MS = 60_000;
 const manifestCache = new Map<string, { manifest: PluginManifest; expires: number }>();
 
-function pluginBindingNames(env: Env): string[] {
-  return (env.PLUGINS ?? '')
-    .split(',')
-    .map((name) => name.trim())
-    .filter(Boolean);
+// The enabled-plugins list also changes rarely; cache it so we don't hit D1 on
+// every request. Invalidated by clearManifestCache() after admin mutations.
+const PLUGINS_TTL_MS = 30_000;
+let pluginsCache: { records: PluginRecord[]; expires: number } | null = null;
+
+async function activePluginRecords(env: Env): Promise<PluginRecord[]> {
+  if (pluginsCache && pluginsCache.expires > Date.now()) return pluginsCache.records;
+  if (!env.DB) return [];
+  const records = await listEnabledPlugins(env.DB);
+  pluginsCache = { records, expires: Date.now() + PLUGINS_TTL_MS };
+  return records;
 }
 
-function fetcherFor(env: Env, binding: string): Fetcher | null {
-  const candidate = (env as unknown as Record<string, unknown>)[binding];
-  if (candidate && typeof (candidate as Fetcher).fetch === 'function') {
-    return candidate as Fetcher;
-  }
-  return null;
+/**
+ * Fetcher that rewrites synthetic `PLUGIN_ORIGIN` URLs to a plugin's real base
+ * URL, so every existing call site (`fetcher.fetch(`${PLUGIN_ORIGIN}/__plugin/...`)`)
+ * works unchanged whether the path came from a string, URL, or Request.
+ */
+function urlFetcher(baseUrl: string): Fetcher {
+  const base = baseUrl.replace(/\/+$/, '');
+  const fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const href = typeof input === 'string'
+      ? input
+      : input instanceof URL
+        ? input.href
+        : (input as Request).url;
+    const { pathname, search } = new URL(href);
+    return globalThis.fetch(`${base}${pathname}${search}`, init);
+  };
+  return { fetch } as unknown as Fetcher;
 }
 
-async function loadManifest(binding: string, fetcher: Fetcher): Promise<PluginManifest | null> {
-  const cached = manifestCache.get(binding);
+// Test seam: route specific plugin base URLs to in-process fetchers instead of
+// globalThis.fetch. Empty (and zero-cost) in production.
+const injectedFetchers = new Map<string, Fetcher>();
+function fetcherForUrl(url: string): Fetcher {
+  return injectedFetchers.get(url.replace(/\/+$/, '')) ?? urlFetcher(url);
+}
+/** @internal test-only — map a plugin URL to an in-process fetcher (null clears it). */
+export function __injectPluginFetcher(url: string, fetcher: Fetcher | null): void {
+  const key = url.replace(/\/+$/, '');
+  if (fetcher) injectedFetchers.set(key, fetcher);
+  else injectedFetchers.delete(key);
+}
+/** @internal test-only — clears all injected fetchers. */
+export function __clearInjectedFetchers(): void {
+  injectedFetchers.clear();
+}
+
+async function loadManifest(url: string, fetcher: Fetcher): Promise<PluginManifest | null> {
+  const cached = manifestCache.get(url);
   if (cached && cached.expires > Date.now()) return cached.manifest;
 
   try {
     const response = await fetcher.fetch(`${PLUGIN_ORIGIN}${PLUGIN_PREFIX}/manifest`);
     if (!response.ok) {
-      console.error(`Plugin ${binding} manifest returned ${response.status}`);
+      console.error(`Plugin ${url} manifest returned ${response.status}`);
       return null;
     }
     const manifest = (await response.json()) as PluginManifest;
-    manifestCache.set(binding, { manifest, expires: Date.now() + MANIFEST_TTL_MS });
+    manifestCache.set(url, { manifest, expires: Date.now() + MANIFEST_TTL_MS });
     return manifest;
   } catch (error) {
-    console.error(`Plugin ${binding} manifest fetch failed:`, error);
+    console.error(`Plugin ${url} manifest fetch failed:`, error);
     return null;
   }
 }
 
-/** Resolves every active plugin (binding present + manifest reachable). */
+/** Resolves every active plugin (enabled row + manifest reachable). */
 export async function getPlugins(env: Env): Promise<ResolvedPlugin[]> {
+  const records = await activePluginRecords(env);
   const resolved = await Promise.all(
-    pluginBindingNames(env).map(async (binding): Promise<ResolvedPlugin | null> => {
-      const fetcher = fetcherFor(env, binding);
-      if (!fetcher) {
-        console.error(`Plugin binding ${binding} listed in PLUGINS but not bound`);
-        return null;
-      }
-      const manifest = await loadManifest(binding, fetcher);
+    records.map(async (record): Promise<ResolvedPlugin | null> => {
+      const fetcher = fetcherForUrl(record.url);
+      const manifest = await loadManifest(record.url, fetcher);
       if (!manifest) return null;
-      return { binding, fetcher, manifest };
+      return { binding: record.url, fetcher, manifest };
     }),
   );
   return resolved.filter((plugin): plugin is ResolvedPlugin => plugin !== null);
@@ -102,7 +133,8 @@ export async function pluginsForHook(env: Env, event: string): Promise<ResolvedP
   return plugins.filter((plugin) => (plugin.manifest.hooks ?? []).includes(event));
 }
 
-/** Test/dev helper — clears the per-isolate manifest cache. */
+/** Clears the per-isolate manifest + plugin-list caches (after admin mutations / in tests). */
 export function clearManifestCache(): void {
   manifestCache.clear();
+  pluginsCache = null;
 }

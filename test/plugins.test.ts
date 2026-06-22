@@ -1,7 +1,7 @@
 import { env, exports } from 'cloudflare:workers';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resolveCmsConfig, clearConfigCache } from '../src/plugins/config';
-import { clearManifestCache } from '../src/plugins/registry';
+import { clearManifestCache, __injectPluginFetcher, __clearInjectedFetchers } from '../src/plugins/registry';
 import { deliverHook } from '../src/plugins/hooks';
 import { viewsFor } from '../src/plugins/views';
 import { cmsConfig } from '../src/cms-config';
@@ -46,28 +46,35 @@ function makePlugin(manifest: unknown, views: Record<string, string> = {}): Fake
   return { hookCalls, fetcher: { fetch } as unknown as Fetcher };
 }
 
-function envWith(plugin: FakePlugin, extra: Record<string, unknown> = {}): Env {
-  return { PLUGINS: 'PLUGIN_TEST', PLUGIN_TEST: plugin.fetcher, ...extra } as unknown as Env;
+// Registers a fake plugin in the D1 registry and routes its URL to the in-process
+// fetcher — the URL-transport equivalent of the old PLUGINS service binding.
+async function envWith(plugin: FakePlugin, extra: Record<string, unknown> = {}): Promise<Env> {
+  const url = `https://plugin-${crypto.randomUUID()}.local`;
+  await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', url).run();
+  __injectPluginFetcher(url, plugin.fetcher);
+  return { DB: env.DB, ...extra } as unknown as Env;
 }
 
 const USER: JWTPayload = {
   sub: '7', email: 'a@b.co', name: 'Ada', role: 'admin', type: 'access', exp: 0, iat: 0,
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   clearConfigCache();
   clearManifestCache();
+  __clearInjectedFetchers();
+  await env.DB.prepare('DELETE FROM plugins').run();
 });
 
 describe('resolveCmsConfig', () => {
   it('merges plugin blueprints into the base config', async () => {
-    const config = await resolveCmsConfig(envWith(makePlugin(EVENTS_MANIFEST)));
+    const config = await resolveCmsConfig(await envWith(makePlugin(EVENTS_MANIFEST)));
     expect(config.blueprint.event).toEqual(['@date', 'venue']);
     expect(config.blueprint.default).toBeDefined(); // base content types preserved
   });
 
   it('does not mutate the static base config', async () => {
-    await resolveCmsConfig(envWith(makePlugin(EVENTS_MANIFEST)));
+    await resolveCmsConfig(await envWith(makePlugin(EVENTS_MANIFEST)));
     expect(cmsConfig.blueprint.event).toBeUndefined();
   });
 
@@ -113,7 +120,7 @@ describe('resolveCmsConfig', () => {
 describe('deliverHook', () => {
   it('delivers to plugins subscribed to the event with the page + user payload', async () => {
     const plugin = makePlugin(EVENTS_MANIFEST);
-    await deliverHook(envWith(plugin, { PLUGIN_SECRET: 's' }), USER, 'publish', { id: 5, slug: 'x' });
+    await deliverHook(await envWith(plugin, { PLUGIN_SECRET: 's' }), USER, 'publish', { id: 5, slug: 'x' });
     expect(plugin.hookCalls).toHaveLength(1);
     expect(plugin.hookCalls[0].event).toBe('publish');
     expect(plugin.hookCalls[0].headers.get('x-plugin-secret')).toBe('s');
@@ -123,13 +130,13 @@ describe('deliverHook', () => {
 
   it('does not deliver subscribed hooks when PLUGIN_SECRET is missing', async () => {
     const plugin = makePlugin(EVENTS_MANIFEST);
-    await deliverHook(envWith(plugin), USER, 'publish', { id: 5, slug: 'x' });
+    await deliverHook(await envWith(plugin), USER, 'publish', { id: 5, slug: 'x' });
     expect(plugin.hookCalls).toHaveLength(0);
   });
 
   it('does not deliver events the plugin did not subscribe to', async () => {
     const plugin = makePlugin(EVENTS_MANIFEST);
-    await deliverHook(envWith(plugin), undefined, 'delete', { id: 1 });
+    await deliverHook(await envWith(plugin), undefined, 'delete', { id: 1 });
     expect(plugin.hookCalls).toHaveLength(0);
   });
 });
@@ -139,16 +146,16 @@ describe('viewsFor', () => {
 
   it('falls back to a plugin view when the primary assets 404', async () => {
     const plugin = makePlugin(EVENTS_MANIFEST, { [snippetPath]: 'PLUGIN_SNIPPET' });
-    const env = envWith(plugin, { VIEWS: { fetch: async () => new Response('nf', { status: 404 }) } });
-    const res = await viewsFor(env).fetch(`https://views.local${snippetPath}`);
+    const pluginEnv = await envWith(plugin, { VIEWS: { fetch: async () => new Response('nf', { status: 404 }) } });
+    const res = await viewsFor(pluginEnv).fetch(`https://views.local${snippetPath}`);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('PLUGIN_SNIPPET');
   });
 
   it('serves primary views without consulting plugins', async () => {
     const plugin = makePlugin(EVENTS_MANIFEST, { [snippetPath]: 'PLUGIN_SNIPPET' });
-    const env = envWith(plugin, { VIEWS: { fetch: async () => new Response('CORE') } });
-    const res = await viewsFor(env).fetch('https://views.local/layout/default.liquid');
+    const pluginEnv = await envWith(plugin, { VIEWS: { fetch: async () => new Response('CORE') } });
+    const res = await viewsFor(pluginEnv).fetch('https://views.local/layout/default.liquid');
     expect(await res.text()).toBe('CORE');
   });
 });
@@ -175,16 +182,17 @@ describe('plugin admin proxy', () => {
 
   it('never forwards client cookies or smuggled trust headers to the plugin', async () => {
     const captured: Array<{ url: string; headers: Headers }> = [];
-    testEnv.PLUGINS = 'PLUGIN_TEST';
     testEnv.PLUGIN_SECRET = 'server-secret';
-    testEnv.PLUGIN_TEST = {
+    const pluginUrl = 'https://plugin-proxy.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', pluginUrl).run();
+    __injectPluginFetcher(pluginUrl, {
       fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         if (new URL(url).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
         captured.push({ url, headers: new Headers(init?.headers) });
         return new Response('plugin ok');
       },
-    };
+    } as unknown as Fetcher);
 
     const now = Math.floor(Date.now() / 1000);
     const token = await signJWT({

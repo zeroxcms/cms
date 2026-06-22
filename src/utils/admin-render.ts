@@ -69,6 +69,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     pluginNav: nav,
     canManageUsers: permissions.has('users:manage'),
     canManageRoles: permissions.has('roles:manage'),
+    canManagePlugins: permissions.has('plugin:manage'),
   };
 }
 

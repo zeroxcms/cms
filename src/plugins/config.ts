@@ -35,7 +35,7 @@ function mergeContentTypes(base: CmsConfig, fragment: PluginContentTypes | undef
 export async function resolveCmsConfig(env: Env): Promise<CmsConfig> {
   if (cached && cached.expires > Date.now()) return cached.config;
 
-  const plugins = env.PLUGINS ? await getPlugins(env) : [];
+  const plugins = await getPlugins(env);
   const [dbPageTypes, dbBlockTypes] = env.DB
     ? await Promise.all([listDbPageTypes(env.DB), listDbBlockTypes(env.DB)])
     : [[], []];

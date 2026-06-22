@@ -24,6 +24,7 @@ export const PERMISSIONS = [
   'taxonomy:write',   // create / edit / delete taxonomies
   'media:upload',     // upload media to R2
   'plugin:access',    // reach the plugin admin proxy
+  'plugin:manage',    // register / enable / disable / configure plugins
   'pagetype:write',   // create / edit / delete database-defined page types
   'blocktype:write',  // create / edit / delete database-defined block types
   'users:manage',     // view users and assign their roles
@@ -44,6 +45,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   'taxonomy:write': 'Manage taxonomies',
   'media:upload': 'Upload media',
   'plugin:access': 'Reach the plugin admin',
+  'plugin:manage': 'Register and configure plugins',
   'pagetype:write': 'Manage page types',
   'blocktype:write': 'Manage block types',
   'users:manage': 'Manage users and their roles',
@@ -157,6 +159,21 @@ export interface PageType {
   block_lists: string | null;
   taxonomy_lists: string | null;
   weight: number;
+}
+
+/** A registered plugin (URL transport) stored in the `plugins` table. The CMS
+ *  reaches it at `{url}/__plugin/...`; see src/plugins/registry.ts. */
+export interface PluginRecord {
+  id: number;
+  uuid: string;
+  created_at: string;
+  updated_at: string;
+  label: string;
+  url: string;
+  /** 1 = active; 0 = registered but inert. */
+  enabled: number;
+  config: string | null;
+  sort_order: number;
 }
 
 /** A runtime-editable block definition stored in the `block_types` table. */

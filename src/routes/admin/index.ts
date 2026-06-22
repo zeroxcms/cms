@@ -28,6 +28,7 @@ import { usersRoutes } from './users';
 import { rolesRoutes } from './roles';
 import { apiRoutes } from './api';
 import { pluginAdminRoutes } from './plugins';
+import { pluginsManageRoutes } from './plugins-manage';
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -46,4 +47,5 @@ adminRoutes.route('/', pageTypesRoutes);
 adminRoutes.route('/', blockTypesRoutes);
 adminRoutes.route('/', usersRoutes);
 adminRoutes.route('/', rolesRoutes);
+adminRoutes.route('/', pluginsManageRoutes);
 adminRoutes.route('/', apiRoutes);

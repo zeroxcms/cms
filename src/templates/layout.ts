@@ -4,13 +4,14 @@ import { renderLiquid } from './liquid';
 export interface NavFlags {
   canManageUsers?: boolean;
   canManageRoles?: boolean;
+  canManagePlugins?: boolean;
 }
 
 /** Extracts the nav-gating flags from a page's props for forwarding to layout().
  *  Accepts any props object (the flags come from buildBaseProps at runtime). */
 export function navFlags(opts: unknown): NavFlags {
   const o = (opts ?? {}) as NavFlags;
-  return { canManageUsers: o.canManageUsers, canManageRoles: o.canManageRoles };
+  return { canManageUsers: o.canManageUsers, canManageRoles: o.canManageRoles, canManagePlugins: o.canManagePlugins };
 }
 
 /**
@@ -27,6 +28,7 @@ export interface BaseTemplateProps extends NavFlags {
   pluginNav: Array<{ label: string; href: string }>;
   canManageUsers: boolean;
   canManageRoles: boolean;
+  canManagePlugins: boolean;
 }
 
 /**
@@ -80,6 +82,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     contentClass: admin ? 'md:ml-64' : '',
     canManageUsers: opts.canManageUsers ?? false,
     canManageRoles: opts.canManageRoles ?? false,
+    canManagePlugins: opts.canManagePlugins ?? false,
   });
 }
 
