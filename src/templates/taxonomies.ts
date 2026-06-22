@@ -1,16 +1,12 @@
-import { layout, navFlags } from './layout';
+import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 import type { Taxonomy } from '../types';
 
-export async function taxonomiesPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
+export async function taxonomiesPage(views: Fetcher, opts: BaseTemplateProps & {
   taxonomies: Taxonomy[];
   canWrite: boolean;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, taxonomies, canWrite } = opts;
+  const { taxonomies, canWrite } = opts;
   const body = await renderView(views, '/templates/taxonomies.json', {
     hasTaxonomies: taxonomies.length > 0,
     canWrite,
@@ -22,27 +18,14 @@ export async function taxonomiesPage(views: Fetcher, opts: {
     })),
   });
 
-  return layout(views, {
-    ...navFlags(opts),
-    title: 'Taxonomies',
-    siteTitle,
-    body,
-    admin: true,
-    userName,
-    userRole,
-    userAvatar,
-  });
+  return adminLayout(views, opts, { title: 'Taxonomies', body });
 }
 
-export async function taxonomyFormPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
+export async function taxonomyFormPage(views: Fetcher, opts: BaseTemplateProps & {
   taxonomy?: Taxonomy;
   readOnly?: boolean;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, taxonomy, readOnly = false } = opts;
+  const { taxonomy, readOnly = false } = opts;
   const heading = readOnly ? 'View Taxonomy' : taxonomy ? 'Edit Taxonomy' : 'New Taxonomy';
   const body = await renderView(views, '/templates/taxonomy-form.json', {
     isEdit: !!taxonomy,
@@ -54,14 +37,5 @@ export async function taxonomyFormPage(views: Fetcher, opts: {
     deleteAction: taxonomy ? `/admin/taxonomies/${taxonomy.id}/delete` : '',
   });
 
-  return layout(views, {
-    ...navFlags(opts),
-    title: heading,
-    siteTitle,
-    body,
-    admin: true,
-    userName,
-    userRole,
-    userAvatar,
-  });
+  return adminLayout(views, opts, { title: heading, body });
 }

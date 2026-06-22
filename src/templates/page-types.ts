@@ -1,4 +1,4 @@
-import { layout, navFlags } from './layout';
+import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 import type { PageType } from '../types';
 
@@ -12,16 +12,12 @@ export interface PageTypeListItem {
   isDb: boolean;
 }
 
-export async function pageTypesPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
+export async function pageTypesPage(views: Fetcher, opts: BaseTemplateProps & {
   dbPageTypes: PageType[];
   configPageTypes: Array<{ slug: string; name: string }>;
   canWrite: boolean;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, dbPageTypes, configPageTypes, canWrite } = opts;
+  const { dbPageTypes, configPageTypes, canWrite } = opts;
 
   const items: PageTypeListItem[] = [
     ...dbPageTypes.map((pageType) => ({
@@ -48,16 +44,7 @@ export async function pageTypesPage(views: Fetcher, opts: {
     canWrite,
   });
 
-  return layout(views, {
-    ...navFlags(opts),
-    title: 'Page Types',
-    siteTitle,
-    body,
-    admin: true,
-    userName,
-    userRole,
-    userAvatar,
-  });
+  return adminLayout(views, opts, { title: 'Page Types', body });
 }
 
 export interface PageTypeFormModel {
@@ -76,13 +63,8 @@ export interface PageTypeFormModel {
   availableTaxonomies: Array<{ slug: string; name: string }>;
 }
 
-export async function pageTypeFormPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
-} & PageTypeFormModel): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, mode, id, error } = opts;
+export async function pageTypeFormPage(views: Fetcher, opts: BaseTemplateProps & PageTypeFormModel): Promise<string> {
+  const { mode, id, error } = opts;
   const readOnly = mode === 'view';
   const isEdit = mode === 'edit';
   const heading = mode === 'view' ? 'View Page Type' : mode === 'edit' ? 'Edit Page Type' : 'New Page Type';
@@ -121,14 +103,5 @@ export async function pageTypeFormPage(views: Fetcher, opts: {
     hasTaxonomyOptions: taxonomyOptions.length > 0,
   });
 
-  return layout(views, {
-    ...navFlags(opts),
-    title: heading,
-    siteTitle,
-    body,
-    admin: true,
-    userName,
-    userRole,
-    userAvatar,
-  });
+  return adminLayout(views, opts, { title: heading, body });
 }

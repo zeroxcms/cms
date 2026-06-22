@@ -1,4 +1,4 @@
-import { layout, escHtml, navFlags } from './layout';
+import { adminLayout, escHtml, type BaseTemplateProps } from './layout';
 import { renderLiquid, renderView, templateExists } from './liquid';
 import type { Page, PageVersion, Tag, Taxonomy } from '../types';
 import {
@@ -400,12 +400,7 @@ function editorChips(editors: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
-export async function editorPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
-  currentUserId: string;
+export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
   page?: Page;
   modifierName?: string;
   version?: PageVersion;
@@ -430,9 +425,6 @@ export async function editorPage(views: Fetcher, opts: {
   };
 }): Promise<string> {
   const {
-    siteTitle,
-    userName,
-    userRole,
     userAvatar,
     currentUserId,
     page,
@@ -530,16 +522,7 @@ export async function editorPage(views: Fetcher, opts: {
     userAvatar,
   });
 
-  return layout(views, {
-    ...navFlags(opts),
-    title: pageTitle,
-    siteTitle,
-    body,
-    admin: true,
-    userName,
-    userRole,
-    userAvatar,
-  });
+  return adminLayout(views, opts, { title: pageTitle, body });
 }
 
 function editorTagGroups(

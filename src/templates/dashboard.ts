@@ -1,4 +1,4 @@
-import { layout, navFlags } from './layout';
+import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 import type { Page } from '../types';
 
@@ -21,11 +21,7 @@ interface DashboardPagination {
   lastHref: string;
 }
 
-export async function dashboardPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
+export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
   pages: DashboardPage[];
   flash?: string;
   returnPath?: string;
@@ -38,10 +34,6 @@ export async function dashboardPage(views: Fetcher, opts: {
   pagination?: DashboardPagination;
 }): Promise<string> {
   const {
-    siteTitle,
-    userName,
-    userRole,
-    userAvatar,
     pages,
     flash,
     returnPath = '/admin',
@@ -111,14 +103,5 @@ export async function dashboardPage(views: Fetcher, opts: {
     })),
   });
 
-  return layout(views, {
-    ...navFlags(opts),
-    title: 'Dashboard',
-    siteTitle,
-    body,
-    admin: true,
-    userName,
-    userRole,
-    userAvatar,
-  });
+  return adminLayout(views, opts, { title: 'Dashboard', body });
 }

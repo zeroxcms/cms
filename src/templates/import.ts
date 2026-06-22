@@ -1,4 +1,4 @@
-import { layout, navFlags } from './layout';
+import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 
 interface ImportPreviewRow {
@@ -19,11 +19,7 @@ interface ImportModeOption {
   checked: boolean;
 }
 
-export async function importPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
+export async function importPage(views: Fetcher, opts: BaseTemplateProps & {
   pageType: string;
   mode?: 'json' | 'csv' | 'confirm';
   action?: string;
@@ -34,10 +30,6 @@ export async function importPage(views: Fetcher, opts: {
   importModeOptions?: ImportModeOption[];
 }): Promise<string> {
   const {
-    siteTitle,
-    userName,
-    userRole,
-    userAvatar,
     pageType,
     mode = 'json',
     action = '',
@@ -71,14 +63,5 @@ export async function importPage(views: Fetcher, opts: {
     hasImportModeOptions: importModeOptions.length > 0,
   });
 
-  return layout(views, {
-    ...navFlags(opts),
-    title: 'Import',
-    siteTitle,
-    body,
-    admin: true,
-    userName,
-    userRole,
-    userAvatar,
-  });
+  return adminLayout(views, opts, { title: 'Import', body });
 }

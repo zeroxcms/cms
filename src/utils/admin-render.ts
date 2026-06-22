@@ -30,18 +30,8 @@ import { strParam } from './forms';
 import { effectivePermissions, resolveRolePermissions } from './roles';
 import type { Page, Permission } from '../types';
 
-export interface BaseTemplateProps {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
-  currentUserId: string;
-  /** Navigation entries contributed by active plugins, filtered to the user's roles. */
-  pluginNav: Array<{ label: string; href: string }>;
-  /** Nav-gating flags derived from the signed-in user's effective permissions. */
-  canManageUsers: boolean;
-  canManageRoles: boolean;
-}
+export type { BaseTemplateProps } from '../templates/layout';
+import type { BaseTemplateProps } from '../templates/layout';
 
 /** The signed-in user's effective permission set (built-in defaults + DB overrides). */
 export async function userPermissions(c: AppContext): Promise<Set<Permission>> {

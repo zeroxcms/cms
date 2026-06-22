@@ -1,17 +1,13 @@
-import { layout, navFlags } from './layout';
+import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 import type { Tag, Taxonomy } from '../types';
 
-export async function tagsPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
+export async function tagsPage(views: Fetcher, opts: BaseTemplateProps & {
   taxonomies: Taxonomy[];
   tags: Tag[];
   filterTaxonomy: number;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, taxonomies, tags, filterTaxonomy } = opts;
+  const { taxonomies, tags, filterTaxonomy } = opts;
   const taxonomyMap = new Map(taxonomies.map((type) => [type.id, type.name]));
   const body = await renderView(views, '/templates/tags.json', {
     hasTags: tags.length > 0,
@@ -29,23 +25,10 @@ export async function tagsPage(views: Fetcher, opts: {
     })),
   });
 
-  return layout(views, {
-    ...navFlags(opts),
-    title: 'Tags',
-    siteTitle,
-    body,
-    admin: true,
-    userName,
-    userRole,
-    userAvatar,
-  });
+  return adminLayout(views, opts, { title: 'Tags', body });
 }
 
-export async function tagFormPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
+export async function tagFormPage(views: Fetcher, opts: BaseTemplateProps & {
   tag?: Tag;
   language: string;
   languages: string[];
@@ -55,10 +38,6 @@ export async function tagFormPage(views: Fetcher, opts: {
   parentTags: Tag[];
 }): Promise<string> {
   const {
-    siteTitle,
-    userName,
-    userRole,
-    userAvatar,
     tag,
     language,
     languages,
@@ -96,14 +75,5 @@ export async function tagFormPage(views: Fetcher, opts: {
     deleteAction: tag ? `/admin/tags/${tag.id}/delete` : '',
   });
 
-  return layout(views, {
-    ...navFlags(opts),
-    title: tag ? 'Edit Tag' : 'New Tag',
-    siteTitle,
-    body,
-    admin: true,
-    userName,
-    userRole,
-    userAvatar,
-  });
+  return adminLayout(views, opts, { title: tag ? 'Edit Tag' : 'New Tag', body });
 }
