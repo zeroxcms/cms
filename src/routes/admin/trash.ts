@@ -3,9 +3,8 @@
 import { Hono } from 'hono';
 import { trashPage } from '../../templates/trash';
 import type { Env, Variables, Page, PageTag } from '../../types';
-import { userIdFromContext } from '../../utils/forms';
-import { fetchUserAvatar, savePageVersion } from '../../utils/admin-queries';
-import { buildBaseProps } from '../../utils/admin-render';
+import { savePageVersion } from '../../utils/admin-queries';
+import { renderPage } from '../../utils/admin-render';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 
@@ -16,16 +15,12 @@ export const trashRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 trashRoutes.get('/trash', async (c) => {
   const flash = c.req.query('flash') ?? '';
 
-  const [trashedPages, userAvatar] = await Promise.all([
-    c.env.DB.prepare('SELECT * FROM trash_pages ORDER BY updated_at DESC').all<Page>(),
-    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
-  ]);
+  const trashedPages = await c.env.DB.prepare('SELECT * FROM trash_pages ORDER BY updated_at DESC').all<Page>();
 
-  return c.html(await trashPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, trashPage, {
     pages: trashedPages.results,
     flash: flash || undefined,
-  }));
+  });
 });
 
 // ── Restore page from trash → draft ──────────────────────────────────────────

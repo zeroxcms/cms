@@ -7,11 +7,10 @@ import { pageTypeFormPage, pageTypesPage } from '../../templates/page-types';
 import type { PageTypeFormModel } from '../../templates/page-types';
 import { cmsConfig } from '../../cms-config';
 import type { Env, Variables, PageType } from '../../types';
-import { num, slugify, str, userIdFromContext } from '../../utils/forms';
+import { num, slugify, str } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
-import { fetchUserAvatar } from '../../utils/admin-queries';
-import { buildBaseProps, userCan } from '../../utils/admin-render';
+import { renderPage, userCan } from '../../utils/admin-render';
 import { clearConfigCache, resolveCmsConfig } from '../../plugins/config';
 import { listDbPageTypes } from '../../utils/page-type-store';
 import type { AppContext } from '../../utils/context';
@@ -77,21 +76,17 @@ function nullableJsonArray(values: string[]): string | null {
 // ── List ────────────────────────────────────────────────────────────────────
 
 pageTypesRoutes.get('/page_types', async (c) => {
-  const [dbPageTypes, userAvatar] = await Promise.all([
-    listDbPageTypes(c.env.DB),
-    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
-  ]);
+  const dbPageTypes = await listDbPageTypes(c.env.DB);
   const dbSlugs = new Set(dbPageTypes.map((pageType) => pageType.slug));
   const configPageTypes = Object.keys(cmsConfig.blueprint)
     .filter((slug) => !dbSlugs.has(slug))
     .map((slug) => ({ slug, name: slug }));
 
-  return c.html(await pageTypesPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, pageTypesPage, {
     dbPageTypes,
     configPageTypes,
     canWrite: await userCan(c, 'pagetype:write'),
-  }));
+  });
 });
 
 // ── Create ──────────────────────────────────────────────────────────────────
@@ -238,15 +233,13 @@ function modelFromValues(mode: 'new' | 'edit', values: PageTypeFormValues, error
 }
 
 async function renderForm(c: AppContext, model: FormModel): Promise<Response> {
-  const [userAvatar, config, taxonomies] = await Promise.all([
-    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
+  const [config, taxonomies] = await Promise.all([
     resolveCmsConfig(c.env),
     c.env.DB.prepare('SELECT slug, name FROM taxonomies ORDER BY name ASC').all<{ slug: string; name: string }>(),
   ]);
-  return c.html(await pageTypeFormPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, pageTypeFormPage, {
     ...model,
     availableBlocks: Object.keys(config.blocks),
     availableTaxonomies: taxonomies.results,
-  }));
+  });
 }

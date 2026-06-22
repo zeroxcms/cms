@@ -18,14 +18,12 @@ import {
   num,
   slugify,
   str,
-  userIdFromContext,
 } from '../../utils/forms';
 import { ensureDefaultLectName } from '../../utils/page-logic';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
-import { fetchUserAvatar } from '../../utils/admin-queries';
 import { removeTagFromTargets } from '../../publish';
-import { buildBaseProps, userCan } from '../../utils/admin-render';
+import { renderPage, userCan } from '../../utils/admin-render';
 import type { AppContext } from '../../utils/context';
 
 export const tagsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -33,16 +31,12 @@ export const tagsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 // ── Tag types ─────────────────────────────────────────────────────────────────
 
 tagsRoutes.get('/taxonomies', async (c) => {
-  const [taxonomies, userAvatar] = await Promise.all([
-    c.env.DB.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
-    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
-  ]);
+  const taxonomies = await c.env.DB.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>();
 
-  return c.html(await taxonomiesPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, taxonomiesPage, {
     taxonomies: taxonomies.results,
     canWrite: await userCan(c, 'taxonomy:write'),
-  }));
+  });
 });
 
 tagsRoutes.get('/taxonomies/new', async (c) => {
@@ -95,19 +89,17 @@ tagsRoutes.post('/taxonomies/:id/delete', requirePermission('taxonomy:write'), a
 
 tagsRoutes.get('/tags', async (c) => {
   const filterTaxonomy = parseInt(c.req.query('filter_taxonomy') ?? '0', 10);
-  const [taxonomies, tags, userAvatar] = await Promise.all([
+  const [taxonomies, tags] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
     filterTaxonomy
       ? c.env.DB.prepare('SELECT * FROM tags WHERE taxonomy_id = ? ORDER BY name ASC').bind(filterTaxonomy).all<Tag>()
       : c.env.DB.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
-    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
   ]);
-  return c.html(await tagsPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, tagsPage, {
     taxonomies: taxonomies.results,
     tags: tags.results,
     filterTaxonomy,
-  }));
+  });
 });
 
 tagsRoutes.get('/tags/new', async (c) => tagForm(c));
@@ -168,28 +160,24 @@ tagsRoutes.post('/tags/:id/delete', requirePermission('tag:write'), async (c) =>
 });
 
 async function taxonomyForm(c: AppContext, taxonomy?: Taxonomy, readOnly = false) {
-  const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
-  return c.html(await taxonomyFormPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, taxonomyFormPage, {
     taxonomy,
     readOnly,
-  }));
+  });
 }
 
 async function tagForm(c: AppContext, tag?: Tag) {
   const language = languageFromRequest(c);
-  const [taxonomies, tags, userAvatar] = await Promise.all([
+  const [taxonomies, tags] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
     c.env.DB.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
-    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
   ]);
   const lect = safeParseLect(tag?.lect);
   const rawTranslatedName = getLectLocalizedValue(lect, 'name', language);
   const translatedName = language === cmsConfig.defaultLanguage ? rawTranslatedName || tag?.name || '' : rawTranslatedName;
   const defaultTranslatedName = getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || tag?.name || '';
   const translatedPlaceholder = language === cmsConfig.defaultLanguage ? '' : defaultTranslatedName;
-  return c.html(await tagFormPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, tagFormPage, {
     tag,
     language,
     languages: cmsConfig.languages,
@@ -197,5 +185,5 @@ async function tagForm(c: AppContext, tag?: Tag) {
     translatedPlaceholder,
     taxonomies: taxonomies.results,
     parentTags: tags.results,
-  }));
+  });
 }

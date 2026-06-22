@@ -20,7 +20,7 @@ import {
   userIdFromContext,
 } from '../../utils/forms';
 import { withDraftMetadata } from '../../utils/page-logic';
-import { editorTaxonomy, fetchUserAvatar } from '../../utils/admin-queries';
+import { editorTaxonomy } from '../../utils/admin-queries';
 import {
   csvPathSpecs,
   exportHeaders,
@@ -28,7 +28,7 @@ import {
   previewPagesCsv,
   readImportCsvText,
 } from '../../utils/csv';
-import { buildBaseProps } from '../../utils/admin-render';
+import { renderPage } from '../../utils/admin-render';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 
@@ -36,19 +36,17 @@ export const importRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 importRoutes.get('/pages/import-v2/:pageType', async (c) => {
   const pageType = c.req.param('pageType');
-  const [userAvatar, taxonomy, config] = await Promise.all([
-    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
+  const [taxonomy, config] = await Promise.all([
     editorTaxonomy(c.env.DB),
     resolveCmsConfig(c.env),
   ]);
 
-  return c.html(await importPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, importPage, {
     pageType,
     mode: 'csv',
     action: `/admin/pages/import-v2/${encodeURIComponent(pageType)}`,
     sampleHeaders: exportHeaders(csvPathSpecs([pageType], false, config), taxonomy.taxonomies),
-  }));
+  });
 });
 
 importRoutes.post('/pages/import-v2/:pageType', requirePermission('content:import'), async (c) => {
@@ -60,13 +58,9 @@ importRoutes.post('/pages/import-v2/:pageType', requirePermission('content:impor
   }
 
   const config = await resolveCmsConfig(c.env);
-  const [userAvatar, preview] = await Promise.all([
-    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
-    previewPagesCsv(c.env.DB, pageType, csvText, config),
-  ]);
+  const preview = await previewPagesCsv(c.env.DB, pageType, csvText, config);
 
-  return c.html(await importPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, importPage, {
     pageType,
     mode: 'confirm',
     action: `/admin/pages/import-v2/${encodeURIComponent(pageType)}/confirm`,
@@ -74,7 +68,7 @@ importRoutes.post('/pages/import-v2/:pageType', requirePermission('content:impor
     previewRows: preview.rows,
     skippedCount: preview.skipped,
     importModeOptions: csvImportModeOptions(),
-  }));
+  });
 });
 
 importRoutes.post('/pages/import-v2/:pageType/confirm', requirePermission('content:import'), async (c) => {
@@ -101,11 +95,7 @@ importRoutes.post('/pages/import-v2/:pageType/confirm', requirePermission('conte
 
 importRoutes.get('/pages/import/:pageType', async (c) => {
   const pageType = c.req.param('pageType');
-  const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
-  return c.html(await importPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
-    pageType,
-  }));
+  return renderPage(c, importPage, { pageType });
 });
 
 importRoutes.post('/pages/import/:pageType', requirePermission('content:import'), async (c) => {

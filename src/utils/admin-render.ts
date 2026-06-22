@@ -2,7 +2,7 @@
 
 import type { AppContext } from './context';
 import { advancedSearchPage } from '../templates/advanced-search';
-import { dashboardPageHref, num } from './forms';
+import { dashboardPageHref, num, userIdFromContext } from './forms';
 import {
   advancedSearchFormCriteria,
   advancedSearchOperator,
@@ -49,10 +49,11 @@ export async function userCan(c: AppContext, permission: Permission): Promise<bo
  * site title, signed-in user's name/role, avatar, and plugin nav. Handlers
  * spread the result and add page-specific fields (and may override siteTitle).
  */
-export async function buildBaseProps(c: AppContext, userAvatar: string | null): Promise<BaseTemplateProps> {
+export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> {
   const user = c.get('user');
   const userRoles = user.role.split(',').map((role) => role.trim()).filter(Boolean);
-  const [navItems, permissions] = await Promise.all([
+  const [userAvatar, navItems, permissions] = await Promise.all([
+    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
     pluginNav(c.env),
     userPermissions(c),
   ]);
@@ -69,6 +70,22 @@ export async function buildBaseProps(c: AppContext, userAvatar: string | null): 
     canManageUsers: permissions.has('users:manage'),
     canManageRoles: permissions.has('roles:manage'),
   };
+}
+
+/**
+ * Renders an admin page template with the shared base props pre-filled.
+ * `extra` supplies the page-specific fields and may override base props
+ * (e.g. a page-specific siteTitle). `views` defaults to env.VIEWS; pass
+ * viewsFor(env) for templates that resolve plugin-owned snippets.
+ */
+export async function renderPage<P extends BaseTemplateProps>(
+  c: AppContext,
+  page: (views: Fetcher, props: P) => Promise<string>,
+  extra: Omit<P, keyof BaseTemplateProps> & Partial<BaseTemplateProps>,
+  views: Fetcher = c.env.VIEWS,
+): Promise<Response> {
+  const base = await buildBaseProps(c);
+  return c.html(await page(views, { ...base, ...extra } as unknown as P));
 }
 
 export function dashboardPagination(routeBase: string, result: DashboardListResult) {
@@ -146,7 +163,6 @@ export async function exportAdvancedSearch(c: AppContext, defaultPageType = 'all
 
 export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all', canSelectPageType = true) {
   const config = await resolveCmsConfig(c.env);
-  const user = c.get('user');
   const criteria = parseAdvancedSearchCriteria(c.req.url);
   const selectedPageType = canSelectPageType
     ? advancedSearchSelectedPageType(c.req.query('page_type'), defaultPageType, config)
@@ -159,10 +175,7 @@ export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all
   const order = advancedSearchOrder(c.req.query('order'));
   const hasSearch = criteria.length > 0;
 
-  const [taxonomy, userAvatar] = await Promise.all([
-    editorTaxonomy(c.env.DB),
-    fetchUserAvatar(c.env.DB, parseInt(user.sub, 10)),
-  ]);
+  const taxonomy = await editorTaxonomy(c.env.DB);
 
   const result = hasSearch
     ? await performAdvancedSearch(c.env.DB, pageTypes, criteria, operator, {
@@ -198,9 +211,7 @@ export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all
   const maxCriterionIndex = criteria.reduce((max, criterion) => Math.max(max, criterion.index), 0);
   const pathOptionsByPageType = advancedSearchPathOptionsByPageType(config);
 
-  return c.html(
-    await advancedSearchPage(c.env.VIEWS, {
-      ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, advancedSearchPage, {
       siteTitle: `${c.env.SITE_TITLE ?? 'Worker CMS'} · Advanced Search`,
       pageTitle: selectedPageType === 'all' ? 'Advanced Search' : `Advanced Search: ${selectedPageType}`,
       pageType: selectedPageType,
@@ -236,6 +247,5 @@ export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all
         hasLiveWeightDrift: liveMap.has(page.uuid) && liveMap.get(page.uuid)?.weight !== page.weight,
         hasLiveLectDrift: liveMap.has(page.uuid) && !lectsMatch(liveMap.get(page.uuid)?.lect, page.lect),
       })),
-    }),
-  );
+  });
 }

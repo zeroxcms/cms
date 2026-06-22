@@ -35,7 +35,6 @@ import {
 import {
   editorTaxonomy,
   ensureUniqueDraftSlug,
-  fetchUserAvatar,
   fetchUserName,
   listDashboardDraftPages,
   parentPageOption,
@@ -49,7 +48,7 @@ import {
   unpublishPageFromTargets,
 } from '../../publish';
 import type { PublishOutcome } from '../../publish';
-import { buildBaseProps, dashboardPagination, exportPageList } from '../../utils/admin-render';
+import { buildBaseProps, dashboardPagination, exportPageList, renderPage } from '../../utils/admin-render';
 import { requirePermission } from '../../middleware/auth';
 
 export const pagesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -99,21 +98,16 @@ pagesRoutes.get('/', async (c) => {
     hasLiveLectDrift: liveMap.has(p.uuid) && !lectsMatch(liveMap.get(p.uuid)?.lect, p.lect),
   }));
 
-  const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
-
-  return c.html(
-    await dashboardPage(c.env.VIEWS, {
-      ...(await buildBaseProps(c, userAvatar)),
-      pages,
-      flash: flash || undefined,
-      returnPath: dashboardPageHref('/admin', draftPages.pagination.currentPage, pageSize),
-      searchAction: '/admin/advanced-search',
-      advancedSearchHref: '/admin/advanced-search',
-      importHref: '/admin/pages/import-v2/default',
-      exportHref: '/admin/pages/export',
-      pagination: dashboardPagination('/admin', draftPages),
-    }),
-  );
+  return renderPage(c, dashboardPage, {
+    pages,
+    flash: flash || undefined,
+    returnPath: dashboardPageHref('/admin', draftPages.pagination.currentPage, pageSize),
+    searchAction: '/admin/advanced-search',
+    advancedSearchHref: '/admin/advanced-search',
+    importHref: '/admin/pages/import-v2/default',
+    exportHref: '/admin/pages/export',
+    pagination: dashboardPagination('/admin', draftPages),
+  });
 });
 
 pagesRoutes.get('/pages/list/:pageType', async (c) => {
@@ -133,12 +127,9 @@ pagesRoutes.get('/pages/list/:pageType', async (c) => {
     limit: pageSize,
   });
   const liveMap = await liveMapForDraftPages(c.env, draftPages.results);
-  const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
   const routeBase = `/admin/pages/list/${encodeURIComponent(pageType)}`;
 
-  return c.html(
-    await dashboardPage(c.env.VIEWS, {
-      ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, dashboardPage, {
       siteTitle: `${c.env.SITE_TITLE ?? 'Worker CMS'} · ${pageType}`,
       pages: draftPages.results.map((page) => ({
         ...page,
@@ -155,8 +146,7 @@ pagesRoutes.get('/pages/list/:pageType', async (c) => {
       importHref: `/admin/pages/import-v2/${encodeURIComponent(pageType)}`,
       exportHref: `/admin/pages/export/${encodeURIComponent(pageType)}`,
       pagination: dashboardPagination(routeBase, draftPages),
-    }),
-  );
+  });
 });
 
 pagesRoutes.get('/pages/export', (c) => exportPageList(c));
@@ -226,31 +216,25 @@ pagesRoutes.get('/pages/new', async (c) => {
   const language = languageFromRequest(c);
   const config = await resolveCmsConfig(c.env);
   const lect = blueprintToLect(pageType, config.blueprint, config.defaultLanguage);
-  const [taxonomy, userAvatar] = await Promise.all([
-    editorTaxonomy(c.env.DB),
-    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
-  ]);
+  const taxonomy = await editorTaxonomy(c.env.DB);
 
-  return c.html(
-    await editorPage(viewsFor(c.env), {
-      ...(await buildBaseProps(c, userAvatar)),
-      parentPages: [],
-      tags: taxonomy.tags,
-      taxonomies: taxonomy.taxonomies,
-      selectedTagIds: [],
-      action: '/admin/pages',
-      defaultPageType: pageType,
-      structured: {
-        config,
-        language,
-        lect,
-        blueprintProps: blueprintPropsFor(config, pageType),
-        blockProps: blockPropsByName(config),
-        blockNames: config.blockLists[pageType] ?? config.blockLists.default,
-        versions: [],
-      },
-    }),
-  );
+  return renderPage(c, editorPage, {
+    parentPages: [],
+    tags: taxonomy.tags,
+    taxonomies: taxonomy.taxonomies,
+    selectedTagIds: [],
+    action: '/admin/pages',
+    defaultPageType: pageType,
+    structured: {
+      config,
+      language,
+      lect,
+      blueprintProps: blueprintPropsFor(config, pageType),
+      blockProps: blockPropsByName(config),
+      blockNames: config.blockLists[pageType] ?? config.blockLists.default,
+      versions: [],
+    },
+  }, viewsFor(c.env));
 });
 
 // ── Create page ───────────────────────────────────────────────────────────────
@@ -266,14 +250,13 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
 
   if (errors.length) {
     const pageType = nullableStr(form.get('page_type')) ?? 'default';
-    const [parentPages, taxonomy, userAvatar] = await Promise.all([
+    const [parentPages, taxonomy] = await Promise.all([
       parentPageOption(c.env.DB, nullableStr(form.get('page_id'))),
       editorTaxonomy(c.env.DB),
-      fetchUserAvatar(c.env.DB, userIdFromContext(c)),
     ]);
     return c.html(
       await editorPage(viewsFor(c.env), {
-        ...(await buildBaseProps(c, userAvatar)),
+        ...(await buildBaseProps(c)),
         parentPages,
         tags: taxonomy.tags,
         taxonomies: taxonomy.taxonomies,
@@ -381,10 +364,9 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
   const requestedVersionId = parseInt(c.req.query('version') ?? '', 10);
   const flash = c.req.query('flash') ?? '';
 
-  const [page, taxonomy, userAvatar] = await Promise.all([
+  const [page, taxonomy] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(pageId).first<Page>(),
     editorTaxonomy(c.env.DB),
-    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
   ]);
 
   if (!page) return c.notFound();
@@ -416,31 +398,28 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
     fetchUserName(c.env.DB, num(lect._modifier, 0)),
   ]);
 
-  return c.html(
-    await editorPage(viewsFor(c.env), {
-      ...(await buildBaseProps(c, userAvatar)),
-      page: displayPage,
-      modifierName: modifierName ?? undefined,
-      version: version ?? undefined,
-      isVersionPreview: Number.isFinite(requestedVersionId) && !!version,
-      liveVersionId: versions.results.find((candidate) => candidate.lect === liveLect)?.id,
-      parentPages,
-      tags: taxonomy.tags,
-      taxonomies: taxonomy.taxonomies,
-      selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
-      flash: flash || undefined,
-      action: `/admin/pages/${pageId}`,
-      structured: {
-        config,
-        language,
-        lect,
-        blueprintProps: blueprintPropsFor(config, pageType),
-        blockProps: blockPropsByName(config),
-        blockNames: config.blockLists[pageType] ?? config.blockLists.default,
-        versions: versions.results,
-      },
-    }),
-  );
+  return renderPage(c, editorPage, {
+    page: displayPage,
+    modifierName: modifierName ?? undefined,
+    version: version ?? undefined,
+    isVersionPreview: Number.isFinite(requestedVersionId) && !!version,
+    liveVersionId: versions.results.find((candidate) => candidate.lect === liveLect)?.id,
+    parentPages,
+    tags: taxonomy.tags,
+    taxonomies: taxonomy.taxonomies,
+    selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
+    flash: flash || undefined,
+    action: `/admin/pages/${pageId}`,
+    structured: {
+      config,
+      language,
+      lect,
+      blueprintProps: blueprintPropsFor(config, pageType),
+      blockProps: blockPropsByName(config),
+      blockNames: config.blockLists[pageType] ?? config.blockLists.default,
+      versions: versions.results,
+    },
+  }, viewsFor(c.env));
 });
 
 pagesRoutes.post('/pages/:id/weight', requirePermission('content:write'), async (c) => {
@@ -494,7 +473,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
   }
 
   if (errors.length) {
-    const [parentPages, taxonomy, version, versions, liveLect, pageTags, userAvatar] = await Promise.all([
+    const [parentPages, taxonomy, version, versions, liveLect, pageTags] = await Promise.all([
       parentPageOption(c.env.DB, nullableStr(form.get('page_id')) ?? page.page_id),
       editorTaxonomy(c.env.DB),
       page.current_page_version_id
@@ -507,13 +486,12 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
         .all<PageVersion>(),
       getLiveLect(c.env, page.uuid),
       c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?').bind(pageId).all<{ tag_id: number }>(),
-      fetchUserAvatar(c.env.DB, userIdFromContext(c)),
     ]);
     const pageType = nullableStr(form.get('page_type')) ?? page.page_type ?? 'default';
     const lect = lectFromForm(config, pageType, lectForPage(config, pageType, page.lect), form, language);
     return c.html(
       await editorPage(viewsFor(c.env), {
-        ...(await buildBaseProps(c, userAvatar)),
+        ...(await buildBaseProps(c)),
         page,
         version: version ?? undefined,
         liveVersionId: versions.results.find((candidate) => candidate.lect === liveLect)?.id,

@@ -5,11 +5,10 @@ import { Hono } from 'hono';
 import { roleFormPage, rolesPage } from '../../templates/roles';
 import { PERMISSIONS, PERMISSION_DESCRIPTIONS } from '../../types';
 import type { Env, Variables, Permission } from '../../types';
-import { slugify, str, userIdFromContext } from '../../utils/forms';
+import { slugify, str } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
-import { fetchUserAvatar } from '../../utils/admin-queries';
-import { buildBaseProps } from '../../utils/admin-render';
+import { renderPage } from '../../utils/admin-render';
 import { clearRolePermissionsCache } from '../../utils/roles';
 import {
   createCustomRole,
@@ -33,12 +32,8 @@ function permissionOptions(granted: Set<Permission>) {
 }
 
 rolesRoutes.get('/roles', async (c) => {
-  const [roles, userAvatar] = await Promise.all([
-    listRolesForAdmin(c.env),
-    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
-  ]);
-  return c.html(await rolesPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  const roles = await listRolesForAdmin(c.env);
+  return renderPage(c, rolesPage, {
     roles: roles.map((role) => ({
       name: role.name,
       label: role.label,
@@ -48,22 +43,20 @@ rolesRoutes.get('/roles', async (c) => {
       deleteAction: `/admin/roles/${encodeURIComponent(role.name)}/delete`,
       canDelete: !role.builtin,
     })),
-  }));
+  });
 });
 
 // ── Create ──────────────────────────────────────────────────────────────────
 
 rolesRoutes.get('/roles/new', async (c) => {
-  const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
-  return c.html(await roleFormPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, roleFormPage, {
     isNew: true,
     name: '',
     label: '',
     builtin: false,
     locked: false,
     permissionOptions: [],
-  }));
+  });
 });
 
 rolesRoutes.post('/roles', async (c) => {
@@ -73,9 +66,7 @@ rolesRoutes.post('/roles', async (c) => {
 
   const error = await createCustomRole(c.env, name, label);
   if (error) {
-    const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
-    return c.html(await roleFormPage(c.env.VIEWS, {
-      ...(await buildBaseProps(c, userAvatar)),
+    return renderPage(c, roleFormPage, {
       isNew: true,
       name: str(form.get('name')),
       label,
@@ -83,7 +74,7 @@ rolesRoutes.post('/roles', async (c) => {
       locked: false,
       error,
       permissionOptions: [],
-    }));
+    });
   }
   clearRolePermissionsCache();
   logAudit(c, 'role.create', 'role', name, { label });
@@ -95,16 +86,14 @@ rolesRoutes.post('/roles', async (c) => {
 rolesRoutes.get('/roles/:name/edit', async (c) => {
   const role = await getRoleForEdit(c.env, c.req.param('name'));
   if (!role) return c.notFound();
-  const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
-  return c.html(await roleFormPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, roleFormPage, {
     isNew: false,
     name: role.name,
     label: role.label,
     builtin: role.builtin,
     locked: role.locked,
     permissionOptions: permissionOptions(role.locked ? new Set(PERMISSIONS) : role.permissions),
-  }));
+  });
 });
 
 rolesRoutes.post('/roles/:name', async (c) => {
