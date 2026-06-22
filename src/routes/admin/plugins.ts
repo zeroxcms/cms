@@ -87,7 +87,7 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
     && (upstreamResponse.headers.get('content-type') ?? '').includes('text/html');
   if (wantsChrome) {
     const fragment = await upstreamResponse.text();
-    const title = upstreamResponse.headers.get('x-cms-title') || plugin.manifest.name || 'Plugin';
+    const title = decodeTitle(upstreamResponse.headers.get('x-cms-title')) || plugin.manifest.name || 'Plugin';
     const base = await buildBaseProps(c);
     const wrapped = await adminLayout(viewsFor(c.env), base, { title, body: fragment });
     // No explicit CSP here — the global security middleware applies the strict
@@ -115,6 +115,16 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
     );
   }
   return response;
+}
+
+/** Decodes the percent-encoded x-cms-title header (plugins encode it for header safety). */
+function decodeTitle(raw: string | null): string {
+  if (!raw) return '';
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 let sharedOriginWarned = false;

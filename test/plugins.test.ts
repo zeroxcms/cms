@@ -249,6 +249,45 @@ describe('plugin admin proxy', () => {
     expect(response.headers.get('X-CMS-Error')).toBe('plugin-secret-required');
   });
 
+  it('wraps an x-cms-chrome fragment in the CMS admin layout', async () => {
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const url = 'https://plugin-chrome.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(u).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        // A body fragment opting into the CMS chrome, with a non-ASCII title.
+        return new Response('<div class="ev-wrap">FRAGMENT_MARKER</div>', {
+          headers: {
+            'content-type': 'text/html; charset=utf-8',
+            'x-cms-chrome': '1',
+            'x-cms-title': encodeURIComponent('Gala 晚宴'),
+          },
+        });
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/events/dashboard', {
+      headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain('FRAGMENT_MARKER');                 // the plugin's content
+    expect(body).toContain('/assets/admin.css');               // CMS layout chrome
+    expect(body).toContain('Sign out');                        // CMS sidebar
+    expect(body).toContain('Gala 晚宴');                        // decoded unicode title
+    // Wrapped pages get the CMS strict nonce CSP, not the relaxed plugin policy.
+    expect(response.headers.get('Content-Security-Policy')).toContain("script-src 'self' 'nonce-");
+  });
+
   it('renders plugin nav items in the admin sidebar', async () => {
     testEnv.PLUGIN_SECRET = 'server-secret';
     const url = 'https://plugin-nav.local';
