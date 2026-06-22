@@ -96,7 +96,10 @@ export async function getPlugins(env: Env): Promise<ResolvedPlugin[]> {
       const fetcher = fetcherForUrl(record.url);
       const manifest = await loadManifest(record.url, fetcher);
       if (!manifest) return null;
-      return { binding: record.url, fetcher, manifest };
+      // Prefer the plugin's own secret; fall back to the shared env secret so a
+      // pre-migration row (NULL secret) keeps working until it's rotated.
+      const secret = record.secret || env.PLUGIN_SECRET || '';
+      return { binding: record.url, fetcher, manifest, secret };
     }),
   );
   return resolved.filter((plugin): plugin is ResolvedPlugin => plugin !== null);

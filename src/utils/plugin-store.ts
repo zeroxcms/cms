@@ -46,20 +46,33 @@ export async function getPlugin(db: D1Database, id: number): Promise<PluginRecor
   return db.prepare('SELECT * FROM plugins WHERE id = ?').bind(id).first<PluginRecord>();
 }
 
+export async function getPluginByUrl(db: D1Database, url: string): Promise<PluginRecord | null> {
+  return db.prepare('SELECT * FROM plugins WHERE url = ?').bind(url).first<PluginRecord>();
+}
+
 export interface PluginInput {
   label: string;
   url: string;
   enabled: boolean;
   config?: string | null;
   sort_order?: number;
+  /** Per-plugin shared secret. Set on create; rotated via setPluginSecret. */
+  secret?: string | null;
+}
+
+/** A fresh 32-byte hex secret for a plugin (same strength as `openssl rand -hex 32`). */
+export function generatePluginSecret(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(32)))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 /** Inserts a plugin. Returns an error message (e.g. duplicate URL) or null. */
 export async function createPlugin(db: D1Database, input: PluginInput): Promise<string | null> {
   try {
     await db
-      .prepare('INSERT INTO plugins (label, url, enabled, config, sort_order) VALUES (?, ?, ?, ?, ?)')
-      .bind(input.label, input.url, input.enabled ? 1 : 0, input.config ?? null, input.sort_order ?? 0)
+      .prepare('INSERT INTO plugins (label, url, enabled, config, sort_order, secret) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(input.label, input.url, input.enabled ? 1 : 0, input.config ?? null, input.sort_order ?? 0, input.secret ?? null)
       .run();
     return null;
   } catch (error) {
@@ -68,6 +81,15 @@ export async function createPlugin(db: D1Database, input: PluginInput): Promise<
     }
     throw error;
   }
+}
+
+/** Rotates a plugin's secret. The old secret stops working immediately on the
+ *  next request — the plugin Worker must be updated to the new value to match. */
+export async function setPluginSecret(db: D1Database, id: number, secret: string): Promise<void> {
+  await db
+    .prepare('UPDATE plugins SET secret = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .bind(secret, id)
+    .run();
 }
 
 /** Updates a plugin. Returns an error message or null. */

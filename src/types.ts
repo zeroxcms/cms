@@ -174,6 +174,8 @@ export interface PluginRecord {
   enabled: number;
   config: string | null;
   sort_order: number;
+  /** Per-plugin shared secret. Null = fall back to the env PLUGIN_SECRET. */
+  secret: string | null;
 }
 
 /** A runtime-editable block definition stored in the `block_types` table. */
@@ -246,6 +248,8 @@ export interface ResolvedPlugin {
   binding: string;
   fetcher: Fetcher;
   manifest: PluginManifest;
+  /** Effective shared secret for this plugin (its own, or the env fallback). Empty when neither is set. */
+  secret: string;
 }
 
 // ============================================================

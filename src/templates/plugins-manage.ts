@@ -79,17 +79,48 @@ export async function pluginFormPage(views: Fetcher, opts: BaseTemplateProps & {
   enabled: boolean;
   sortOrder: number;
   config: string;
+  secret?: string;
+  flash?: string;
   error?: string;
 }): Promise<string> {
-  const { isNew, id, label, url, enabled, sortOrder, config, error } = opts;
+  const { isNew, id, label, url, enabled, sortOrder, config, secret, flash, error } = opts;
   const heading = isNew ? 'Register Plugin' : 'Edit Plugin';
   const action = isNew ? '/admin/plugins-manage' : `/admin/plugins-manage/${id}`;
   const errorHtml = error
     ? `<div class="mb-4 px-4 py-2 rounded-lg bg-red-50 text-red-700 text-sm">${escHtml(error)}</div>`
     : '';
+  const flashMessage = flash === 'secret-generated'
+    ? 'Plugin registered. Copy the secret below onto the plugin Worker.'
+    : flash === 'secret-rotated'
+      ? 'Secret rotated. Update the plugin Worker to the new value — the old one no longer works.'
+      : '';
+  const flashHtml = flashMessage
+    ? `<div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">${escHtml(flashMessage)}</div>`
+    : '';
+
+  // Per-plugin secret panel — edit only. The secret is shown (not hashed) because
+  // the CMS must transmit it to the plugin; copy it onto the plugin Worker with
+  // `wrangler secret put PLUGIN_SECRET`. Rotating invalidates only this plugin.
+  const secretHtml = isNew
+    ? ''
+    : `<div class="bg-white rounded-xl shadow p-6 mt-6">
+        <h2 class="text-sm font-semibold text-gray-700 mb-1">Shared secret</h2>
+        <p class="text-xs text-gray-500 mb-3">Set this exact value on the plugin Worker:
+          <code>wrangler secret put PLUGIN_SECRET</code>. ${
+            secret ? '' : 'This plugin has no dedicated secret yet and is using the shared <code>PLUGIN_SECRET</code> fallback — rotate to assign its own.'
+          }</p>
+        <input type="text" readonly value="${escHtml(secret ?? '')}" onclick="this.select()"
+               class="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono bg-gray-50 mb-3"
+               placeholder="(using shared PLUGIN_SECRET fallback)">
+        <form method="post" action="/admin/plugins-manage/${id}/rotate-secret"
+              onsubmit="return confirm('Rotate this plugin\\'s secret? The plugin Worker must be updated to the new value or it will stop working.')">
+          <button class="px-3 py-1.5 rounded-lg border border-amber-300 text-xs font-semibold text-amber-800">Rotate secret</button>
+        </form>
+      </div>`;
 
   const body = `<div class="max-w-2xl mx-auto px-4 py-6">
     <h1 class="text-2xl font-bold text-gray-900 mb-4">${heading}</h1>
+    ${flashHtml}
     ${errorHtml}
     <form method="post" action="${action}" class="bg-white rounded-xl shadow p-6 space-y-4">
       <label class="block">
@@ -122,6 +153,7 @@ export async function pluginFormPage(views: Fetcher, opts: BaseTemplateProps & {
         <a href="/admin/plugins-manage" class="px-4 py-2 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700">Cancel</a>
       </div>
     </form>
+    ${secretHtml}
   </div>`;
   return adminLayout(views, opts, { title: heading, body });
 }

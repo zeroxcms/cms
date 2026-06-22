@@ -100,6 +100,31 @@ describe('F1 auth + scoping', () => {
     const res = await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'NoOrigin' });
     expect(res.status).toBe(201);
   });
+
+  it('authenticates against the plugin\'s own secret, not the env fallback', async () => {
+    // Re-register the events plugin with a dedicated row secret.
+    await env.DB.prepare('DELETE FROM plugins').run();
+    __clearInjectedFetchers();
+    clearManifestCache();
+    const url = `https://plugin-${crypto.randomUUID()}.local`;
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled, secret) VALUES (?, ?, 1, ?)')
+      .bind('Events', url, 'per-plugin-secret').run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(href).pathname === '/__plugin/manifest') return Response.json(MANIFEST);
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    // The plugin's own secret is accepted...
+    const ok = await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'OwnSecret' }, { 'x-plugin-secret': 'per-plugin-secret' });
+    expect(ok.status).toBe(201);
+
+    // ...and the shared env PLUGIN_SECRET no longer is — the per-plugin secret wins.
+    const rejected = await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'EnvSecret' }, { 'x-plugin-secret': PLUGIN_SECRET });
+    expect(rejected.status).toBe(403);
+  });
 });
 
 describe('F1 create / read / list / update / delete', () => {
@@ -172,9 +197,11 @@ describe('F1 create / read / list / update / delete', () => {
     expect(updated.lect['@status']).toBe('confirmed');
     expect((updated.lect.name as { en: string }).en).toBe('Edith');
 
-    const versions = await env.DB.prepare('SELECT action FROM page_versions WHERE page_id = ? ORDER BY id')
+    // Both a create and an update version exist (order-independent: the time-based
+    // version id has a random component, so same-second inserts aren't ordered).
+    const versions = await env.DB.prepare('SELECT action FROM page_versions WHERE page_id = ?')
       .bind(created.id).all<{ action: string }>();
-    expect(versions.results.map((v) => v.action)).toEqual(['create', 'update']);
+    expect(versions.results.map((v) => v.action).sort()).toEqual(['create', 'update']);
   });
 
   it('soft-deletes a page to trash', async () => {

@@ -218,12 +218,19 @@ describe('plugin admin proxy', () => {
     expect(JSON.parse(forwarded.get('x-cms-user') ?? '{}')).toMatchObject({ id: '1', email: 'admin@example.com' });
   });
 
-  it('fails closed when plugin admin routes are enabled without PLUGIN_SECRET', async () => {
-    testEnv.PLUGINS = 'PLUGIN_TEST';
+  it('fails closed when a plugin has no secret and no PLUGIN_SECRET fallback', async () => {
     delete testEnv.PLUGIN_SECRET;
-    testEnv.PLUGIN_TEST = {
-      fetch: async (): Promise<Response> => new Response('unexpected plugin call', { status: 500 }),
-    };
+    // A registered, reachable plugin (manifest resolves) but with no row secret
+    // and no env fallback must not be proxied to unauthenticated.
+    const url = 'https://plugin-nosecret.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(u).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        return new Response('unexpected plugin call', { status: 500 });
+      },
+    } as unknown as Fetcher);
 
     const now = Math.floor(Date.now() / 1000);
     const token = await signJWT({

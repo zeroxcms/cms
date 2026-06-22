@@ -54,11 +54,11 @@ export async function getPublishAdapters(env: Env): Promise<PublishAdapter[]> {
 
   const plugins = await getPlugins(env);
   for (const plugin of plugins.filter((candidate) => candidate.manifest.publishTarget)) {
-    if (!env.PLUGIN_SECRET) {
-      console.error(`Plugin ${plugin.manifest.id} declares publishTarget but PLUGIN_SECRET is unset`);
+    if (!plugin.secret) {
+      console.error(`Plugin ${plugin.manifest.id} declares publishTarget but has no secret configured`);
       continue;
     }
-    adapters.push(pluginAdapter(plugin, env.PLUGIN_SECRET));
+    adapters.push(pluginAdapter(plugin, plugin.secret));
   }
 
   return adapters;

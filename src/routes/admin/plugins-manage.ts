@@ -17,10 +17,13 @@ import { clearConfigCache } from '../../plugins/config';
 import {
   listPlugins,
   getPlugin,
+  getPluginByUrl,
   createPlugin,
   updatePlugin,
   deletePlugin,
   setPluginEnabled,
+  setPluginSecret,
+  generatePluginSecret,
   type PluginInput,
 } from '../../utils/plugin-store';
 import { pluginsManagePage, pluginFormPage, type PluginListItem } from '../../templates/plugins-manage';
@@ -118,13 +121,16 @@ pluginsManageRoutes.post('/plugins-manage', async (c) => {
   if (!input) {
     return renderPage(c, pluginFormPage, { isNew: true, ...raw, error: error ?? undefined });
   }
-  const dbError = await createPlugin(c.env.DB, input);
+  // Auto-generate a dedicated secret for the new plugin; the edit page (where we
+  // land next) shows it so the admin can copy it onto the plugin Worker.
+  const dbError = await createPlugin(c.env.DB, { ...input, secret: generatePluginSecret() });
   if (dbError) {
     return renderPage(c, pluginFormPage, { isNew: true, ...raw, error: dbError });
   }
   invalidate();
   logAudit(c, 'plugin.create', 'plugin', input.url, { label: input.label, enabled: input.enabled });
-  return c.redirect('/admin/plugins-manage');
+  const created = await getPluginByUrl(c.env.DB, input.url);
+  return c.redirect(created ? `/admin/plugins-manage/${created.id}/edit?flash=secret-generated` : '/admin/plugins-manage');
 });
 
 // ── Edit ────────────────────────────────────────────────────────────────────
@@ -140,7 +146,19 @@ pluginsManageRoutes.get('/plugins-manage/:id/edit', async (c) => {
     enabled: !!plugin.enabled,
     sortOrder: plugin.sort_order,
     config: plugin.config ?? '',
+    secret: plugin.secret ?? '',
+    flash: c.req.query('flash') ?? undefined,
   });
+});
+
+pluginsManageRoutes.post('/plugins-manage/:id/rotate-secret', async (c) => {
+  const id = Number(c.req.param('id'));
+  const plugin = await getPlugin(c.env.DB, id);
+  if (!plugin) return c.notFound();
+  await setPluginSecret(c.env.DB, id, generatePluginSecret());
+  invalidate();
+  logAudit(c, 'plugin.rotate_secret', 'plugin', plugin.url);
+  return c.redirect(`/admin/plugins-manage/${id}/edit?flash=secret-rotated`);
 });
 
 pluginsManageRoutes.post('/plugins-manage/:id', async (c) => {

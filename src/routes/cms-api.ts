@@ -87,19 +87,22 @@ interface PageInput {
  * any failure, otherwise the resolved plugin + its allowed page types.
  */
 async function authenticatePlugin(c: AppContext): Promise<PluginAuth | Response> {
-  const secret = c.env.PLUGIN_SECRET;
-  if (!secret) {
-    console.error('PLUGIN_SECRET is required before the plugin write-back API can be served');
-    return c.json({ error: 'plugin_api_unavailable' }, 503);
-  }
-  if (c.req.header('x-plugin-secret') !== secret) {
-    return c.json({ error: 'forbidden' }, 403);
-  }
+  // Resolve the caller first so we can check its OWN secret: per-plugin secrets
+  // make this scope a real boundary, and let one plugin be rotated/revoked
+  // without touching the others.
   const pluginId = (c.req.header('x-plugin-id') ?? '').trim();
   if (!pluginId) return c.json({ error: 'missing_plugin_id' }, 400);
 
   const plugin = await pluginById(c.env, pluginId);
   if (!plugin) return c.json({ error: 'unknown_plugin' }, 403);
+
+  if (!plugin.secret) {
+    console.error(`Plugin ${pluginId} called the write-back API but has no secret configured`);
+    return c.json({ error: 'plugin_api_unavailable' }, 503);
+  }
+  if (c.req.header('x-plugin-secret') !== plugin.secret) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
 
   const allowedTypes = new Set(Object.keys(plugin.manifest.contentTypes?.blueprint ?? {}));
   return { plugin, pluginId, allowedTypes };
