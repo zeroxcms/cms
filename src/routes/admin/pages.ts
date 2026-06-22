@@ -650,10 +650,11 @@ pagesRoutes.post('/pages/:id/delete', requirePermission('content:delete'), async
     .first<Page>();
   if (!page) return c.notFound();
 
-  // Copy page into trash table (preserve uuid so we can restore)
+  // Copy page into trash, preserving its id and current-version pointer so a
+  // later restore keeps the same identity (uuid remains the upsert key).
   await c.env.DB.prepare(
-    `INSERT INTO trash_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id, creator, editors)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO trash_pages (id, uuid, name, slug, weight, start, end, page_type, current_page_version_id, lect, page_id, creator, editors)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
        name = excluded.name,
        slug = excluded.slug,
@@ -661,12 +662,14 @@ pagesRoutes.post('/pages/:id/delete', requirePermission('content:delete'), async
        start = excluded.start,
        end = excluded.end,
        page_type = excluded.page_type,
+       current_page_version_id = excluded.current_page_version_id,
        lect = excluded.lect,
        page_id = excluded.page_id,
        creator = excluded.creator,
        editors = excluded.editors`,
   )
     .bind(
+      page.id,
       page.uuid,
       page.name,
       page.slug,
@@ -674,6 +677,7 @@ pagesRoutes.post('/pages/:id/delete', requirePermission('content:delete'), async
       page.start,
       page.end,
       page.page_type,
+      page.current_page_version_id ?? null,
       page.lect,
       page.page_id,
       page.creator,
@@ -681,12 +685,26 @@ pagesRoutes.post('/pages/:id/delete', requirePermission('content:delete'), async
     )
     .run();
 
-  // Fetch the trash page id
+  // Fetch the trash page id (equals page.id on a fresh delete).
   const trashPage = await c.env.DB.prepare('SELECT id FROM trash_pages WHERE uuid = ?')
     .bind(page.uuid)
     .first<{ id: number }>();
 
   if (trashPage) {
+    // Copy version history into trash, preserving version ids so the page's
+    // current_page_version_id still resolves after a restore.
+    const pageVersions = await c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ?')
+      .bind(pageId)
+      .all<PageVersion>();
+    for (const version of pageVersions.results) {
+      await c.env.DB.prepare(
+        `INSERT OR IGNORE INTO trash_page_versions (id, uuid, created_at, page_id, lect, action)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(version.id, version.uuid, version.created_at, trashPage.id, version.lect, version.action)
+        .run();
+    }
+
     // Copy page tags into trash
     const pageTags = await c.env.DB.prepare('SELECT * FROM draft_page_tags WHERE page_id = ?')
       .bind(pageId)

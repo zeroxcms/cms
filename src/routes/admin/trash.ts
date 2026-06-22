@@ -2,7 +2,7 @@
 
 import { Hono } from 'hono';
 import { trashPage } from '../../templates/trash';
-import type { Env, Variables, Page, PageTag } from '../../types';
+import type { Env, Variables, Page, PageTag, PageVersion } from '../../types';
 import { savePageVersion } from '../../utils/admin-queries';
 import { renderPage } from '../../utils/admin-render';
 import { logAudit } from '../../utils/audit';
@@ -33,10 +33,11 @@ trashRoutes.post('/trash/:id/restore', requirePermission('trash:restore'), async
     .first<Page>();
   if (!trashedPage) return c.notFound();
 
-  // Upsert page back into draft page table (match on uuid)
+  // Restore into draft, preserving the original id and current-version pointer
+  // so the page keeps the same identity it had before being trashed.
   await c.env.DB.prepare(
-    `INSERT INTO draft_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id, creator, editors)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO draft_pages (id, uuid, name, slug, weight, start, end, page_type, current_page_version_id, lect, page_id, creator, editors)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
        name = excluded.name,
        slug = excluded.slug,
@@ -44,12 +45,14 @@ trashRoutes.post('/trash/:id/restore', requirePermission('trash:restore'), async
        start = excluded.start,
        end = excluded.end,
        page_type = excluded.page_type,
+       current_page_version_id = excluded.current_page_version_id,
        lect = excluded.lect,
        page_id = excluded.page_id,
        creator = excluded.creator,
        editors = excluded.editors`,
   )
     .bind(
+      trashedPage.id,
       trashedPage.uuid,
       trashedPage.name,
       trashedPage.slug,
@@ -57,6 +60,7 @@ trashRoutes.post('/trash/:id/restore', requirePermission('trash:restore'), async
       trashedPage.start,
       trashedPage.end,
       trashedPage.page_type,
+      trashedPage.current_page_version_id ?? null,
       trashedPage.lect,
       trashedPage.page_id,
       trashedPage.creator,
@@ -69,12 +73,19 @@ trashRoutes.post('/trash/:id/restore', requirePermission('trash:restore'), async
     .first<{ id: number }>();
 
   if (draftPage) {
-    const restoredVersionId = await savePageVersion(
-      c.env.DB,
-      draftPage.id,
-      trashedPage.lect,
-      'restore',
-    );
+    // Bring version history back, preserving version ids so the restored
+    // current_page_version_id still resolves to the right snapshot.
+    const trashVersions = await c.env.DB.prepare('SELECT * FROM trash_page_versions WHERE page_id = ?')
+      .bind(trashId)
+      .all<PageVersion>();
+    for (const version of trashVersions.results) {
+      await c.env.DB.prepare(
+        `INSERT OR IGNORE INTO page_versions (id, uuid, created_at, page_id, lect, action)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(version.id, version.uuid, version.created_at, draftPage.id, version.lect, version.action)
+        .run();
+    }
 
     // Restore page tags to draft
     const trashTags = await c.env.DB.prepare('SELECT * FROM trash_page_tags WHERE page_id = ?')
@@ -88,9 +99,19 @@ trashRoutes.post('/trash/:id/restore', requirePermission('trash:restore'), async
         .run();
     }
 
-    await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
-      .bind(restoredVersionId, draftPage.id)
-      .run();
+    // Legacy trash rows (deleted before history was preserved) carry no versions
+    // or current pointer — give those a fresh restore snapshot instead.
+    if (trashVersions.results.length === 0 || trashedPage.current_page_version_id == null) {
+      const restoredVersionId = await savePageVersion(
+        c.env.DB,
+        draftPage.id,
+        trashedPage.lect,
+        'restore',
+      );
+      await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
+        .bind(restoredVersionId, draftPage.id)
+        .run();
+    }
   }
 
   // Remove from TRASH

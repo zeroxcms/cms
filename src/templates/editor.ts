@@ -463,7 +463,6 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
   const versions = structured?.versions.map((version) => ({
     label: `${version.created_at}${version.action ? ` - ${version.action}` : ''}`,
     href: `${versionHrefBase}?version=${version.id}`,
-    revertAction: `revert:${version.id}`,
     active: selectedVersion?.id === version.id,
     live: version.id === liveVersionId,
   })) ?? [];
@@ -471,6 +470,7 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
   const body = await renderView(views, '/templates/editor.json', {
     pageTitle,
     action,
+    deleteAction: page ? `/admin/pages/${page.id}/delete` : '',
     isEdit,
     isVersionPreview: !!selectedVersion,
     selectedVersion: selectedVersion
@@ -514,7 +514,9 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
       tags,
       taxonomies,
       selectedTagIds,
-      structured?.config.taxonomyLists[pageType] ?? structured?.config.taxonomyLists.default ?? [],
+      // Show only the taxonomies checked for this page type; when the page type
+      // has none checked, fall back to showing every taxonomy.
+      structured?.config.taxonomyLists[pageType] ?? taxonomies.map((taxonomy) => taxonomy.slug),
     ),
     versions,
     hasVersions: versions.length > 0,
