@@ -40,7 +40,7 @@
     </div>
   {% endif %}
 
-  <form method="POST" action="{{ action | escape }}" class="min-w-0 space-y-6">
+  <form method="POST" action="{{ action | escape }}" data-editor-form class="min-w-0 space-y-6">
     {% if isVersionPreview %}
       <button type="submit" name="action" value="{{ selectedVersion.restoreAction | escape }}" class="sr-only" tabindex="-1" aria-hidden="true">Restore Version</button>
     {% else %}
@@ -456,7 +456,9 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
     'block-item-add',
     'block-item-delete',
   ]);
-  const editorForm = document.querySelector('form[method="POST"]');
+  // Target the editor form specifically: the admin layout renders a logout
+  // form earlier in the DOM, so a bare form[method="POST"] would bind here.
+  const editorForm = document.querySelector('form[data-editor-form]');
   if (editorForm) {
     editorForm.addEventListener('submit', (event) => {
       const submitter = event.submitter || document.activeElement;

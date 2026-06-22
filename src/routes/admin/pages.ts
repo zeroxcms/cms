@@ -593,7 +593,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
 
   dispatchHook(c, 'update', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug: uniqueSlug });
 
-  return c.redirect('/admin?flash=Page+updated+successfully');
+  return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}&flash=Page+updated+successfully`);
 });
 
 // ── Publish (DRAFT → PUBLISHED) ───────────────────────────────────────────────
