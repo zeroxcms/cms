@@ -2,6 +2,9 @@
 # .dev.vars is gitignored and never committed
 
 JWT_SECRET=replace-with-a-random-32-byte-hex-string
+# Shared secret the CMS forwards to every plugin Worker (x-plugin-secret header).
+# Use the SAME value here and on each plugin Worker. Generate: openssl rand -hex 32
+PLUGIN_SECRET=replace-with-a-random-32-byte-hex-string
 CANONICAL_ORIGIN=http://localhost:8787
 OAUTH_REDIRECT_URI=http://localhost:8787/auth/callback
 # Add a line per provider you enable:
