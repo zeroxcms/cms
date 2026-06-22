@@ -50,6 +50,7 @@ export async function adminLayout(
     userName: base.userName,
     userRole: base.userRole,
     userAvatar: base.userAvatar,
+    pluginNav: base.pluginNav,
   });
 }
 
@@ -62,6 +63,8 @@ export interface LayoutOptions extends NavFlags {
   userName?: string;
   userRole?: string;
   userAvatar?: string;
+  /** Nav entries contributed by active plugins (already role-filtered). */
+  pluginNav?: Array<{ label: string; href: string }>;
 }
 
 export async function layout(views: Fetcher, opts: LayoutOptions): Promise<string> {
@@ -83,6 +86,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     canManageUsers: opts.canManageUsers ?? false,
     canManageRoles: opts.canManageRoles ?? false,
     canManagePlugins: opts.canManagePlugins ?? false,
+    pluginNav: opts.pluginNav ?? [],
   });
 }
 

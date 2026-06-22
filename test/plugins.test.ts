@@ -241,4 +241,33 @@ describe('plugin admin proxy', () => {
     expect(response.status).toBe(500);
     expect(response.headers.get('X-CMS-Error')).toBe('plugin-secret-required');
   });
+
+  it('renders plugin nav items in the admin sidebar', async () => {
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const url = 'https://plugin-nav.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(u).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+
+    const response = await worker.fetch(new Request('http://localhost/admin/page_types', {
+      headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    // The plugin's nav entry (EVENTS_MANIFEST.nav) must reach the rendered sidebar.
+    expect(body).toContain('/admin/plugins/events/dashboard');
+    expect(body).toContain('Events');
+  });
 });
