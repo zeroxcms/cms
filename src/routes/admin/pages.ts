@@ -7,7 +7,7 @@ import { resolveCmsConfig } from '../../plugins/config';
 import { dispatchHook } from '../../plugins/hooks';
 import { viewsFor } from '../../plugins/views';
 import { blueprintToLect, safeParseLect, stringifyLect } from '../../utils/lect';
-import type { Env, Variables, Page, PageVersion, PageTag } from '../../types';
+import type { Env, Variables, Page, PageVersion } from '../../types';
 import {
   dashboardPageHref,
   dashboardPageNumber,
@@ -39,6 +39,7 @@ import {
   listDashboardDraftPages,
   parentPageOption,
   savePageVersion,
+  trashDraftPage,
 } from '../../utils/admin-queries';
 import {
   describeFailures,
@@ -645,84 +646,14 @@ pagesRoutes.post('/pages/:id/unpublish', requirePermission('content:publish'), a
 pagesRoutes.post('/pages/:id/delete', requirePermission('content:delete'), async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
 
-  const page = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
-    .bind(pageId)
-    .first<Page>();
+  // Copy the page (and its version + tag history) into trash, preserving ids so
+  // a later restore keeps the same identity. Shared with the plugin write-back
+  // API so the trash schema lives in one place.
+  const page = await trashDraftPage(c.env.DB, pageId);
   if (!page) return c.notFound();
 
-  // Copy page into trash, preserving its id and current-version pointer so a
-  // later restore keeps the same identity (uuid remains the upsert key).
-  await c.env.DB.prepare(
-    `INSERT INTO trash_pages (id, uuid, name, slug, weight, start, end, page_type, current_page_version_id, lect, page_id, creator, editors)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(uuid) DO UPDATE SET
-       name = excluded.name,
-       slug = excluded.slug,
-       weight = excluded.weight,
-       start = excluded.start,
-       end = excluded.end,
-       page_type = excluded.page_type,
-       current_page_version_id = excluded.current_page_version_id,
-       lect = excluded.lect,
-       page_id = excluded.page_id,
-       creator = excluded.creator,
-       editors = excluded.editors`,
-  )
-    .bind(
-      page.id,
-      page.uuid,
-      page.name,
-      page.slug,
-      page.weight,
-      page.start,
-      page.end,
-      page.page_type,
-      page.current_page_version_id ?? null,
-      page.lect,
-      page.page_id,
-      page.creator,
-      page.editors,
-    )
-    .run();
-
-  // Fetch the trash page id (equals page.id on a fresh delete).
-  const trashPage = await c.env.DB.prepare('SELECT id FROM trash_pages WHERE uuid = ?')
-    .bind(page.uuid)
-    .first<{ id: number }>();
-
-  if (trashPage) {
-    // Copy version history into trash, preserving version ids so the page's
-    // current_page_version_id still resolves after a restore.
-    const pageVersions = await c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ?')
-      .bind(pageId)
-      .all<PageVersion>();
-    for (const version of pageVersions.results) {
-      await c.env.DB.prepare(
-        `INSERT OR IGNORE INTO trash_page_versions (id, uuid, created_at, page_id, lect, action)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-        .bind(version.id, version.uuid, version.created_at, trashPage.id, version.lect, version.action)
-        .run();
-    }
-
-    // Copy page tags into trash
-    const pageTags = await c.env.DB.prepare('SELECT * FROM draft_page_tags WHERE page_id = ?')
-      .bind(pageId)
-      .all<PageTag>();
-    for (const pt of pageTags.results) {
-      await c.env.DB.prepare(
-        `INSERT OR IGNORE INTO trash_page_tags (uuid, page_id, tag_id, weight) VALUES (?, ?, ?, ?)`,
-      )
-        .bind(pt.uuid, trashPage.id, pt.tag_id, pt.weight)
-        .run();
-    }
-  }
-
-  // Unpublish from every publish target before deleting the draft copy.
+  // Unpublish from every publish target now that the draft copy is gone.
   await unpublishPageFromTargets(c.env, page.uuid);
-
-  // Delete from DRAFT
-  await c.env.DB.prepare('DELETE FROM draft_pages WHERE id = ?').bind(pageId).run();
 
   dispatchHook(c, 'delete', {
     id: page.id,

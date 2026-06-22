@@ -10,6 +10,7 @@
 import { Hono } from 'hono';
 import { authRoutes } from './routes/auth';
 import { adminRoutes } from './routes/admin';
+import { cmsApiRoutes } from './routes/cms-api';
 import { errorPage } from './templates/errors';
 import {
   canonicalHostResponse,
@@ -51,9 +52,16 @@ app.use('*', async (c, next) => {
     return withSensitiveCacheHeaders(withSecurityHeaders(canonicalResponse), c.req.raw);
   }
 
-  const crossOriginMutation = rejectCrossOriginMutation(c.req.raw, [canonicalOrigin]);
-  if (crossOriginMutation) {
-    return withSensitiveCacheHeaders(withSecurityHeaders(crossOriginMutation), c.req.raw);
+  // The /__cms plugin write-back API is a server-to-server channel authenticated
+  // by PLUGIN_SECRET, not a browser. Such callers send no Origin/Referer, which
+  // the fail-closed cross-origin guard would reject — so skip the guard here.
+  // (The secret, not browser provenance, is the authenticator for /__cms.)
+  const path = new URL(c.req.url).pathname;
+  if (!path.startsWith('/__cms/')) {
+    const crossOriginMutation = rejectCrossOriginMutation(c.req.raw, [canonicalOrigin]);
+    if (crossOriginMutation) {
+      return withSensitiveCacheHeaders(withSecurityHeaders(crossOriginMutation), c.req.raw);
+    }
   }
 
   const cspNonce = generateCspNonce();
@@ -67,6 +75,9 @@ app.route('/auth', authRoutes);
 
 // ── Admin UI (protected) ──────────────────────────────────────────────────────
 app.route('/admin', adminRoutes);
+
+// ── Plugin write-back API (F1, PLUGIN_SECRET-authenticated) ───────────────────
+app.route('/__cms', cmsApiRoutes);
 
 // ── Media files from optional R2 binding ──────────────────────────────────────
 app.get('/media-preview/*', async (c) => {
