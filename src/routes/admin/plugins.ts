@@ -13,6 +13,9 @@ import type { Env, Variables } from '../../types';
 import { pluginById, PLUGIN_ORIGIN, PLUGIN_PREFIX } from '../../plugins/registry';
 import type { AppContext } from '../../utils/context';
 import { requirePermission } from '../../middleware/auth';
+import { adminLayout } from '../../templates/layout';
+import { buildBaseProps } from '../../utils/admin-render';
+import { viewsFor } from '../../plugins/views';
 
 export const pluginAdminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -73,8 +76,27 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
     body: hasBody ? await c.req.raw.arrayBuffer() : undefined,
   });
 
-  // Give plugin documents their own CSP so (a) the CMS's strict nonce CSP
-  // isn't imposed on plugin HTML (which would break legitimate plugin
+  // Opt-in chrome: a plugin that returns an HTML *fragment* with `x-cms-chrome: 1`
+  // gets wrapped in the standard admin layout — same sidebar, fonts, and
+  // /assets/admin.css as every CMS page — so plugin admin UIs match the CMS
+  // without each plugin reinventing the shell. The wrapped page runs under the
+  // CMS's strict nonce CSP (no `unsafe-inline` scripts), which is stricter than
+  // the relaxed full-document policy below. Plugins that return a full document
+  // (no header) keep the legacy behavior.
+  const wantsChrome = upstreamResponse.headers.get('x-cms-chrome') === '1'
+    && (upstreamResponse.headers.get('content-type') ?? '').includes('text/html');
+  if (wantsChrome) {
+    const fragment = await upstreamResponse.text();
+    const title = upstreamResponse.headers.get('x-cms-title') || plugin.manifest.name || 'Plugin';
+    const base = await buildBaseProps(c);
+    const wrapped = await adminLayout(viewsFor(c.env), base, { title, body: fragment });
+    // No explicit CSP here — the global security middleware applies the strict
+    // nonce policy (matching the nonce adminLayout embeds), like any CMS page.
+    return c.html(wrapped, upstreamResponse.status as 200);
+  }
+
+  // Give full-document plugin pages their own CSP so (a) the CMS's strict nonce
+  // CSP isn't imposed on plugin HTML (which would break legitimate plugin
   // scripts) and (b) plugin pages still get baseline hardening. This is NOT
   // origin isolation — see warnSharedOrigin() — it only limits injection
   // into an otherwise-benign plugin.
