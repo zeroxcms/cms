@@ -231,15 +231,8 @@
                 {% endif %}
               </td>
               <td class="px-6 py-4">
-                <form method="POST" action="{{ page.weightAction | escape }}" class="flex min-w-0 flex-wrap items-center gap-2">
-                  <input type="hidden" name="return_to" value="{{ routeBase | escape }}?{{ queryWithoutPage | escape }}&page={{ currentPage }}">
-                  <label for="advanced_weight_{{ page.id }}" class="sr-only">Weight for {{ page.name | escape }}</label>
-                  <input id="advanced_weight_{{ page.id }}" type="number" name="weight" value="{{ page.weight }}" min="0" max="1000"
-                         class="min-w-0 w-20 max-w-full rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <button type="submit"
-                          class="shrink-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-                    Save
-                  </button>
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="text-sm text-gray-700">{{ page.weight }}</span>
                   {% if page.hasLiveWeightDrift %}
                     <span title="Live weight is {{ page.liveWeight }}; publish to sync" class="inline-flex items-center text-amber-600">
                       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -248,7 +241,7 @@
                       </svg>
                     </span>
                   {% endif %}
-                </form>
+                </div>
               </td>
               <td class="px-6 py-4">
                 <div class="flex items-center gap-2">

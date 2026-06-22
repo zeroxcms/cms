@@ -68,7 +68,6 @@ export async function advancedSearchPage(views: Fetcher, opts: BaseTemplateProps
       hasLiveWeightDrift: !!page.hasLiveWeightDrift,
       hasLiveLectDrift: !!page.hasLiveLectDrift,
       isPublished: page.isPublished,
-      weightAction: `/admin/pages/${page.id}/weight`,
       editHref: `/admin/pages/${page.id}/edit`,
       publishAction: `/admin/pages/${page.id}/publish`,
       unpublishAction: `/admin/pages/${page.id}/unpublish`,
