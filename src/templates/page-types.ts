@@ -5,7 +5,7 @@ import type { PageType } from '../types';
 export interface PageTypeListItem {
   name: string;
   slug: string;
-  /** 'db' (editable) or 'config' (read-only). */
+  /** 'db' (editable), 'config' (read-only), or 'plugin' (read-only, from a plugin). */
   source: string;
   editHref: string;
   viewHref: string;
@@ -14,7 +14,7 @@ export interface PageTypeListItem {
 
 export async function pageTypesPage(views: Fetcher, opts: BaseTemplateProps & {
   dbPageTypes: PageType[];
-  configPageTypes: Array<{ slug: string; name: string }>;
+  configPageTypes: Array<{ slug: string; name: string; source?: string }>;
   canWrite: boolean;
 }): Promise<string> {
   const { dbPageTypes, configPageTypes, canWrite } = opts;
@@ -31,7 +31,7 @@ export async function pageTypesPage(views: Fetcher, opts: BaseTemplateProps & {
     ...configPageTypes.map((pageType) => ({
       name: pageType.name,
       slug: pageType.slug,
-      source: 'config',
+      source: pageType.source ?? 'config',
       editHref: '',
       viewHref: `/admin/page_types/view/${encodeURIComponent(pageType.slug)}`,
       isDb: false,

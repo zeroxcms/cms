@@ -76,11 +76,17 @@ function nullableJsonArray(values: string[]): string | null {
 // ── List ────────────────────────────────────────────────────────────────────
 
 pageTypesRoutes.get('/page_types', async (c) => {
-  const dbPageTypes = await listDbPageTypes(c.env.DB);
+  const [dbPageTypes, resolved] = await Promise.all([
+    listDbPageTypes(c.env.DB),
+    resolveCmsConfig(c.env),
+  ]);
   const dbSlugs = new Set(dbPageTypes.map((pageType) => pageType.slug));
-  const configPageTypes = Object.keys(cmsConfig.blueprint)
+  // Read-only types = everything in the resolved config that isn't a DB row:
+  // static config-file blueprints + those contributed by active plugins.
+  const configFileSlugs = new Set(Object.keys(cmsConfig.blueprint));
+  const configPageTypes = Object.keys(resolved.blueprint)
     .filter((slug) => !dbSlugs.has(slug))
-    .map((slug) => ({ slug, name: slug }));
+    .map((slug) => ({ slug, name: slug, source: configFileSlugs.has(slug) ? 'config' : 'plugin' }));
 
   return renderPage(c, pageTypesPage, {
     dbPageTypes,
@@ -134,7 +140,9 @@ pageTypesRoutes.post('/page_types', requirePermission('pagetype:write'), async (
 
 pageTypesRoutes.get('/page_types/view/:slug', async (c) => {
   const slug = c.req.param('slug');
-  const blueprint = cmsConfig.blueprint[slug];
+  // Resolve so plugin-contributed blueprints are viewable too, not just config-file ones.
+  const config = await resolveCmsConfig(c.env);
+  const blueprint = config.blueprint[slug];
   if (!blueprint) return c.notFound();
   return renderForm(c, {
     mode: 'view',
@@ -142,8 +150,8 @@ pageTypesRoutes.get('/page_types/view/:slug', async (c) => {
     slug,
     weight: '',
     blueprint: JSON.stringify(blueprint, null, 2),
-    selectedBlocks: cmsConfig.blockLists[slug] ?? [],
-    selectedTaxonomies: cmsConfig.taxonomyLists[slug] ?? [],
+    selectedBlocks: config.blockLists[slug] ?? [],
+    selectedTaxonomies: config.taxonomyLists[slug] ?? [],
   });
 });
 
