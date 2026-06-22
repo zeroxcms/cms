@@ -519,6 +519,46 @@ describe('admin routes', () => {
     }
   });
 
+  it('preserves the page id and version history across a delete → restore cycle', async () => {
+    const cookie = await authCookie();
+
+    const deleteResponse = await fetchWorker('/admin/pages/101/delete', {
+      method: 'POST',
+      headers: { Cookie: cookie },
+    });
+    expect(deleteResponse.status).toBe(302);
+
+    // Trash keeps the original id, the current-version pointer, and the history.
+    const trashed = await env.DB.prepare('SELECT id, current_page_version_id FROM trash_pages WHERE uuid = ?')
+      .bind('page-uuid-101')
+      .first<{ id: number; current_page_version_id: number }>();
+    expect(trashed).toMatchObject({ id: 101, current_page_version_id: 501 });
+    const trashVersion = await env.DB.prepare('SELECT id, page_id FROM trash_page_versions WHERE id = ?')
+      .bind(501)
+      .first<{ id: number; page_id: number }>();
+    expect(trashVersion).toMatchObject({ id: 501, page_id: 101 });
+    // The draft copy and its versions are gone while it sits in trash.
+    expect(await env.DB.prepare('SELECT id FROM draft_pages WHERE id = ?').bind(101).first()).toBeNull();
+
+    const restoreResponse = await fetchWorker('/admin/trash/101/restore', {
+      method: 'POST',
+      headers: { Cookie: cookie },
+    });
+    expect(restoreResponse.status).toBe(302);
+
+    // Restore brings back the same id, the same current version, and the history.
+    const restored = await env.DB.prepare('SELECT id, current_page_version_id FROM draft_pages WHERE uuid = ?')
+      .bind('page-uuid-101')
+      .first<{ id: number; current_page_version_id: number }>();
+    expect(restored).toMatchObject({ id: 101, current_page_version_id: 501 });
+    const restoredVersion = await env.DB.prepare('SELECT id, page_id, action FROM page_versions WHERE id = ?')
+      .bind(501)
+      .first<{ id: number; page_id: number; action: string }>();
+    expect(restoredVersion).toMatchObject({ id: 501, page_id: 101, action: 'create' });
+    // Trash is emptied for this page.
+    expect(await env.DB.prepare('SELECT id FROM trash_pages WHERE uuid = ?').bind('page-uuid-101').first()).toBeNull();
+  });
+
   it('POST /admin/pages/import-v2/:pageType/confirm can import new rows only', async () => {
     const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
       method: 'POST',
