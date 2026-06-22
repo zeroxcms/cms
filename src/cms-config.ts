@@ -13,15 +13,13 @@ export const cmsConfig: CmsConfig = {
   defaultLanguage: 'en',
   languages: ['en', 'zh-hant'],
   blueprint: {
-    default: ['@date', 'name', 'body:text', 'link:link', { items: ['name'] }],
-    contact: ['@photo:picture', 'name', { position: ['*company', 'name', 'address', 'title'] }],
-    company: ['name', 'address'],
+    default: ['@date:date', 'name:text', 'body:textarea', 'link:link', { items: ['name'] }],
   },
   blocks: {
     default: ['@date', 'name', 'body', 'link__label', 'link__url', { items: ['name'] }],
-    label: ['subject'],
+    label: ['@key:text','subject'],
     logos: ['label', { pictures: ['url'] }],
-    paragraphs: ['subject', 'body', 'picture', 'caption', 'description'],
+    paragraphs: ['subject:text', 'body:textarea', 'picture:picture', 'caption:text', 'description:textarea'],
   },
   blockLists: {
     default: ['default', 'label', 'logos', 'paragraphs'],
