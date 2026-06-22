@@ -7,11 +7,10 @@ import { blockTypeFormPage, blockTypesPage } from '../../templates/block-types';
 import type { BlockTypeFormModel } from '../../templates/block-types';
 import { cmsConfig } from '../../cms-config';
 import type { Env, Variables, BlockType } from '../../types';
-import { num, slugify, str, userIdFromContext } from '../../utils/forms';
+import { num, slugify, str } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
-import { fetchUserAvatar } from '../../utils/admin-queries';
-import { buildBaseProps, userCan } from '../../utils/admin-render';
+import { renderPage, userCan } from '../../utils/admin-render';
 import { clearConfigCache } from '../../plugins/config';
 import { listDbBlockTypes } from '../../utils/block-type-store';
 import type { AppContext } from '../../utils/context';
@@ -58,21 +57,17 @@ async function validate(c: AppContext, values: BlockTypeFormValues, slug: string
 // ── List ────────────────────────────────────────────────────────────────────
 
 blockTypesRoutes.get('/block_types', async (c) => {
-  const [dbBlockTypes, userAvatar] = await Promise.all([
-    listDbBlockTypes(c.env.DB),
-    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
-  ]);
+  const dbBlockTypes = await listDbBlockTypes(c.env.DB);
   const dbSlugs = new Set(dbBlockTypes.map((blockType) => blockType.slug));
   const configBlockTypes = Object.keys(cmsConfig.blocks)
     .filter((slug) => !dbSlugs.has(slug))
     .map((slug) => ({ slug, name: slug }));
 
-  return c.html(await blockTypesPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, blockTypesPage, {
     dbBlockTypes,
     configBlockTypes,
     canWrite: await userCan(c, 'blocktype:write'),
-  }));
+  });
 });
 
 // ── Create ──────────────────────────────────────────────────────────────────
@@ -172,9 +167,5 @@ blockTypesRoutes.post('/block_types/:id/delete', requirePermission('blocktype:wr
 type FormModel = BlockTypeFormModel;
 
 async function renderForm(c: AppContext, model: FormModel): Promise<Response> {
-  const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
-  return c.html(await blockTypeFormPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
-    ...model,
-  }));
+  return renderPage(c, blockTypeFormPage, { ...model });
 }

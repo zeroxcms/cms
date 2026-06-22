@@ -1,4 +1,4 @@
-import { layout, navFlags } from './layout';
+import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 import type { BlockType } from '../types';
 
@@ -12,16 +12,12 @@ export interface BlockTypeListItem {
   isDb: boolean;
 }
 
-export async function blockTypesPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
+export async function blockTypesPage(views: Fetcher, opts: BaseTemplateProps & {
   dbBlockTypes: BlockType[];
   configBlockTypes: Array<{ slug: string; name: string }>;
   canWrite: boolean;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, dbBlockTypes, configBlockTypes, canWrite } = opts;
+  const { dbBlockTypes, configBlockTypes, canWrite } = opts;
 
   const items: BlockTypeListItem[] = [
     ...dbBlockTypes.map((blockType) => ({
@@ -48,16 +44,7 @@ export async function blockTypesPage(views: Fetcher, opts: {
     canWrite,
   });
 
-  return layout(views, {
-    ...navFlags(opts),
-    title: 'Block Types',
-    siteTitle,
-    body,
-    admin: true,
-    userName,
-    userRole,
-    userAvatar,
-  });
+  return adminLayout(views, opts, { title: 'Block Types', body });
 }
 
 export interface BlockTypeFormModel {
@@ -70,13 +57,8 @@ export interface BlockTypeFormModel {
   blueprint: string;
 }
 
-export async function blockTypeFormPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
-} & BlockTypeFormModel): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, mode, id, error } = opts;
+export async function blockTypeFormPage(views: Fetcher, opts: BaseTemplateProps & BlockTypeFormModel): Promise<string> {
+  const { mode, id, error } = opts;
   const readOnly = mode === 'view';
   const isEdit = mode === 'edit';
   const heading = mode === 'view' ? 'View Block Type' : mode === 'edit' ? 'Edit Block Type' : 'New Block Type';
@@ -95,14 +77,5 @@ export async function blockTypeFormPage(views: Fetcher, opts: {
     weight: opts.weight,
   });
 
-  return layout(views, {
-    ...navFlags(opts),
-    title: heading,
-    siteTitle,
-    body,
-    admin: true,
-    userName,
-    userRole,
-    userAvatar,
-  });
+  return adminLayout(views, opts, { title: heading, body });
 }

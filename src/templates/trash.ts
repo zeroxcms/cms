@@ -1,16 +1,12 @@
-import { layout, navFlags } from './layout';
+import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 import type { Page } from '../types';
 
-export async function trashPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
+export async function trashPage(views: Fetcher, opts: BaseTemplateProps & {
   pages: Page[];
   flash?: string;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, pages, flash } = opts;
+  const { pages, flash } = opts;
   const pageCount = pages.length;
   const body = await renderView(views, '/templates/trash.json', {
     flash,
@@ -28,14 +24,5 @@ export async function trashPage(views: Fetcher, opts: {
     })),
   });
 
-  return layout(views, {
-    ...navFlags(opts),
-    title: 'Trash',
-    siteTitle,
-    body,
-    admin: true,
-    userName,
-    userRole,
-    userAvatar,
-  });
+  return adminLayout(views, opts, { title: 'Trash', body });
 }

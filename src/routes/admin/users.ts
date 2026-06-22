@@ -4,11 +4,9 @@
 import { Hono } from 'hono';
 import { usersPage, userFormPage } from '../../templates/users';
 import type { Env, Variables, User } from '../../types';
-import { userIdFromContext } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
-import { fetchUserAvatar } from '../../utils/admin-queries';
-import { buildBaseProps } from '../../utils/admin-render';
+import { renderPage } from '../../utils/admin-render';
 import { allRoleOptions } from '../../utils/role-store';
 import { ROLE_LABELS } from '../../utils/roles';
 import type { AppContext } from '../../utils/context';
@@ -29,13 +27,11 @@ function rolesLabel(role: string, options: Array<{ name: string; label: string }
 }
 
 usersRoutes.get('/users', async (c) => {
-  const [users, userAvatar, options] = await Promise.all([
+  const [users, options] = await Promise.all([
     c.env.DB.prepare('SELECT id, name, email, role FROM users ORDER BY name ASC, email ASC').all<User>(),
-    fetchUserAvatar(c.env.DB, userIdFromContext(c)),
     allRoleOptions(c.env),
   ]);
-  return c.html(await usersPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, usersPage, {
     users: users.results.map((user) => ({
       id: user.id,
       name: user.name,
@@ -43,7 +39,7 @@ usersRoutes.get('/users', async (c) => {
       rolesLabel: rolesLabel(user.role, options),
       editHref: `/admin/users/${user.id}/edit`,
     })),
-  }));
+  });
 });
 
 usersRoutes.get('/users/:id/edit', async (c) => {
@@ -85,15 +81,13 @@ usersRoutes.post('/users/:id', requirePermission('users:manage'), async (c) => {
 });
 
 async function userForm(c: AppContext, user: User, error?: string): Promise<Response> {
-  const userAvatar = await fetchUserAvatar(c.env.DB, userIdFromContext(c));
   const options = await allRoleOptions(c.env);
   const held = new Set(user.role.split(',').map((role) => role.trim()).filter(Boolean));
-  return c.html(await userFormPage(c.env.VIEWS, {
-    ...(await buildBaseProps(c, userAvatar)),
+  return renderPage(c, userFormPage, {
     id: user.id,
     name: user.name,
     email: user.email,
     error,
     roleOptions: options.map((option) => ({ value: option.name, label: option.label, checked: held.has(option.name) })),
-  }));
+  });
 }

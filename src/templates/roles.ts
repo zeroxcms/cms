@@ -1,4 +1,4 @@
-import { layout, navFlags } from './layout';
+import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 
 export interface RoleListItem {
@@ -11,27 +11,18 @@ export interface RoleListItem {
   canDelete: boolean;
 }
 
-export async function rolesPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
+export async function rolesPage(views: Fetcher, opts: BaseTemplateProps & {
   roles: RoleListItem[];
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, roles } = opts;
+  const { roles } = opts;
   const body = await renderView(views, '/templates/roles.json', {
     hasRoles: roles.length > 0,
     roles,
   });
-  return layout(views, {
-    ...navFlags(opts), title: 'Roles', siteTitle, body, admin: true, userName, userRole, userAvatar });
+  return adminLayout(views, opts, { title: 'Roles', body });
 }
 
-export async function roleFormPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
+export async function roleFormPage(views: Fetcher, opts: BaseTemplateProps & {
   isNew: boolean;
   name: string;
   label: string;
@@ -41,7 +32,7 @@ export async function roleFormPage(views: Fetcher, opts: {
   error?: string;
   permissionOptions: Array<{ value: string; label: string; checked: boolean }>;
 }): Promise<string> {
-  const { siteTitle, userName, userRole, userAvatar, isNew, name, label, builtin, locked, error, permissionOptions } = opts;
+  const { isNew, name, label, builtin, locked, error, permissionOptions } = opts;
   const heading = isNew ? 'New Role' : locked ? `View Role: ${label}` : `Edit Role: ${label}`;
   const body = await renderView(views, '/templates/role-form.json', {
     isNew,
@@ -57,6 +48,5 @@ export async function roleFormPage(views: Fetcher, opts: {
     hasError: !!error,
     permissionOptions,
   });
-  return layout(views, {
-    ...navFlags(opts), title: heading, siteTitle, body, admin: true, userName, userRole, userAvatar });
+  return adminLayout(views, opts, { title: heading, body });
 }

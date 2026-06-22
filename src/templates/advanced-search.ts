@@ -1,4 +1,4 @@
-import { layout, navFlags } from './layout';
+import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 import type { DashboardPage } from './dashboard';
 
@@ -21,11 +21,7 @@ interface AdvancedSearchCriterionView {
   tagGroups: AdvancedSearchTagGroup[];
 }
 
-export async function advancedSearchPage(views: Fetcher, opts: {
-  siteTitle: string;
-  userName: string;
-  userRole: string;
-  userAvatar: string;
+export async function advancedSearchPage(views: Fetcher, opts: BaseTemplateProps & {
   pageTitle: string;
   pageType: string;
   canSelectPageType: boolean;
@@ -80,14 +76,5 @@ export async function advancedSearchPage(views: Fetcher, opts: {
     })),
   });
 
-  return layout(views, {
-    ...navFlags(opts),
-    title: opts.pageTitle,
-    siteTitle: opts.siteTitle,
-    body,
-    admin: true,
-    userName: opts.userName,
-    userRole: opts.userRole,
-    userAvatar: opts.userAvatar,
-  });
+  return adminLayout(views, opts, { title: opts.pageTitle, body });
 }
