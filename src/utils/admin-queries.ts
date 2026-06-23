@@ -106,9 +106,17 @@ export async function trashDraftPage(db: D1Database, pageId: number): Promise<Pa
   const page = await db.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(pageId).first<Page>();
   if (!page) return null;
 
+  // trash_pages.page_id only accepts a parent that is itself in trash. A child
+  // can be deleted while its parent remains live, so retain its original parent
+  // separately and leave the trash relation empty in that case.
+  const trashParent = page.page_id == null
+    ? null
+    : await db.prepare('SELECT id FROM trash_pages WHERE id = ?').bind(page.page_id).first<{ id: number }>();
+  const trashParentId = trashParent?.id ?? null;
+
   await db.prepare(
-    `INSERT INTO trash_pages (id, uuid, name, slug, weight, start, end, page_type, current_page_version_id, lect, page_id, creator, editors)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO trash_pages (id, uuid, name, slug, weight, start, end, page_type, current_page_version_id, lect, page_id, source_page_id, creator, editors)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
        name = excluded.name,
        slug = excluded.slug,
@@ -119,6 +127,7 @@ export async function trashDraftPage(db: D1Database, pageId: number): Promise<Pa
        current_page_version_id = excluded.current_page_version_id,
        lect = excluded.lect,
        page_id = excluded.page_id,
+       source_page_id = excluded.source_page_id,
        creator = excluded.creator,
        editors = excluded.editors`,
   )
@@ -133,6 +142,7 @@ export async function trashDraftPage(db: D1Database, pageId: number): Promise<Pa
       page.page_type,
       page.current_page_version_id ?? null,
       page.lect,
+      trashParentId,
       page.page_id,
       page.creator,
       page.editors,
@@ -204,4 +214,3 @@ export async function listDashboardDraftPages(
     },
   };
 }
-

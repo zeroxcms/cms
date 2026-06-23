@@ -99,6 +99,8 @@ export interface Page {
   current_page_version_id?: number | null;
   lect: string | null;
   page_id: number | null;
+  /** Original draft parent id retained while a child page sits in trash. */
+  source_page_id?: number | null;
   creator: number | null;
   editors: string | null;
 }

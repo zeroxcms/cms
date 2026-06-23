@@ -33,6 +33,12 @@ trashRoutes.post('/trash/:id/restore', requirePermission('trash:restore'), async
     .first<Page>();
   if (!trashedPage) return c.notFound();
 
+  const originalParentId = trashedPage.source_page_id ?? trashedPage.page_id;
+  const draftParent = originalParentId == null
+    ? null
+    : await c.env.DB.prepare('SELECT id FROM draft_pages WHERE id = ?').bind(originalParentId).first<{ id: number }>();
+  const restoredParentId = draftParent?.id ?? null;
+
   // Restore into draft, preserving the original id and current-version pointer
   // so the page keeps the same identity it had before being trashed.
   await c.env.DB.prepare(
@@ -62,7 +68,7 @@ trashRoutes.post('/trash/:id/restore', requirePermission('trash:restore'), async
       trashedPage.page_type,
       trashedPage.current_page_version_id ?? null,
       trashedPage.lect,
-      trashedPage.page_id,
+      restoredParentId,
       trashedPage.creator,
       trashedPage.editors,
     )

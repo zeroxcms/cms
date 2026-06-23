@@ -12,7 +12,7 @@ const testEnv = env as unknown as Record<string, unknown>;
 const PLUGIN_ID = 'events';
 const PLUGIN_SECRET = 'test-plugin-secret-value';
 
-// Manifest the F1 scope derives from: this plugin owns `event` and `guest`.
+// Manifest the F1 scope derives from: this plugin owns the event RSVP types.
 const MANIFEST = {
   id: PLUGIN_ID,
   name: 'Events Suite',
@@ -22,6 +22,7 @@ const MANIFEST = {
     blueprint: {
       event: ['@start', '@end', 'name:text/title', 'location'],
       guest: ['@email:email', '@status', '@rsvp_code', 'name', 'last_name'],
+      mail_list: ['*event'],
     },
   },
 };
@@ -61,8 +62,8 @@ beforeEach(async () => {
   clearManifestCache();
   __clearInjectedFetchers();
   await env.DB.prepare('DELETE FROM plugins').run();
-  await env.DB.prepare("DELETE FROM draft_pages WHERE page_type IN ('event','guest')").run();
-  await env.DB.prepare("DELETE FROM trash_pages WHERE page_type IN ('event','guest')").run();
+  await env.DB.prepare("DELETE FROM draft_pages WHERE page_type IN ('event','guest','mail_list')").run();
+  await env.DB.prepare("DELETE FROM trash_pages WHERE page_type IN ('event','guest','mail_list')").run();
   savedSecret = testEnv.PLUGIN_SECRET;
   testEnv.PLUGIN_SECRET = PLUGIN_SECRET;
   await registerPlugin();
@@ -216,6 +217,22 @@ describe('F1 create / read / list / update / delete', () => {
     expect(draft).toBeNull();
     const trashed = await env.DB.prepare('SELECT id FROM trash_pages WHERE uuid = ?').bind(created.uuid).first();
     expect(trashed).not.toBeNull();
+  });
+
+  it('deletes a mail list while its event remains live', async () => {
+    const event = (await (await cmsApi('POST', '/__cms/pages', { page_type: 'event', name: 'Gala' })).json() as { page: { id: number } }).page;
+    const list = (await (await cmsApi('POST', '/__cms/pages', {
+      page_type: 'mail_list', name: 'VIP', page_id: event.id,
+    })).json() as { page: { id: number } }).page;
+
+    const deleteRes = await cmsApi('DELETE', `/__cms/pages/${list.id}`);
+    expect(deleteRes.status).toBe(200);
+
+    const trashed = await env.DB.prepare('SELECT page_id, source_page_id FROM trash_pages WHERE id = ?')
+      .bind(list.id)
+      .first<{ page_id: number | null; source_page_id: number | null }>();
+    expect(trashed).toEqual({ page_id: null, source_page_id: event.id });
+    expect(await env.DB.prepare('SELECT id FROM draft_pages WHERE id = ?').bind(event.id).first()).not.toBeNull();
   });
 });
 
