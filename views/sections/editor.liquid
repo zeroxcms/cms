@@ -100,6 +100,17 @@
                    value="{{ page.end | escape }}"
                    class="min-w-0 flex-1 border-b border-transparent bg-transparent p-0 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none">
           </label>
+          <label for="timezone" class="flex min-w-0 items-center gap-2 sm:col-span-2">
+            <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span class="shrink-0 text-xs text-gray-500">Timezone:</span>
+            <input type="text" id="timezone" name="timezone"
+                   value="{{ page.timezone | escape }}"
+                   placeholder="+0800"
+                   class="min-w-0 flex-1 border-b border-transparent bg-transparent p-0 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none">
+          </label>
         </div>
 </div>
 

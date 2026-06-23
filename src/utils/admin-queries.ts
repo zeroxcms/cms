@@ -115,14 +115,15 @@ export async function trashDraftPage(db: D1Database, pageId: number): Promise<Pa
   const trashParentId = trashParent?.id ?? null;
 
   await db.prepare(
-    `INSERT INTO trash_pages (id, uuid, name, slug, weight, start, end, page_type, current_page_version_id, lect, page_id, source_page_id, creator, editors)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO trash_pages (id, uuid, name, slug, weight, start, end, timezone, page_type, current_page_version_id, lect, page_id, source_page_id, creator, editors)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
        name = excluded.name,
        slug = excluded.slug,
        weight = excluded.weight,
        start = excluded.start,
        end = excluded.end,
+       timezone = excluded.timezone,
        page_type = excluded.page_type,
        current_page_version_id = excluded.current_page_version_id,
        lect = excluded.lect,
@@ -139,6 +140,7 @@ export async function trashDraftPage(db: D1Database, pageId: number): Promise<Pa
       page.weight,
       page.start,
       page.end,
+      page.timezone,
       page.page_type,
       page.current_page_version_id ?? null,
       page.lect,

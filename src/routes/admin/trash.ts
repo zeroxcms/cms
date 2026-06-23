@@ -42,14 +42,15 @@ trashRoutes.post('/trash/:id/restore', requirePermission('trash:restore'), async
   // Restore into draft, preserving the original id and current-version pointer
   // so the page keeps the same identity it had before being trashed.
   await c.env.DB.prepare(
-    `INSERT INTO draft_pages (id, uuid, name, slug, weight, start, end, page_type, current_page_version_id, lect, page_id, creator, editors)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO draft_pages (id, uuid, name, slug, weight, start, end, timezone, page_type, current_page_version_id, lect, page_id, creator, editors)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(uuid) DO UPDATE SET
        name = excluded.name,
        slug = excluded.slug,
        weight = excluded.weight,
        start = excluded.start,
        end = excluded.end,
+       timezone = excluded.timezone,
        page_type = excluded.page_type,
        current_page_version_id = excluded.current_page_version_id,
        lect = excluded.lect,
@@ -65,6 +66,7 @@ trashRoutes.post('/trash/:id/restore', requirePermission('trash:restore'), async
       trashedPage.weight,
       trashedPage.start,
       trashedPage.end,
+      trashedPage.timezone,
       trashedPage.page_type,
       trashedPage.current_page_version_id ?? null,
       trashedPage.lect,

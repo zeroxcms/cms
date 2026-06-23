@@ -86,6 +86,7 @@ export function r2Adapter(bucket: R2Bucket, prefix = ''): PublishAdapter {
         weight: page.weight,
         start: page.start,
         end: page.end,
+        timezone: page.timezone,
         page_type: page.page_type,
         lect: safeParseLect(page.lect),
         tags: tags.map((tag) => ({ uuid: tag.uuid, tag_id: tag.tag_id, weight: tag.weight, slug: tag.slug, name: tag.name })),

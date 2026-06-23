@@ -23,6 +23,7 @@ const PAGE: Page = {
   weight: 5,
   start: null,
   end: null,
+  timezone: null,
   page_type: 'default',
   lect: JSON.stringify({ name: { en: 'Hello' } }),
   page_id: null,

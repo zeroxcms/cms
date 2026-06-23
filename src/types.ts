@@ -95,6 +95,8 @@ export interface Page {
   weight: number;
   start: string | null;
   end: string | null;
+  /** IANA timezone name (e.g. 'Asia/Hong_Kong') for the start/end window. */
+  timezone: string | null;
   page_type: string | null;
   current_page_version_id?: number | null;
   lect: string | null;
@@ -299,6 +301,9 @@ export interface Env {
   OAUTH_REDIRECT_URI: string;
   CANONICAL_ORIGIN?: string;
   SITE_TITLE: string;
+  /** Default timezone for a page's start/end window when none is set.
+   *  UTC offset (e.g. "+0800") or IANA name. Falls back to "+0800". */
+  DEFAULT_TIMEZONE?: string;
   /**
    * Optional comma-separated email-domain allowlist for new sign-ups,
    * e.g. "cowise.co,eventuai.com". Unset = open registration (viewer role).

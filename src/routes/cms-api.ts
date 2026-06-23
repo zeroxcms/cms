@@ -53,6 +53,7 @@ interface ApiPage {
   weight: number;
   start: string | null;
   end: string | null;
+  timezone: string | null;
   page_id: number | null;
   created_at: string;
   updated_at: string;
@@ -77,6 +78,7 @@ interface PageInput {
   weight?: unknown;
   start?: unknown;
   end?: unknown;
+  timezone?: unknown;
   page_id?: unknown;
   tags?: unknown;
 }
@@ -125,6 +127,7 @@ function serializePage(page: Page): ApiPage {
     weight: page.weight,
     start: page.start,
     end: page.end,
+    timezone: page.timezone,
     page_id: page.page_id,
     created_at: page.created_at,
     updated_at: page.updated_at,
@@ -226,13 +229,14 @@ async function createPage(
   const weight = asFiniteNumber(input.weight) ?? 5;
   const start = typeof input.start === 'string' ? input.start : null;
   const end = typeof input.end === 'string' ? input.end : null;
+  const timezone = typeof input.timezone === 'string' ? input.timezone : (c.env.DEFAULT_TIMEZONE ?? '+0800');
   const parentId = asFiniteNumber(input.page_id);
 
   const result = await c.env.DB.prepare(
-    `INSERT INTO draft_pages (name, slug, weight, start, end, page_type, lect, page_id, creator)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO draft_pages (name, slug, weight, start, end, timezone, page_type, lect, page_id, creator)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(name, slug, weight, start, end, pageType, lect, parentId, null)
+    .bind(name, slug, weight, start, end, timezone, pageType, lect, parentId, null)
     .run();
 
   // Custom DEFAULT id expression means last_row_id is the rowid; SELECT the id back.
@@ -406,12 +410,13 @@ async function updatePage(c: AppContext): Promise<Response> {
   const weight = asFiniteNumber(body.weight) ?? page.weight;
   const start = 'start' in body ? (typeof body.start === 'string' ? body.start : null) : page.start;
   const end = 'end' in body ? (typeof body.end === 'string' ? body.end : null) : page.end;
+  const timezone = 'timezone' in body ? (typeof body.timezone === 'string' ? body.timezone : null) : page.timezone;
   const parentId = 'page_id' in body ? asFiniteNumber(body.page_id) : page.page_id;
 
   await c.env.DB.prepare(
-    'UPDATE draft_pages SET name=?, slug=?, weight=?, start=?, end=?, lect=?, page_id=? WHERE id=?',
+    'UPDATE draft_pages SET name=?, slug=?, weight=?, start=?, end=?, timezone=?, lect=?, page_id=? WHERE id=?',
   )
-    .bind(name, slug, weight, start, end, lectVal, parentId, id)
+    .bind(name, slug, weight, start, end, timezone, lectVal, parentId, id)
     .run();
 
   const versionId = await savePageVersion(c.env.DB, id, lectVal, 'update');

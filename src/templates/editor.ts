@@ -414,6 +414,8 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
   flash?: string;
   action: string;
   defaultPageType?: string;
+  /** Timezone pre-filled into the start/end window when the page has none. */
+  defaultTimezone?: string;
   structured?: {
     config: CmsConfig;
     language: string;
@@ -440,6 +442,7 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
     flash,
     action,
     defaultPageType = '',
+    defaultTimezone = '',
     structured,
   } = opts;
 
@@ -493,6 +496,7 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
       weight: page?.weight ?? 5,
       start: page?.start ? page.start.replace(' ', 'T').slice(0, 16) : '',
       end: page?.end ? page.end.replace(' ', 'T').slice(0, 16) : '',
+      timezone: page?.timezone ?? defaultTimezone,
       creator: page?.creator ?? '',
       editors: page?.editors ?? '',
       editorChips: pageEditorChips,

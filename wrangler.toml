@@ -80,6 +80,9 @@ GITHUB_CLIENT_ID = "Ov23lis6jG7x2nBmbFM1"
 OAUTH_REDIRECT_URI = "https://cms.eventuai.com/auth/callback"
 CANONICAL_ORIGIN = "https://cms.eventuai.com"
 SITE_TITLE = "Worker CMS"
+# Default timezone applied to a page's start/end window when none is set.
+# UTC offset (e.g. "+0800") or an IANA name (e.g. "Asia/Hong_Kong").
+DEFAULT_TIMEZONE = "+0800"
 # Optional: restrict new sign-ups to these email domains (comma-separated).
 # Existing users always keep access. Unset = open registration (viewer role).
 # ALLOWED_EMAIL_DOMAINS = "cowise.co"

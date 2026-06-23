@@ -226,6 +226,7 @@ pagesRoutes.get('/pages/new', async (c) => {
     selectedTagIds: [],
     action: '/admin/pages',
     defaultPageType: pageType,
+    defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
     structured: {
       config,
       language,
@@ -265,6 +266,7 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
         errors,
         action: '/admin/pages',
         defaultPageType: pageType,
+        defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
         structured: {
           config,
           language,
@@ -288,6 +290,7 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
   const pageTypeVal = nullableStr(form.get('page_type')) ?? 'default';
   const startVal = nullableStr(form.get('start'));
   const endVal = nullableStr(form.get('end'));
+  const timezoneVal = nullableStr(form.get('timezone')) ?? c.env.DEFAULT_TIMEZONE ?? '+0800';
   const pageIdVal = nullableStr(form.get('page_id'));
   const weightVal = num(form.get('weight'));
   const creator = userIdFromContext(c);
@@ -308,8 +311,8 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
   // Insert page
   const uniqueSlug = await ensureUniqueDraftSlug(c.env.DB, slug);
   const pageResult = await c.env.DB.prepare(
-    `INSERT INTO draft_pages (name, slug, weight, start, end, page_type, lect, page_id, creator, editors)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO draft_pages (name, slug, weight, start, end, timezone, page_type, lect, page_id, creator, editors)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       name,
@@ -317,6 +320,7 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
       weightVal,
       startVal,
       endVal,
+      timezoneVal,
       pageTypeVal,
       lectVal,
       pageIdVal ? parseInt(pageIdVal, 10) : null,
@@ -411,6 +415,7 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
     selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
     flash: flash || undefined,
     action: `/admin/pages/${pageId}`,
+    defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
     structured: {
       config,
       language,
@@ -502,6 +507,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
         selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
         errors,
         action: `/admin/pages/${pageId}`,
+        defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
         structured: {
           config,
           language,
@@ -519,6 +525,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
   const pageTypeVal = nullableStr(form.get('page_type')) ?? page.page_type ?? 'default';
   const startVal = nullableStr(form.get('start'));
   const endVal = nullableStr(form.get('end'));
+  const timezoneVal = nullableStr(form.get('timezone'));
   const pageIdVal = nullableStr(form.get('page_id'));
   const weightVal = num(form.get('weight'));
   const editorsVal = editorsFromForm(form);
@@ -534,7 +541,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
   // Update page metadata
   const uniqueSlug = await ensureUniqueDraftSlug(c.env.DB, slug, pageId);
   await c.env.DB.prepare(
-    `UPDATE draft_pages SET name=?, slug=?, weight=?, start=?, end=?, page_type=?, lect=?, page_id=?, editors=? WHERE id=?`,
+    `UPDATE draft_pages SET name=?, slug=?, weight=?, start=?, end=?, timezone=?, page_type=?, lect=?, page_id=?, editors=? WHERE id=?`,
   )
     .bind(
       name,
@@ -542,6 +549,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
       weightVal,
       startVal,
       endVal,
+      timezoneVal,
       pageTypeVal,
       lectVal,
       pageIdVal ? parseInt(pageIdVal, 10) : null,

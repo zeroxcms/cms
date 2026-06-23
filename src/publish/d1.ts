@@ -13,14 +13,15 @@ export function d1Adapter(publishedDb: D1Database): PublishAdapter {
     async publish(snapshot: PublishSnapshot): Promise<void> {
       const { page, tags } = snapshot;
       await publishedDb.prepare(
-        `INSERT INTO live_pages (uuid, name, slug, weight, start, end, page_type, lect, page_id, creator, editors)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO live_pages (uuid, name, slug, weight, start, end, timezone, page_type, lect, page_id, creator, editors)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(uuid) DO UPDATE SET
            name = excluded.name,
            slug = excluded.slug,
            weight = excluded.weight,
            start = excluded.start,
            end = excluded.end,
+           timezone = excluded.timezone,
            page_type = excluded.page_type,
            lect = excluded.lect,
            page_id = excluded.page_id,
@@ -34,6 +35,7 @@ export function d1Adapter(publishedDb: D1Database): PublishAdapter {
           page.weight,
           page.start,
           page.end,
+          page.timezone,
           page.page_type,
           page.lect,
           page.page_id,

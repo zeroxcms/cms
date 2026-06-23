@@ -62,6 +62,7 @@ export interface BulkImportedPagePayload {
   weight: number;
   start: string | null;
   end: string | null;
+  timezone: string | null;
   page_type: string;
   lect: string;
   creator: number | null;
@@ -343,6 +344,7 @@ export function exportHeaders(pathColumns: CsvPathSpec[], taxonomies: Taxonomy[]
     'weight',
     'start',
     'end',
+    'timezone',
     'page_type',
     ...pathColumns.map((spec) => spec.header),
     ...taxonomies.map((taxonomy) => `tag:${taxonomy.name}`),
@@ -388,6 +390,7 @@ export async function exportPagesCsv(db: D1Database, pages: Page[], pageTypes: s
       String(page.weight ?? ''),
       page.start ?? '',
       page.end ?? '',
+      page.timezone ?? '',
       page.page_type ?? '',
       ...pathColumns.map((spec) => getCsvLectValue(lect, spec)),
       ...taxonomy.taxonomies.map((taxonomy) => (tagGroups[taxonomy.name] ?? []).join('; ')),
@@ -541,6 +544,7 @@ function prepareImportedPage(
       weight: row.weight ? num(row.weight) : 5,
       start: row.start?.trim() || null,
       end: row.end?.trim() || null,
+      timezone: row.timezone?.trim() || null,
       page_type: pageType,
       lect: stringifyLect(withDraftMetadata(lect, userId)),
       creator: userId || null,
@@ -566,13 +570,14 @@ async function bulkCreateImportedPages(
            CAST(json_extract(value, '$.weight') AS INTEGER) AS weight,
            json_extract(value, '$.start') AS start,
            json_extract(value, '$.end') AS end,
+           json_extract(value, '$.timezone') AS timezone,
            json_extract(value, '$.page_type') AS page_type,
            json_extract(value, '$.lect') AS lect,
            CAST(json_extract(value, '$.creator') AS INTEGER) AS creator
          FROM json_each(?)
        )
-       INSERT INTO draft_pages (id, name, slug, weight, start, end, page_type, current_page_version_id, lect, creator)
-       SELECT id, name, slug, weight, start, end, page_type, version_id, lect, creator
+       INSERT INTO draft_pages (id, name, slug, weight, start, end, timezone, page_type, current_page_version_id, lect, creator)
+       SELECT id, name, slug, weight, start, end, timezone, page_type, version_id, lect, creator
        FROM incoming`,
     )
       .bind(payload)
@@ -741,6 +746,7 @@ async function updateImportedPage(
   let weight = existing.weight ?? 5;
   let start = existing.start;
   let end = existing.end;
+  let timezone = existing.timezone;
 
   if (mode === 'append') {
     if (csvCellHasValue(row.name) && !existing.name?.trim()) {
@@ -761,6 +767,10 @@ async function updateImportedPage(
     }
     if (csvCellHasValue(row.end) && !existing.end) {
       end = row.end.trim();
+      changed = true;
+    }
+    if (csvCellHasValue(row.timezone) && !existing.timezone) {
+      timezone = row.timezone.trim();
       changed = true;
     }
   } else {
@@ -784,6 +794,10 @@ async function updateImportedPage(
       end = row.end?.trim() || null;
       changed = true;
     }
+    if (hasCsvColumn(row, 'timezone')) {
+      timezone = row.timezone?.trim() || null;
+      changed = true;
+    }
   }
 
   lect._type = pageType;
@@ -793,9 +807,9 @@ async function updateImportedPage(
 
   if (changed) {
     await db.prepare(
-      `UPDATE draft_pages SET name = ?, slug = ?, weight = ?, start = ?, end = ?, lect = ? WHERE id = ?`,
+      `UPDATE draft_pages SET name = ?, slug = ?, weight = ?, start = ?, end = ?, timezone = ?, lect = ? WHERE id = ?`,
     )
-      .bind(name, slug, weight, start, end, lectValue, existing.id)
+      .bind(name, slug, weight, start, end, timezone, lectValue, existing.id)
       .run();
     const versionId = await savePageVersion(db, existing.id, lectValue, 'import');
     await db.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
