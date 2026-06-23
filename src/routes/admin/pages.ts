@@ -227,6 +227,7 @@ pagesRoutes.get('/pages/new', async (c) => {
     action: '/admin/pages',
     defaultPageType: pageType,
     defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
+    backHref: safeAdminReturnPath(c.req.query('return_to')),
     structured: {
       config,
       language,
@@ -249,6 +250,7 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
   const slug = str(form.get('slug'));
   const errors = validatePageBasics(name, slug);
   const config = await resolveCmsConfig(c.env);
+  const backHref = safeAdminReturnPath(form.get('return_to'));
 
   if (errors.length) {
     const pageType = nullableStr(form.get('page_type')) ?? 'default';
@@ -267,6 +269,7 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
         action: '/admin/pages',
         defaultPageType: pageType,
         defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
+        backHref,
         structured: {
           config,
           language,
@@ -358,7 +361,8 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
 
   dispatchHook(c, 'create', { id: pageId, page_type: pageTypeVal, name, slug: uniqueSlug });
 
-  return c.redirect('/admin?flash=Page+created+successfully');
+  const createdFlash = 'flash=Page+created+successfully';
+  return c.redirect(`${backHref}${backHref.includes('?') ? '&' : '?'}${createdFlash}`);
 });
 
 // ── Edit page form ────────────────────────────────────────────────────────────
@@ -368,6 +372,7 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
   const language = languageFromRequest(c);
   const requestedVersionId = parseInt(c.req.query('version') ?? '', 10);
   const flash = c.req.query('flash') ?? '';
+  const backHref = safeAdminReturnPath(c.req.query('return_to'));
 
   const [page, taxonomy] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(pageId).first<Page>(),
@@ -415,6 +420,7 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
     selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
     flash: flash || undefined,
     action: `/admin/pages/${pageId}`,
+    backHref,
     defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
     structured: {
       config,
@@ -451,6 +457,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
   const form = await c.req.formData();
   const language = languageFromRequest(c, form);
   const action = str(form.get('action'));
+  const backHref = safeAdminReturnPath(form.get('return_to'));
 
   const name = str(form.get('name'));
   const slug = str(form.get('slug'));
@@ -507,6 +514,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
         selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
         errors,
         action: `/admin/pages/${pageId}`,
+        backHref,
         defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
         structured: {
           config,
@@ -596,13 +604,17 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
     return c.redirect(`/admin?flash=${publishFlash(outcome)}`);
   }
 
+  // Preserve where the editor returns to (e.g. a plugin dashboard) across saves,
+  // so the back arrow / Cancel button still point there after a save reload.
+  const returnToParam = backHref !== '/admin' ? `&return_to=${encodeURIComponent(backHref)}` : '';
+
   if (isStructuredEditorAction(action)) {
-    return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}`);
+    return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}${returnToParam}`);
   }
 
   dispatchHook(c, 'update', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug: uniqueSlug });
 
-  return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}&flash=Page+updated+successfully`);
+  return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}&flash=Page+updated+successfully${returnToParam}`);
 });
 
 // ── Publish (DRAFT → PUBLISHED) ───────────────────────────────────────────────

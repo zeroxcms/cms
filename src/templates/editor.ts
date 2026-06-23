@@ -416,6 +416,8 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
   defaultPageType?: string;
   /** Timezone pre-filled into the start/end window when the page has none. */
   defaultTimezone?: string;
+  /** Where the back arrow / Cancel button return to (e.g. a plugin dashboard). Defaults to /admin. */
+  backHref?: string;
   structured?: {
     config: CmsConfig;
     language: string;
@@ -443,6 +445,7 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
     action,
     defaultPageType = '',
     defaultTimezone = '',
+    backHref = '/admin',
     structured,
   } = opts;
 
@@ -473,6 +476,7 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
   const body = await renderView(views, '/templates/editor.json', {
     pageTitle,
     action,
+    backHref,
     deleteAction: page ? `/admin/pages/${page.id}/delete` : '',
     isEdit,
     isVersionPreview: !!selectedVersion,
