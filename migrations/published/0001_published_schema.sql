@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS live_pages(
     weight INTEGER DEFAULT 5,
     start DATETIME,
     end DATETIME,
+    -- IANA tz name or UTC offset (e.g. 'Asia/Hong_Kong', '+0800') for start/end.
+    timezone TEXT,
     page_type TEXT,
     lect TEXT,
     page_id INTEGER,

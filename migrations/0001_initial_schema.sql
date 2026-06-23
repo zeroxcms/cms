@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS draft_pages(
     weight INTEGER DEFAULT 5,
     start DATETIME,
     end DATETIME,
+    -- IANA tz name or UTC offset (e.g. 'Asia/Hong_Kong', '+0800') for start/end.
+    timezone TEXT,
     page_type TEXT,
     current_page_version_id INTEGER,
     lect TEXT,
@@ -85,9 +87,16 @@ CREATE TABLE IF NOT EXISTS trash_pages(
     weight INTEGER DEFAULT 5,
     start DATETIME,
     end DATETIME,
+    -- IANA tz name or UTC offset (e.g. 'Asia/Hong_Kong', '+0800') for start/end.
+    timezone TEXT,
     page_type TEXT,
+    -- Current-version pointer preserved while the page sits in trash.
+    current_page_version_id INTEGER,
     lect TEXT,
     page_id INTEGER,
+    -- Original draft parent id, retained so a trashed child can be restored
+    -- under a parent that remains live (page_id references another trash row).
+    source_page_id INTEGER,
     creator INTEGER,
     editors TEXT,
     FOREIGN KEY (page_id) REFERENCES trash_pages (id) ON DELETE CASCADE
@@ -214,6 +223,42 @@ CREATE TABLE IF NOT EXISTS role_permissions(
     PRIMARY KEY (role, permission)
 );
 
+-- 16. Trash Page Versions – mirrors page_versions for trashed pages so deleting
+--     a page no longer loses its history and a restore brings every version back.
+CREATE TABLE IF NOT EXISTS trash_page_versions(
+    id INTEGER UNIQUE DEFAULT ((( strftime('%s','now') - 1563741060 ) * 100000) + (RANDOM() & 65535)) NOT NULL,
+    uuid TEXT UNIQUE DEFAULT (lower(hex( randomblob(4)) || '-' || hex( randomblob(2)) || '-' || '4' || substr( hex( randomblob(2)), 2)
+    || '-' || substr('AB89', 1 + (abs(random()) % 4) , 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))) ) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    page_id INTEGER NOT NULL,
+    lect TEXT,
+    action TEXT,
+    FOREIGN KEY (page_id) REFERENCES trash_pages (id) ON DELETE CASCADE
+);
+
+-- 17. Plugins – database-driven plugin registry (URL transport). Each row is a
+--     plugin reached over HTTPS at `{url}/__plugin/...`. The CMS forwards the
+--     plugin's own `secret` (falling back to env PLUGIN_SECRET when NULL).
+CREATE TABLE IF NOT EXISTS plugins(
+    id INTEGER UNIQUE DEFAULT ((( strftime('%s','now') - 1563741060 ) * 100000) + (RANDOM() & 65535)) NOT NULL,
+    uuid TEXT UNIQUE DEFAULT (lower(hex( randomblob(4)) || '-' || hex( randomblob(2)) || '-' || '4' || substr( hex( randomblob(2)), 2)
+    || '-' || substr('AB89', 1 + (abs(random()) % 4) , 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))) ) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    -- Admin-friendly label for the manage UI (the manifest name is preferred when reachable).
+    label TEXT NOT NULL DEFAULT '',
+    -- Base URL; the CMS calls {url}/__plugin/manifest, /hooks/*, /admin/*, /publish/*.
+    url TEXT NOT NULL UNIQUE,
+    -- 1 = active (manifest resolved + content types merged); 0 = registered but inert.
+    enabled INTEGER NOT NULL DEFAULT 1,
+    -- Optional JSON config (reserved for forwarding plugin settings).
+    config TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    -- Per-plugin shared secret; NULL falls back to env PLUGIN_SECRET.
+    secret TEXT
+);
+
 -- ============================================================
 -- Indexes
 -- ============================================================
@@ -224,6 +269,9 @@ CREATE INDEX IF NOT EXISTS idx_tags_taxonomy_id ON tags(taxonomy_id);
 CREATE INDEX IF NOT EXISTS idx_tags_parent_tag ON tags(parent_tag);
 CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log (created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_trash_page_versions_page_id ON trash_page_versions(page_id);
+CREATE INDEX IF NOT EXISTS idx_trash_pages_source_page_id ON trash_pages(source_page_id);
+CREATE INDEX IF NOT EXISTS idx_plugins_enabled ON plugins(enabled, sort_order);
 
 -- ============================================================
 -- Triggers for updated_at column automatic updates
