@@ -10,8 +10,8 @@ export interface CmsConfig {
 }
 
 export const cmsConfig: CmsConfig = {
-  defaultLanguage: 'en',
-  languages: ['en', 'zh-hant'],
+  defaultLanguage: 'mis',
+  languages: ['mis', 'en', 'zh-hant', 'zh-hans'],
   blueprint: {
     default: ['@date:date', 'name:text', 'body:textarea', 'link:link', { items: ['name'] }],
   },
