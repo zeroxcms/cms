@@ -316,4 +316,28 @@ describe('plugin admin proxy', () => {
     expect(body).toContain('/admin/plugins/events/dashboard');
     expect(body).toContain('Events');
   });
+
+  it('shows the contributing plugin name beside its page types', async () => {
+    const url = 'https://plugin-page-types.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Event tools', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(href).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+    const response = await worker.fetch(new Request('http://localhost/admin/page_types', {
+      headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('data-page-type-plugin="event" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">plugin (Events)</span>');
+  });
 });

@@ -12,6 +12,7 @@ import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 import { renderPage, userCan } from '../../utils/admin-render';
 import { clearConfigCache, resolveCmsConfig } from '../../plugins/config';
+import { getPlugins } from '../../plugins/registry';
 import { listDbPageTypes } from '../../utils/page-type-store';
 import type { AppContext } from '../../utils/context';
 
@@ -76,17 +77,28 @@ function nullableJsonArray(values: string[]): string | null {
 // ── List ────────────────────────────────────────────────────────────────────
 
 pageTypesRoutes.get('/page_types', async (c) => {
-  const [dbPageTypes, resolved] = await Promise.all([
+  const [dbPageTypes, plugins] = await Promise.all([
     listDbPageTypes(c.env.DB),
-    resolveCmsConfig(c.env),
+    getPlugins(c.env),
   ]);
+  const resolved = await resolveCmsConfig(c.env);
   const dbSlugs = new Set(dbPageTypes.map((pageType) => pageType.slug));
+  // Plugins are merged in registry order, so the last declaration is the
+  // effective source when two plugins define the same page type.
+  const pluginNameBySlug = new Map<string, string>();
+  for (const plugin of plugins) {
+    for (const slug of Object.keys(plugin.manifest.contentTypes?.blueprint ?? {})) {
+      pluginNameBySlug.set(slug, plugin.manifest.name);
+    }
+  }
   // Read-only types = everything in the resolved config that isn't a DB row:
   // static config-file blueprints + those contributed by active plugins.
-  const configFileSlugs = new Set(Object.keys(cmsConfig.blueprint));
   const configPageTypes = Object.keys(resolved.blueprint)
     .filter((slug) => !dbSlugs.has(slug))
-    .map((slug) => ({ slug, name: slug, source: configFileSlugs.has(slug) ? 'config' : 'plugin' }));
+    .map((slug) => {
+      const pluginName = pluginNameBySlug.get(slug) ?? '';
+      return { slug, name: slug, source: pluginName ? 'plugin' : 'config', pluginName };
+    });
 
   return renderPage(c, pageTypesPage, {
     dbPageTypes,

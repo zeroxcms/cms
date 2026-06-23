@@ -229,6 +229,14 @@ export interface PluginContentTypes {
   blocks?: Record<string, BlueprintEntry[]>;
   blockLists?: Record<string, string[]>;
   taxonomyLists?: Record<string, string[]>;
+  /**
+   * Page types this plugin may READ (but not write) through the write-back API,
+   * in addition to the types it owns via `blueprint`. Lets a plugin pull data
+   * from pages another plugin owns — e.g. the events suite reading `contact`
+   * pages to refresh a guest. Read-only: creates/updates/deletes stay scoped to
+   * owned types.
+   */
+  readTypes?: string[];
 }
 
 export interface PluginManifest {

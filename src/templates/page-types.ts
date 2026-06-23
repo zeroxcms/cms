@@ -7,6 +7,7 @@ export interface PageTypeListItem {
   slug: string;
   /** 'db' (editable), 'config' (read-only), or 'plugin' (read-only, from a plugin). */
   source: string;
+  pluginName: string;
   editHref: string;
   viewHref: string;
   isDb: boolean;
@@ -14,7 +15,7 @@ export interface PageTypeListItem {
 
 export async function pageTypesPage(views: Fetcher, opts: BaseTemplateProps & {
   dbPageTypes: PageType[];
-  configPageTypes: Array<{ slug: string; name: string; source?: string }>;
+  configPageTypes: Array<{ slug: string; name: string; source?: string; pluginName?: string }>;
   canWrite: boolean;
 }): Promise<string> {
   const { dbPageTypes, configPageTypes, canWrite } = opts;
@@ -24,6 +25,7 @@ export async function pageTypesPage(views: Fetcher, opts: BaseTemplateProps & {
       name: pageType.name,
       slug: pageType.slug,
       source: 'db',
+      pluginName: '',
       editHref: `/admin/page_types/${pageType.id}/edit`,
       viewHref: '',
       isDb: true,
@@ -32,6 +34,7 @@ export async function pageTypesPage(views: Fetcher, opts: BaseTemplateProps & {
       name: pageType.name,
       slug: pageType.slug,
       source: pageType.source ?? 'config',
+      pluginName: pageType.pluginName ?? '',
       editHref: '',
       viewHref: `/admin/page_types/view/${encodeURIComponent(pageType.slug)}`,
       isDb: false,

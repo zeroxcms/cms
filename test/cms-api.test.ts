@@ -24,6 +24,8 @@ const MANIFEST = {
       guest: ['@email:email', '@status', '@rsvp_code', 'name', 'last_name'],
       mail_list: ['*event'],
     },
+    // May read `contact` pages (owned elsewhere) but not create/update them.
+    readTypes: ['contact'],
   },
 };
 
@@ -62,8 +64,8 @@ beforeEach(async () => {
   clearManifestCache();
   __clearInjectedFetchers();
   await env.DB.prepare('DELETE FROM plugins').run();
-  await env.DB.prepare("DELETE FROM draft_pages WHERE page_type IN ('event','guest','mail_list')").run();
-  await env.DB.prepare("DELETE FROM trash_pages WHERE page_type IN ('event','guest','mail_list')").run();
+  await env.DB.prepare("DELETE FROM draft_pages WHERE page_type IN ('event','guest','mail_list','contact')").run();
+  await env.DB.prepare("DELETE FROM trash_pages WHERE page_type IN ('event','guest','mail_list','contact')").run();
   savedSecret = testEnv.PLUGIN_SECRET;
   testEnv.PLUGIN_SECRET = PLUGIN_SECRET;
   await registerPlugin();
@@ -168,8 +170,8 @@ describe('F1 create / read / list / update / delete', () => {
     expect(filtered.total).toBe(1);
   });
 
-  it('rejects listing a type the plugin does not own', async () => {
-    const res = await cmsApi('GET', '/__cms/pages?page_type=contact');
+  it('rejects listing a type the plugin neither owns nor may read', async () => {
+    const res = await cmsApi('GET', '/__cms/pages?page_type=article');
     expect(res.status).toBe(403);
   });
 
@@ -182,6 +184,30 @@ describe('F1 create / read / list / update / delete', () => {
     const res = await cmsApi('GET', `/__cms/pages?page_type=guest&page_id=${event.id}`);
     const body = await res.json() as { total: number };
     expect(body.total).toBe(2);
+  });
+
+  it('allows reading a declared readType but not writing it', async () => {
+    // A contact page the events plugin does NOT own, inserted directly.
+    await env.DB.prepare(
+      "INSERT INTO draft_pages (name, slug, page_type, lect) VALUES (?, ?, 'contact', ?)",
+    ).bind('Ada Lovelace', 'ada-lovelace', JSON.stringify({ first_name: { en: 'Ada' } })).run();
+    const contact = await env.DB.prepare("SELECT id FROM draft_pages WHERE page_type = 'contact' LIMIT 1")
+      .first<{ id: number }>();
+
+    // Read is allowed (contact is a declared readType)…
+    const readRes = await cmsApi('GET', `/__cms/pages/${contact!.id}`);
+    expect(readRes.status).toBe(200);
+    expect((await readRes.json() as { page: { name: string } }).page.name).toBe('Ada Lovelace');
+
+    const listRes = await cmsApi('GET', '/__cms/pages?page_type=contact');
+    expect(listRes.status).toBe(200);
+    expect((await listRes.json() as { total: number }).total).toBe(1);
+
+    // …but writes stay scoped to owned types.
+    const createRes = await cmsApi('POST', '/__cms/pages', { page_type: 'contact', name: 'New' });
+    expect(createRes.status).toBe(403);
+    const updateRes = await cmsApi('PUT', `/__cms/pages/${contact!.id}`, { name: 'Hacked' });
+    expect(updateRes.status).toBe(403);
   });
 
   it('partial-updates a page and mints an update version', async () => {

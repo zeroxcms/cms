@@ -26,7 +26,7 @@
                 {% if pageType.source == 'db' %}
                   <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-700">db</span>
                 {% elsif pageType.source == 'plugin' %}
-                  <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">plugin</span>
+                  <span data-page-type-plugin="{{ pageType.slug | escape }}" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">plugin{% if pageType.pluginName %} ({{ pageType.pluginName | escape }}){% endif %}</span>
                 {% else %}
                   <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">config</span>
                 {% endif %}

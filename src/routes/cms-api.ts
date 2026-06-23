@@ -64,6 +64,8 @@ interface PluginAuth {
   pluginId: string;
   /** Page types this plugin declared in its manifest blueprint — the write scope. */
   allowedTypes: Set<string>;
+  /** Owned types plus any declared `readTypes` — the (wider) read scope. */
+  readableTypes: Set<string>;
 }
 
 /** Body accepted by create/update. All fields optional on update; `page_type` required on create. */
@@ -105,7 +107,10 @@ async function authenticatePlugin(c: AppContext): Promise<PluginAuth | Response>
   }
 
   const allowedTypes = new Set(Object.keys(plugin.manifest.contentTypes?.blueprint ?? {}));
-  return { plugin, pluginId, allowedTypes };
+  // Reads may also reach declared `readTypes` (pages owned by other plugins).
+  const readableTypes = new Set(allowedTypes);
+  for (const type of plugin.manifest.contentTypes?.readTypes ?? []) readableTypes.add(type);
+  return { plugin, pluginId, allowedTypes, readableTypes };
 }
 
 // ── Serialization ─────────────────────────────────────────────────────────────
@@ -271,7 +276,7 @@ cmsApiRoutes.get('/pages', async (c) => {
 
   const pageType = (c.req.query('page_type') ?? '').trim();
   if (!pageType) return c.json({ error: 'page_type_required' }, 400);
-  if (!auth.allowedTypes.has(pageType)) return c.json({ error: 'forbidden_page_type' }, 403);
+  if (!auth.readableTypes.has(pageType)) return c.json({ error: 'forbidden_page_type' }, 403);
 
   const limit = Math.min(Math.max(asFiniteNumber(c.req.query('limit')) ?? 50, 1), 500);
   const offset = Math.max(asFiniteNumber(c.req.query('offset')) ?? 0, 0);
@@ -318,7 +323,7 @@ cmsApiRoutes.get('/pages/:id', async (c) => {
 
   const page = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(id).first<Page>();
   if (!page) return c.json({ error: 'not_found' }, 404);
-  if (!auth.allowedTypes.has(page.page_type ?? '')) return c.json({ error: 'forbidden_page_type' }, 403);
+  if (!auth.readableTypes.has(page.page_type ?? '')) return c.json({ error: 'forbidden_page_type' }, 403);
 
   const tags = await c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?')
     .bind(id)
