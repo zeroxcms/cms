@@ -597,28 +597,30 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
     const pageType = nullableStr(form.get('page_type')) ?? page.page_type ?? 'default';
     const lect = lectFromForm(config, pageType, lectForPage(config, pageType, page.lect), form, language);
 
-    const pluginView = await pluginEditView(c, pageType, {
-      mode: 'edit',
-      action: `/admin/pages/${pageId}`,
-      backHref,
-      language,
-      pageType,
-      page: {
-        id: pageId,
-        name,
-        slug,
+    if (!preferNativeEditor(c)) {
+      const pluginView = await pluginEditView(c, pageType, {
+        mode: 'edit',
+        action: `/admin/pages/${pageId}`,
+        backHref,
+        language,
         pageType,
-        weight: num(form.get('weight')),
-        start: nullableStr(form.get('start')),
-        end: nullableStr(form.get('end')),
-        timezone: nullableStr(form.get('timezone')) ?? page.timezone,
-        editors: editorsFromForm(form),
-        lect: stringifyLect(lect),
-      },
-      versions: versions.results.map((v) => ({ id: v.id, created_at: v.created_at, action: v.action })),
-      errors,
-    });
-    if (pluginView) return pluginView;
+        page: {
+          id: pageId,
+          name,
+          slug,
+          pageType,
+          weight: num(form.get('weight')),
+          start: nullableStr(form.get('start')),
+          end: nullableStr(form.get('end')),
+          timezone: nullableStr(form.get('timezone')) ?? page.timezone,
+          editors: editorsFromForm(form),
+          lect: stringifyLect(lect),
+        },
+        versions: versions.results.map((v) => ({ id: v.id, created_at: v.created_at, action: v.action })),
+        errors,
+      });
+      if (pluginView) return pluginView;
+    }
 
     return c.html(
       await editorPage(viewsFor(c.env), {
@@ -631,7 +633,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
         taxonomies: taxonomy.taxonomies,
         selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
         errors,
-        action: `/admin/pages/${pageId}`,
+        action: withNativeFlag(c, `/admin/pages/${pageId}`),
         backHref,
         defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
         structured: {
@@ -725,14 +727,16 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
   // Preserve where the editor returns to (e.g. a plugin dashboard) across saves,
   // so the back arrow / Cancel button still point there after a save reload.
   const returnToParam = backHref !== '/admin' ? `&return_to=${encodeURIComponent(backHref)}` : '';
+  // Keep the built-in-editor override across the post-save reload.
+  const nativeParam = preferNativeEditor(c) ? '&native=1' : '';
 
   if (isStructuredEditorAction(action)) {
-    return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}${returnToParam}`);
+    return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}${returnToParam}${nativeParam}`);
   }
 
   dispatchHook(c, 'update', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug: uniqueSlug });
 
-  return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}&flash=Page+updated+successfully${returnToParam}`);
+  return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}&flash=Page+updated+successfully${returnToParam}${nativeParam}`);
 });
 
 // ── Publish (DRAFT → PUBLISHED) ───────────────────────────────────────────────
