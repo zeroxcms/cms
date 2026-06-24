@@ -290,6 +290,11 @@ so a half-built plugin can never lock an editor out of a page. Like proxied admi
 pages, the wrapped fragment runs under the CMS's strict nonce CSP — contribute
 any field markup through Liquid snippets / view files rather than inline scripts.
 
+To bypass a plugin edit view and use the built-in structured editor for a single
+page, append **`?native=1`** (or `?editor=cms`) to the edit URL, e.g.
+`/admin/pages/42/edit?native=1`. The flag is carried through the editor's form
+action and post-save redirect, so it survives validation errors and reloads.
+
 Admin responses are `X-Frame-Options: DENY` by default. A plugin **full-document**
 admin response (no `x-cms-chrome`) may opt into being shown in a same-origin
 `<iframe>` by setting `x-cms-frame: 1`; the proxy translates it to

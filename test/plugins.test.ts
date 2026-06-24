@@ -391,7 +391,7 @@ describe('plugin admin proxy', () => {
       sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
       type: 'access', exp: now + 900, iat: now,
     }, env.JWT_SECRET);
-    const request = () => new Request(`http://localhost/admin/pages/${pageId}/edit`, {
+    const request = (query = '') => new Request(`http://localhost/admin/pages/${pageId}/edit${query}`, {
       headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
     });
 
@@ -412,6 +412,15 @@ describe('plugin admin proxy', () => {
         pageType: 'event',
         page: { id: pageId, name: 'Gala', slug: 'gala' },
       });
+
+      // ?native=1 forces the built-in editor without consulting the plugin.
+      const native = await worker.fetch(request('?native=1'));
+      expect(native.status).toBe(200);
+      const nativeBody = await native.text();
+      expect(nativeBody).not.toContain('PLUGIN_EDIT_MARKER');
+      expect(nativeBody).toContain('name="name"');                 // built-in editor fields
+      expect(nativeBody).toContain('action="/admin/pages/' + pageId + '?native=1"'); // flag carried into the form
+      expect(captured).toHaveLength(1); // plugin /__plugin/edit was not called again
 
       // When the plugin declines (404), the CMS renders its built-in editor.
       clearManifestCache();
