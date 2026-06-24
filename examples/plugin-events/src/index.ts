@@ -8,6 +8,7 @@
 //   - fields & blocks : registers an `events-map` field + its snippet
 //   - lifecycle hooks : logs publish/unpublish/delete
 //   - admin + nav     : an "Events" nav item + a proxied admin page
+//   - edit view       : renders the whole edit/new form for `event` pages
 //   - publish target  : receives full page snapshots on publish —
 //     swap the log lines for an IPFS pin, webhook, search index, …
 //
@@ -33,7 +34,34 @@ const MANIFEST = {
     },
   },
   fieldTypes: [{ type: 'events-map' }],
+  // `event` pages render their edit/new form here (POST /__plugin/edit) instead
+  // of the built-in editor. The form posts back to the CMS's save handler.
+  editViews: ['event'],
 };
+
+/** Context the CMS POSTs to /__plugin/edit. Mirrors EditViewContext in the CMS. */
+interface EditViewContext {
+  mode: 'new' | 'edit';
+  action: string;
+  backHref: string;
+  language: string;
+  pageType: string;
+  page: {
+    id: number | string;
+    name: string;
+    slug: string;
+    pageType: string;
+    weight: number;
+    start: string | null;
+    end: string | null;
+    timezone: string | null;
+    editors: string | null;
+    lect: string;
+  };
+  versions: Array<{ id: number; created_at: string; action: string | null }>;
+  flash?: string;
+  errors?: string[];
+}
 
 // Liquid snippet for the `events-map` field, served to the CMS Liquid engine.
 // Receives the same `field`/`values`/`names` data as core pagefield snippets.
@@ -55,7 +83,8 @@ export default {
     // Manifest and view files are harmless to serve, and the binding is private anyway.
     const secretRequired = path.startsWith('/__plugin/hooks/')
       || path.startsWith('/__plugin/publish/')
-      || path.startsWith('/__plugin/admin');
+      || path.startsWith('/__plugin/admin')
+      || path === '/__plugin/edit';
     if (secretRequired && env.PLUGIN_SECRET && request.headers.get('x-plugin-secret') !== env.PLUGIN_SECRET) {
       return new Response('forbidden', { status: 403 });
     }
@@ -94,6 +123,22 @@ export default {
       return new Response('ok');
     }
 
+    // Edit view: the CMS hands `event` pages to us. We return an HTML *fragment*
+    // (the CMS wraps it in admin chrome) whose form posts back to ctx.action —
+    // the CMS's normal save handler — using the standard field-name conventions.
+    if (path === '/__plugin/edit' && request.method === 'POST') {
+      const ctx = (await request.json().catch(() => null)) as EditViewContext | null;
+      if (!ctx) return new Response('bad request', { status: 400 });
+      const title = ctx.mode === 'edit' ? `Edit: ${ctx.page.name}` : 'New event';
+      return new Response(eventEditForm(ctx), {
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'x-cms-chrome': '1',
+          'x-cms-title': encodeURIComponent(title),
+        },
+      });
+    }
+
     if (path.startsWith('/__plugin/admin')) {
       const user = parseUser(request.headers.get('x-cms-user'));
       return new Response(adminDashboard(user), { headers: { 'content-type': 'text/html; charset=utf-8' } });
@@ -102,6 +147,68 @@ export default {
     return new Response('not found', { status: 404 });
   },
 };
+
+// Reads a possibly-localized lect value for the active language, falling back
+// to a bare scalar. The lect stores value fields as { <lang>: "..." } maps and
+// attributes as plain scalars.
+function lectValue(lect: Record<string, unknown>, name: string, language: string): string {
+  const raw = lect[name];
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const map = raw as Record<string, unknown>;
+    return String(map[language] ?? map.mis ?? Object.values(map)[0] ?? '');
+  }
+  return raw == null ? '' : String(raw);
+}
+
+function esc(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"]/g, (ch) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] as string));
+}
+
+// The plugin-owned edit/new form for an `event` page. Returns an HTML fragment;
+// the CMS wraps it in admin chrome. Field names follow the CMS conventions:
+//   @name  → attribute        .name|<lang> → localized value        page basics by name.
+function eventEditForm(ctx: EditViewContext): string {
+  const lect = (() => {
+    try { return JSON.parse(ctx.page.lect || '{}') as Record<string, unknown>; }
+    catch { return {}; }
+  })();
+  const lang = ctx.language;
+  const errors = (ctx.errors ?? []).map((e) => `<li>${esc(e)}</li>`).join('');
+  const field = (label: string, name: string, value: string, type = 'text') => `
+    <label class="block">
+      <span class="block text-sm font-medium text-gray-700 mb-1">${esc(label)}</span>
+      <input type="${type}" name="${esc(name)}" value="${esc(value)}"
+             class="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+    </label>`;
+
+  return `<form method="post" action="${esc(ctx.action)}" class="max-w-2xl mx-auto space-y-5 p-2">
+    <div class="flex items-center justify-between">
+      <h1 class="text-xl font-bold text-gray-900">${ctx.mode === 'edit' ? `Edit event: ${esc(ctx.page.name)}` : 'New event'}</h1>
+      <a href="${esc(ctx.backHref)}" class="text-sm text-gray-500 hover:text-gray-700">Cancel</a>
+    </div>
+    ${ctx.flash ? `<p class="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">${esc(ctx.flash)}</p>` : ''}
+    ${errors ? `<ul class="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700 list-disc list-inside">${errors}</ul>` : ''}
+
+    <input type="hidden" name="page_type" value="${esc(ctx.pageType)}">
+    <input type="hidden" name="language" value="${esc(lang)}">
+    <input type="hidden" name="return_to" value="${esc(ctx.backHref)}">
+
+    ${field('Name', 'name', ctx.page.name)}
+    ${field('Slug', 'slug', ctx.page.slug)}
+    ${field('Date', '@date', lectValue(lect, 'date', lang), 'date')}
+    ${field('Venue', `.venue|${lang}`, lectValue(lect, 'venue', lang))}
+    ${field('Location (lat,lng)', `.location|${lang}`, lectValue(lect, 'location', lang))}
+    ${field('Weight', 'weight', String(ctx.page.weight), 'number')}
+
+    <div class="flex gap-3 pt-2">
+      <button type="submit" name="action" value="update"
+              class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">Save</button>
+      <button type="submit" name="action" value="publish"
+              class="px-4 py-2 rounded-lg bg-gray-800 text-white text-sm font-semibold">Save &amp; Publish</button>
+    </div>
+  </form>`;
+}
 
 function parseUser(header: string | null): { name?: string; role?: string } {
   if (!header) return {};

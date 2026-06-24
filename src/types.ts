@@ -253,6 +253,16 @@ export interface PluginManifest {
   nav?: PluginNavItem[];
   contentTypes?: PluginContentTypes;
   fieldTypes?: PluginFieldType[];
+  /**
+   * Page-type slugs whose edit/new view this plugin renders itself. For a page
+   * of one of these types the CMS POSTs the editor context to the plugin's
+   * `/__plugin/edit` endpoint and wraps the returned HTML fragment in the admin
+   * chrome instead of rendering the built-in editor. The plugin's form posts
+   * back to the CMS's normal save handler, so save/version/publish logic is
+   * unchanged. A 404 (or any error) from the plugin falls back to the built-in
+   * editor. See src/plugins/edit-view.ts.
+   */
+  editViews?: string[];
 }
 
 /** A resolved, active plugin: its declared binding name, Fetcher, and manifest. */

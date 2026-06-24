@@ -214,7 +214,7 @@ npm run deploy
 
 The CMS can be extended with **plugins**, each of which is a separate Cloudflare
 Worker bound to the CMS as a [service binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/).
-A plugin can add five things:
+A plugin can add six things:
 
 - **Lifecycle hooks** – run on page `create`/`update`/`publish`/`unpublish`/`delete`
   (webhooks, external search indexing, cache purge, notifications). Hooks are
@@ -223,6 +223,9 @@ A plugin can add five things:
   that merge into the editor's config.
 - **Fields & blocks** – register new pagefield types and serve their Liquid
   snippets, which render through the CMS editor.
+- **Edit views** – list page-type slugs in the manifest `editViews` to render
+  the *whole* edit/new form for those types yourself, instead of the built-in
+  structured editor. See [Plugin edit views](#plugin-edit-views).
 - **Admin routes + nav** – add an admin page (proxied at
   `/admin/plugins/<id>/...`) and a navigation entry.
 - **Publish targets** – declare `publishTarget: true` in the manifest to receive
@@ -238,15 +241,59 @@ no overhead.
 ### How it works
 
 Each plugin Worker implements a small HTTP contract under the reserved
-`/__plugin` prefix (`/manifest`, `/views/*`, `/admin/*`, `/hooks/<event>`). The
-CMS discovers plugins from the comma-separated `PLUGINS` var (binding names),
+`/__plugin` prefix (`/manifest`, `/views/*`, `/admin/*`, `/edit`, `/hooks/<event>`).
+The CMS discovers plugins from the comma-separated `PLUGINS` var (binding names),
 fetches and caches their manifests, forwards the signed-in user plus a shared
 `PLUGIN_SECRET` on every call, and merges their contributions into the editor.
+
+### Plugin edit views
+
+By default every page is edited through the built-in structured editor. A plugin
+can take over the whole edit/new form for the page types it owns by listing their
+slugs in the manifest:
+
+```js
+const MANIFEST = {
+  id: 'events',
+  // …
+  contentTypes: { blueprint: { event: ['@date', 'venue'] } },
+  editViews: ['event'],
+};
+```
+
+For a page of one of those types the CMS `POST`s the editor context to the
+plugin's `/__plugin/edit` endpoint (JSON body + `x-plugin-secret` + `x-cms-user`):
+
+```jsonc
+{
+  "mode": "edit",                 // or "new"
+  "action": "/admin/pages/42",    // where the plugin's <form> must POST back
+  "backHref": "/admin",
+  "language": "en",
+  "pageType": "event",
+  "page": { "id": 42, "name": "…", "slug": "…", "weight": 5,
+            "start": null, "end": null, "timezone": "+0800",
+            "editors": null, "lect": "{…stringified lect JSON…}" },
+  "versions": [{ "id": 9, "created_at": "…", "action": "update" }],
+  "flash": "…", "errors": ["…"]
+}
+```
+
+The plugin returns an **HTML fragment** with `x-cms-chrome: 1` (and optionally a
+percent-encoded `x-cms-title`); the CMS wraps it in the standard admin chrome and
+serves it under the CMS origin. The fragment's `<form>` posts back to `action`
+using the normal CMS field-name conventions (`@attr`, `.field|<lang>`, `*pointer`,
+plus `name`/`slug`/`weight`/`page_type`/`action`), so save, versioning, and
+publish all flow through the CMS's existing handler unchanged. Returning `404`
+(or any error / non-HTML response) makes the CMS fall back to the built-in editor,
+so a half-built plugin can never lock an editor out of a page. Like proxied admin
+pages, the wrapped fragment runs under the CMS's strict nonce CSP — contribute
+any field markup through Liquid snippets / view files rather than inline scripts.
 
 ### Adding a plugin
 
 1. Build/deploy the plugin Worker (see [`examples/plugin-events`](examples/plugin-events)
-   for a complete reference implementing all five capabilities).
+   for a complete reference implementing all six capabilities).
 2. Bind it in `wrangler.toml` and list its binding name in `PLUGINS`:
    ```toml
    [[services]]

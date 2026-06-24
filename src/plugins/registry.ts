@@ -124,6 +124,12 @@ export async function pluginForFieldType(env: Env, type: string): Promise<Resolv
   return plugins.find((plugin) => (plugin.manifest.fieldTypes ?? []).some((field) => field.type === type)) ?? null;
 }
 
+/** Finds the plugin that renders the edit view for a given page type, if any. */
+export async function pluginForEditView(env: Env, pageType: string): Promise<ResolvedPlugin | null> {
+  const plugins = await getPlugins(env);
+  return plugins.find((plugin) => (plugin.manifest.editViews ?? []).includes(pageType)) ?? null;
+}
+
 /** Resolves a plugin by its manifest id (used by the admin proxy). */
 export async function pluginById(env: Env, id: string): Promise<ResolvedPlugin | null> {
   const plugins = await getPlugins(env);

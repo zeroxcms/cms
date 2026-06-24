@@ -6,6 +6,7 @@ import { editorPage } from '../../templates/editor';
 import { resolveCmsConfig } from '../../plugins/config';
 import { dispatchHook } from '../../plugins/hooks';
 import { viewsFor } from '../../plugins/views';
+import { pluginEditView } from '../../plugins/edit-view';
 import { blueprintToLect, safeParseLect, stringifyLect } from '../../utils/lect';
 import type { Env, Variables, Page, PageVersion } from '../../types';
 import {
@@ -219,6 +220,28 @@ pagesRoutes.get('/pages/new', async (c) => {
   const lect = blueprintToLect(pageType, config.blueprint, config.defaultLanguage);
   const taxonomy = await editorTaxonomy(c.env.DB);
 
+  const pluginView = await pluginEditView(c, pageType, {
+    mode: 'new',
+    action: '/admin/pages',
+    backHref: safeAdminReturnPath(c.req.query('return_to')),
+    language,
+    pageType,
+    page: {
+      id: '',
+      name: '',
+      slug: '',
+      pageType,
+      weight: 5,
+      start: null,
+      end: null,
+      timezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
+      editors: null,
+      lect: stringifyLect(lect),
+    },
+    versions: [],
+  });
+  if (pluginView) return pluginView;
+
   return renderPage(c, editorPage, {
     parentPages: [],
     tags: taxonomy.tags,
@@ -254,6 +277,37 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
 
   if (errors.length) {
     const pageType = nullableStr(form.get('page_type')) ?? 'default';
+    const lect = lectFromForm(
+      config,
+      pageType,
+      blueprintToLect(pageType, config.blueprint, config.defaultLanguage),
+      form,
+      language,
+    );
+
+    const pluginView = await pluginEditView(c, pageType, {
+      mode: 'new',
+      action: '/admin/pages',
+      backHref,
+      language,
+      pageType,
+      page: {
+        id: '',
+        name,
+        slug,
+        pageType,
+        weight: num(form.get('weight')),
+        start: nullableStr(form.get('start')),
+        end: nullableStr(form.get('end')),
+        timezone: nullableStr(form.get('timezone')) ?? c.env.DEFAULT_TIMEZONE ?? '+0800',
+        editors: editorsFromForm(form),
+        lect: stringifyLect(lect),
+      },
+      versions: [],
+      errors,
+    });
+    if (pluginView) return pluginView;
+
     const [parentPages, taxonomy] = await Promise.all([
       parentPageOption(c.env.DB, nullableStr(form.get('page_id'))),
       editorTaxonomy(c.env.DB),
@@ -273,13 +327,7 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
         structured: {
           config,
           language,
-          lect: lectFromForm(
-            config,
-            pageType,
-            blueprintToLect(pageType, config.blueprint, config.defaultLanguage),
-            form,
-            language,
-          ),
+          lect,
           blueprintProps: blueprintPropsFor(config, pageType),
           blockProps: blockPropsByName(config),
           blockNames: config.blockLists[pageType] ?? config.blockLists.default,
@@ -408,6 +456,29 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
     fetchUserName(c.env.DB, num(lect._modifier, 0)),
   ]);
 
+  const pluginView = await pluginEditView(c, pageType, {
+    mode: 'edit',
+    action: `/admin/pages/${pageId}`,
+    backHref,
+    language,
+    pageType,
+    page: {
+      id: page.id,
+      name: page.name,
+      slug: page.slug,
+      pageType,
+      weight: page.weight,
+      start: page.start,
+      end: page.end,
+      timezone: page.timezone,
+      editors: page.editors,
+      lect: stringifyLect(lect),
+    },
+    versions: versions.results.map((v) => ({ id: v.id, created_at: v.created_at, action: v.action })),
+    flash: flash || undefined,
+  });
+  if (pluginView) return pluginView;
+
   return renderPage(c, editorPage, {
     page: displayPage,
     modifierName: modifierName ?? undefined,
@@ -502,6 +573,30 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
     ]);
     const pageType = nullableStr(form.get('page_type')) ?? page.page_type ?? 'default';
     const lect = lectFromForm(config, pageType, lectForPage(config, pageType, page.lect), form, language);
+
+    const pluginView = await pluginEditView(c, pageType, {
+      mode: 'edit',
+      action: `/admin/pages/${pageId}`,
+      backHref,
+      language,
+      pageType,
+      page: {
+        id: pageId,
+        name,
+        slug,
+        pageType,
+        weight: num(form.get('weight')),
+        start: nullableStr(form.get('start')),
+        end: nullableStr(form.get('end')),
+        timezone: nullableStr(form.get('timezone')) ?? page.timezone,
+        editors: editorsFromForm(form),
+        lect: stringifyLect(lect),
+      },
+      versions: versions.results.map((v) => ({ id: v.id, created_at: v.created_at, action: v.action })),
+      errors,
+    });
+    if (pluginView) return pluginView;
+
     return c.html(
       await editorPage(viewsFor(c.env), {
         ...(await buildBaseProps(c)),
