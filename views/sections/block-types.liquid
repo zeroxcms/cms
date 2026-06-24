@@ -2,7 +2,7 @@
   <div class="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
     <div>
       <h2 class="text-2xl font-bold text-gray-900">Block Types</h2>
-      <p class="mt-1 text-sm text-gray-500">Reusable block definitions. Database blocks are editable here; config-file blocks are read-only.</p>
+      <p class="mt-1 text-sm text-gray-500">Reusable block definitions. Database blocks are editable here; config-file and plugin blocks are read-only.</p>
     </div>
     {% if canWrite %}<a href="/admin/block_types/new" class="w-full px-4 py-2 text-center bg-indigo-600 text-white text-sm font-semibold rounded-lg sm:w-auto">New Block Type</a>{% endif %}
   </div>
@@ -23,8 +23,10 @@
               <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ blockType.name | escape }}</td>
               <td class="px-6 py-3 text-sm font-mono text-gray-500">{{ blockType.slug | escape }}</td>
               <td class="px-6 py-3 text-sm">
-                {% if blockType.isDb %}
+                {% if blockType.source == 'db' %}
                   <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-700">db</span>
+                {% elsif blockType.source == 'plugin' %}
+                  <span data-block-type-plugin="{{ blockType.slug | escape }}" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">plugin{% if blockType.pluginName %} ({{ blockType.pluginName | escape }}){% endif %}</span>
                 {% else %}
                   <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">config</span>
                 {% endif %}

@@ -11,7 +11,8 @@ import { num, slugify, str } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 import { renderPage, userCan } from '../../utils/admin-render';
-import { clearConfigCache } from '../../plugins/config';
+import { clearConfigCache, resolveCmsConfig } from '../../plugins/config';
+import { getPlugins } from '../../plugins/registry';
 import { listDbBlockTypes } from '../../utils/block-type-store';
 import type { AppContext } from '../../utils/context';
 
@@ -57,11 +58,28 @@ async function validate(c: AppContext, values: BlockTypeFormValues, slug: string
 // ── List ────────────────────────────────────────────────────────────────────
 
 blockTypesRoutes.get('/block_types', async (c) => {
-  const dbBlockTypes = await listDbBlockTypes(c.env.DB);
+  const [dbBlockTypes, plugins] = await Promise.all([
+    listDbBlockTypes(c.env.DB),
+    getPlugins(c.env),
+  ]);
+  const resolved = await resolveCmsConfig(c.env);
   const dbSlugs = new Set(dbBlockTypes.map((blockType) => blockType.slug));
-  const configBlockTypes = Object.keys(cmsConfig.blocks)
+  // Plugins are merged in registry order, so the last declaration is the
+  // effective source when two plugins define the same block type.
+  const pluginNameBySlug = new Map<string, string>();
+  for (const plugin of plugins) {
+    for (const slug of Object.keys(plugin.manifest.contentTypes?.blocks ?? {})) {
+      pluginNameBySlug.set(slug, plugin.manifest.name);
+    }
+  }
+  // Read-only types = everything in the resolved config that isn't a DB row:
+  // static config-file blocks + those contributed by active plugins.
+  const configBlockTypes = Object.keys(resolved.blocks)
     .filter((slug) => !dbSlugs.has(slug))
-    .map((slug) => ({ slug, name: slug }));
+    .map((slug) => {
+      const pluginName = pluginNameBySlug.get(slug) ?? '';
+      return { slug, name: slug, source: pluginName ? 'plugin' : 'config', pluginName };
+    });
 
   return renderPage(c, blockTypesPage, {
     dbBlockTypes,
@@ -99,7 +117,9 @@ blockTypesRoutes.post('/block_types', requirePermission('blocktype:write'), asyn
 
 blockTypesRoutes.get('/block_types/view/:slug', async (c) => {
   const slug = c.req.param('slug');
-  const blueprint = cmsConfig.blocks[slug];
+  // Resolve so plugin-contributed block blueprints are viewable too, not just config-file ones.
+  const config = await resolveCmsConfig(c.env);
+  const blueprint = config.blocks[slug];
   if (!blueprint) return c.notFound();
   return renderForm(c, {
     mode: 'view',

@@ -5,8 +5,9 @@ import type { BlockType } from '../types';
 export interface BlockTypeListItem {
   name: string;
   slug: string;
-  /** 'db' (editable) or 'config' (read-only). */
+  /** 'db' (editable), 'config' (read-only), or 'plugin' (read-only, from a plugin). */
   source: string;
+  pluginName: string;
   editHref: string;
   viewHref: string;
   isDb: boolean;
@@ -14,7 +15,7 @@ export interface BlockTypeListItem {
 
 export async function blockTypesPage(views: Fetcher, opts: BaseTemplateProps & {
   dbBlockTypes: BlockType[];
-  configBlockTypes: Array<{ slug: string; name: string }>;
+  configBlockTypes: Array<{ slug: string; name: string; source?: string; pluginName?: string }>;
   canWrite: boolean;
 }): Promise<string> {
   const { dbBlockTypes, configBlockTypes, canWrite } = opts;
@@ -24,6 +25,7 @@ export async function blockTypesPage(views: Fetcher, opts: BaseTemplateProps & {
       name: blockType.name,
       slug: blockType.slug,
       source: 'db',
+      pluginName: '',
       editHref: `/admin/block_types/${blockType.id}/edit`,
       viewHref: '',
       isDb: true,
@@ -31,7 +33,8 @@ export async function blockTypesPage(views: Fetcher, opts: BaseTemplateProps & {
     ...configBlockTypes.map((blockType) => ({
       name: blockType.name,
       slug: blockType.slug,
-      source: 'config',
+      source: blockType.source ?? 'config',
+      pluginName: blockType.pluginName ?? '',
       editHref: '',
       viewHref: `/admin/block_types/view/${encodeURIComponent(blockType.slug)}`,
       isDb: false,

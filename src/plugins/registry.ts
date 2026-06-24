@@ -106,7 +106,7 @@ export async function getPlugins(env: Env): Promise<ResolvedPlugin[]> {
 }
 
 /** Nav items contributed by all plugins, flattened with their plugin id. */
-export async function pluginNav(env: Env): Promise<Array<{ pluginId: string; label: string; href: string; roles?: string[] }>> {
+export async function pluginNav(env: Env): Promise<Array<{ pluginId: string; label: string; href: string; roles?: string[]; group?: 'settings' }>> {
   const plugins = await getPlugins(env);
   return plugins.flatMap((plugin) =>
     (plugin.manifest.nav ?? []).map((item) => ({
@@ -114,6 +114,7 @@ export async function pluginNav(env: Env): Promise<Array<{ pluginId: string; lab
       label: item.label,
       href: `/admin/plugins/${plugin.manifest.id}/${item.href.replace(/^\/+/, '')}`,
       roles: item.roles,
+      group: item.group,
     })),
   );
 }

@@ -458,4 +458,67 @@ describe('plugin admin proxy', () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('data-page-type-plugin="event" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">plugin (Events)</span>');
   });
+
+  it('lists plugin-contributed block types with the contributing plugin name', async () => {
+    const url = 'https://plugin-block-types.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Event tools', url).run();
+    const manifest = { id: 'events', name: 'Events', version: '1.0.0', contentTypes: { blocks: { hero: ['label'] } } };
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(href).pathname === '/__plugin/manifest') return Response.json(manifest);
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+    const response = await worker.fetch(new Request('http://localhost/admin/block_types', {
+      headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('data-block-type-plugin="hero" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">plugin (Events)</span>');
+  });
+
+  it('places a group:settings nav item inside the Settings group, not the top level', async () => {
+    const url = 'https://plugin-settings-nav.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', url).run();
+    const manifest = {
+      id: 'events', name: 'Events', version: '1.0.0',
+      nav: [
+        { label: 'Events', href: 'dashboard', roles: ['admin', 'editor'] },
+        { label: 'Mail Settings', href: 'mail-settings', group: 'settings', roles: ['admin', 'editor'] },
+      ],
+    };
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(u).pathname === '/__plugin/manifest') return Response.json(manifest);
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+    const response = await worker.fetch(new Request('http://localhost/admin/page_types', {
+      headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    const trashIdx = body.indexOf('/admin/trash');
+    const settingsNavIdx = body.indexOf('/admin/plugins/events/mail-settings');
+    const topNavIdx = body.indexOf('/admin/plugins/events/dashboard');
+    // The Settings group renders before Trash; top-level plugin nav renders after.
+    expect(settingsNavIdx).toBeGreaterThan(-1);
+    expect(settingsNavIdx).toBeLessThan(trashIdx);
+    expect(topNavIdx).toBeGreaterThan(trashIdx);
+  });
 });

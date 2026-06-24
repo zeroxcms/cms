@@ -26,6 +26,8 @@ export interface BaseTemplateProps extends NavFlags {
   currentUserId: string;
   /** Navigation entries contributed by active plugins, filtered to the user's roles. */
   pluginNav: Array<{ label: string; href: string }>;
+  /** Plugin nav entries targeting the Settings group (group: 'settings'). */
+  pluginSettingsNav: Array<{ label: string; href: string }>;
   canManageUsers: boolean;
   canManageRoles: boolean;
   canManagePlugins: boolean;
@@ -51,6 +53,7 @@ export async function adminLayout(
     userRole: base.userRole,
     userAvatar: base.userAvatar,
     pluginNav: base.pluginNav,
+    pluginSettingsNav: base.pluginSettingsNav,
   });
 }
 
@@ -65,6 +68,8 @@ export interface LayoutOptions extends NavFlags {
   userAvatar?: string;
   /** Nav entries contributed by active plugins (already role-filtered). */
   pluginNav?: Array<{ label: string; href: string }>;
+  /** Plugin nav entries for the Settings group (already role-filtered). */
+  pluginSettingsNav?: Array<{ label: string; href: string }>;
 }
 
 export async function layout(views: Fetcher, opts: LayoutOptions): Promise<string> {
@@ -87,6 +92,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     canManageRoles: opts.canManageRoles ?? false,
     canManagePlugins: opts.canManagePlugins ?? false,
     pluginNav: opts.pluginNav ?? [],
+    pluginSettingsNav: opts.pluginSettingsNav ?? [],
   });
 }
 

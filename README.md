@@ -220,14 +220,18 @@ A plugin can add six things:
   (webhooks, external search indexing, cache purge, notifications). Hooks are
   best-effort and never block the editor.
 - **Content types** – register new `blueprint`/`blocks`/`blockLists`/`taxonomyLists`
-  that merge into the editor's config.
+  that merge into the editor's config. Plugin-contributed page types and block
+  types appear (read-only) in **Admin → Page Types / Block Types**, badged with
+  the contributing plugin's name.
 - **Fields & blocks** – register new pagefield types and serve their Liquid
   snippets, which render through the CMS editor.
 - **Edit views** – list page-type slugs in the manifest `editViews` to render
   the *whole* edit/new form for those types yourself, instead of the built-in
   structured editor. See [Plugin edit views](#plugin-edit-views).
 - **Admin routes + nav** – add an admin page (proxied at
-  `/admin/plugins/<id>/...`) and a navigation entry.
+  `/admin/plugins/<id>/...`) and a navigation entry. A nav item may set
+  `group: 'settings'` to nest under the sidebar's **Settings** group instead of
+  the top level; `roles` restricts who sees it.
 - **Publish targets** – declare `publishTarget: true` in the manifest to receive
   full page snapshots whenever a page is published or unpublished (pin to IPFS,
   push to a search index, trigger a static-site rebuild). Unlike hooks, publish

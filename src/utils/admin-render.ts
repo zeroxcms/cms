@@ -57,9 +57,13 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     pluginNav(c.env),
     userPermissions(c),
   ]);
-  const nav = navItems
-    .filter((item) => !item.roles?.length || item.roles.some((role) => userRoles.includes(role)))
-    .map((item) => ({ label: item.label, href: item.href }));
+  const visible = navItems
+    .filter((item) => !item.roles?.length || item.roles.some((role) => userRoles.includes(role)));
+  const toLink = (item: { label: string; href: string }) => ({ label: item.label, href: item.href });
+  // Plugins may target the Settings group (group: 'settings'); everything else
+  // sits at the top level of the sidebar.
+  const nav = visible.filter((item) => item.group !== 'settings').map(toLink);
+  const settingsNav = visible.filter((item) => item.group === 'settings').map(toLink);
   return {
     siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
     userName: user.name,
@@ -67,6 +71,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     userAvatar: userAvatar ?? '',
     currentUserId: String(user.sub),
     pluginNav: nav,
+    pluginSettingsNav: settingsNav,
     canManageUsers: permissions.has('users:manage'),
     canManageRoles: permissions.has('roles:manage'),
     canManagePlugins: permissions.has('plugin:manage'),
