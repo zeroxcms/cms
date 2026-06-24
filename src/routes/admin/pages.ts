@@ -52,8 +52,25 @@ import {
 import type { PublishOutcome } from '../../publish';
 import { buildBaseProps, dashboardPagination, exportPageList, renderPage } from '../../utils/admin-render';
 import { requirePermission } from '../../middleware/auth';
+import type { AppContext } from '../../utils/context';
 
 export const pagesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+// Escape hatch: `?native=1` (or `?editor=cms`) forces the built-in CMS editor
+// even for a page type a plugin would otherwise render (see plugins/edit-view.ts).
+// The flag is threaded through the editor's form action and save redirects so it
+// survives validation re-renders and the post-save reload.
+function preferNativeEditor(c: AppContext): boolean {
+  const native = (c.req.query('native') ?? '').toLowerCase();
+  const editor = (c.req.query('editor') ?? '').toLowerCase();
+  return native === '1' || native === 'true' || editor === 'cms' || editor === 'native';
+}
+
+/** Appends the native-editor flag to a URL when it's active (keeps `?`/`&` correct). */
+function withNativeFlag(c: AppContext, url: string): string {
+  if (!preferNativeEditor(c)) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}native=1`;
+}
 
 // Tell the page's sync Durable Object that the page was saved, so it commits
 // the live overlay and notifies connected editors. Best-effort.
@@ -220,34 +237,36 @@ pagesRoutes.get('/pages/new', async (c) => {
   const lect = blueprintToLect(pageType, config.blueprint, config.defaultLanguage);
   const taxonomy = await editorTaxonomy(c.env.DB);
 
-  const pluginView = await pluginEditView(c, pageType, {
-    mode: 'new',
-    action: '/admin/pages',
-    backHref: safeAdminReturnPath(c.req.query('return_to')),
-    language,
-    pageType,
-    page: {
-      id: '',
-      name: '',
-      slug: '',
+  if (!preferNativeEditor(c)) {
+    const pluginView = await pluginEditView(c, pageType, {
+      mode: 'new',
+      action: '/admin/pages',
+      backHref: safeAdminReturnPath(c.req.query('return_to')),
+      language,
       pageType,
-      weight: 5,
-      start: null,
-      end: null,
-      timezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
-      editors: null,
-      lect: stringifyLect(lect),
-    },
-    versions: [],
-  });
-  if (pluginView) return pluginView;
+      page: {
+        id: '',
+        name: '',
+        slug: '',
+        pageType,
+        weight: 5,
+        start: null,
+        end: null,
+        timezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
+        editors: null,
+        lect: stringifyLect(lect),
+      },
+      versions: [],
+    });
+    if (pluginView) return pluginView;
+  }
 
   return renderPage(c, editorPage, {
     parentPages: [],
     tags: taxonomy.tags,
     taxonomies: taxonomy.taxonomies,
     selectedTagIds: [],
-    action: '/admin/pages',
+    action: withNativeFlag(c, '/admin/pages'),
     defaultPageType: pageType,
     defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
     backHref: safeAdminReturnPath(c.req.query('return_to')),
@@ -285,28 +304,30 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
       language,
     );
 
-    const pluginView = await pluginEditView(c, pageType, {
-      mode: 'new',
-      action: '/admin/pages',
-      backHref,
-      language,
-      pageType,
-      page: {
-        id: '',
-        name,
-        slug,
+    if (!preferNativeEditor(c)) {
+      const pluginView = await pluginEditView(c, pageType, {
+        mode: 'new',
+        action: '/admin/pages',
+        backHref,
+        language,
         pageType,
-        weight: num(form.get('weight')),
-        start: nullableStr(form.get('start')),
-        end: nullableStr(form.get('end')),
-        timezone: nullableStr(form.get('timezone')) ?? c.env.DEFAULT_TIMEZONE ?? '+0800',
-        editors: editorsFromForm(form),
-        lect: stringifyLect(lect),
-      },
-      versions: [],
-      errors,
-    });
-    if (pluginView) return pluginView;
+        page: {
+          id: '',
+          name,
+          slug,
+          pageType,
+          weight: num(form.get('weight')),
+          start: nullableStr(form.get('start')),
+          end: nullableStr(form.get('end')),
+          timezone: nullableStr(form.get('timezone')) ?? c.env.DEFAULT_TIMEZONE ?? '+0800',
+          editors: editorsFromForm(form),
+          lect: stringifyLect(lect),
+        },
+        versions: [],
+        errors,
+      });
+      if (pluginView) return pluginView;
+    }
 
     const [parentPages, taxonomy] = await Promise.all([
       parentPageOption(c.env.DB, nullableStr(form.get('page_id'))),
@@ -320,7 +341,7 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
         taxonomies: taxonomy.taxonomies,
         selectedTagIds: [],
         errors,
-        action: '/admin/pages',
+        action: withNativeFlag(c, '/admin/pages'),
         defaultPageType: pageType,
         defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
         backHref,
@@ -456,28 +477,30 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
     fetchUserName(c.env.DB, num(lect._modifier, 0)),
   ]);
 
-  const pluginView = await pluginEditView(c, pageType, {
-    mode: 'edit',
-    action: `/admin/pages/${pageId}`,
-    backHref,
-    language,
-    pageType,
-    page: {
-      id: page.id,
-      name: page.name,
-      slug: page.slug,
+  if (!preferNativeEditor(c)) {
+    const pluginView = await pluginEditView(c, pageType, {
+      mode: 'edit',
+      action: `/admin/pages/${pageId}`,
+      backHref,
+      language,
       pageType,
-      weight: page.weight,
-      start: page.start,
-      end: page.end,
-      timezone: page.timezone,
-      editors: page.editors,
-      lect: stringifyLect(lect),
-    },
-    versions: versions.results.map((v) => ({ id: v.id, created_at: v.created_at, action: v.action })),
-    flash: flash || undefined,
-  });
-  if (pluginView) return pluginView;
+      page: {
+        id: page.id,
+        name: page.name,
+        slug: page.slug,
+        pageType,
+        weight: page.weight,
+        start: page.start,
+        end: page.end,
+        timezone: page.timezone,
+        editors: page.editors,
+        lect: stringifyLect(lect),
+      },
+      versions: versions.results.map((v) => ({ id: v.id, created_at: v.created_at, action: v.action })),
+      flash: flash || undefined,
+    });
+    if (pluginView) return pluginView;
+  }
 
   return renderPage(c, editorPage, {
     page: displayPage,
@@ -490,7 +513,7 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
     taxonomies: taxonomy.taxonomies,
     selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
     flash: flash || undefined,
-    action: `/admin/pages/${pageId}`,
+    action: withNativeFlag(c, `/admin/pages/${pageId}`),
     backHref,
     defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
     structured: {
