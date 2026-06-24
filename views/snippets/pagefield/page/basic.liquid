@@ -1,7 +1,116 @@
+{%- comment -%}
+  Page-reference field. The pointer's name is the referenced page type (e.g.
+  `*event` references `event` pages), so the combobox searches that type via
+  /admin/api/pages/<type>?q=… and writes the chosen page id into the hidden input
+  that posts under the pointer name. A raw numeric id can still be typed.
+
+  Behaviour lives in a single nonce'd script (CSP-safe — `nonce` is injected into
+  every template render) that binds every [data-page-ref] on the page once.
+{%- endcomment -%}
 <label for="{{ field.id | escape }}" class="min-w-0 block">
   <span class="block text-sm font-medium text-gray-700 mb-1">{{ field.label | escape }}</span>
-  <input id="{{ field.id | escape }}" type="text" name="{{ field.inputName | escape }}"
-         value="{{ field.value | escape }}"
-         placeholder="Page ID"
-         class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+  <div id="{{ field.id | escape }}__ref" class="relative min-w-0"
+       data-page-ref data-page-ref-type="{{ field.name | escape }}">
+    <input type="hidden" name="{{ field.inputName | escape }}" value="{{ field.value | escape }}" data-page-ref-id>
+    <input id="{{ field.id | escape }}" type="text" autocomplete="off"
+           role="combobox" aria-expanded="false" aria-controls="{{ field.id | escape }}__results"
+           value="{% if field.value != blank %}#{{ field.value | escape }}{% endif %}"
+           placeholder="Search {{ field.name | escape }} pages…"
+           class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+           data-page-ref-search>
+    <div id="{{ field.id | escape }}__results"
+         class="absolute left-0 right-0 top-full z-20 mt-1 hidden max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+         data-page-ref-results></div>
+  </div>
 </label>
+<script nonce="{{ nonce }}">
+(function () {
+  if (window.__cmsPageRefInit) return;
+  window.__cmsPageRefInit = true;
+
+  function stripLabel(value) {
+    return (value || '').replace(/\s*\(#\d+\)\s*$/, '').replace(/^#/, '').trim();
+  }
+
+  function bind(root) {
+    if (root.dataset.bound) return;
+    root.dataset.bound = '1';
+    var type = root.getAttribute('data-page-ref-type') || '';
+    var base = '/admin/api/pages/' + encodeURIComponent(type);
+    var hidden = root.querySelector('[data-page-ref-id]');
+    var search = root.querySelector('[data-page-ref-search]');
+    var results = root.querySelector('[data-page-ref-results]');
+    var timer;
+
+    function close() { results.classList.add('hidden'); search.setAttribute('aria-expanded', 'false'); }
+    function open() { results.classList.remove('hidden'); search.setAttribute('aria-expanded', 'true'); }
+
+    function choose(item) {
+      hidden.value = item.id;
+      search.value = item.name ? (item.name + ' (#' + item.id + ')') : ('#' + item.id);
+      close();
+    }
+
+    function render(items) {
+      results.textContent = '';
+      if (!items.length) {
+        var empty = document.createElement('p');
+        empty.className = 'px-3 py-2 text-xs text-gray-400';
+        empty.textContent = 'No matching pages';
+        results.appendChild(empty);
+      } else {
+        items.forEach(function (item) {
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50';
+          var name = document.createElement('span');
+          name.className = 'block font-medium';
+          name.textContent = item.name || ('#' + item.id);
+          var meta = document.createElement('span');
+          meta.className = 'block text-xs text-gray-400';
+          meta.textContent = '/' + (item.slug || '') + ' · #' + item.id;
+          btn.appendChild(name);
+          btn.appendChild(meta);
+          // mousedown (not click) fires before the input blur that would close the list.
+          btn.addEventListener('mousedown', function (event) { event.preventDefault(); choose(item); });
+          results.appendChild(btn);
+        });
+      }
+      open();
+    }
+
+    function fetchPages(query) {
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        fetch(base + '?q=' + encodeURIComponent(query), { headers: { accept: 'application/json' } })
+          .then(function (response) { return response.ok ? response.json() : []; })
+          .then(function (data) { render(Array.isArray(data) ? data : []); })
+          .catch(function () {});
+      }, 180);
+    }
+
+    search.addEventListener('focus', function () { fetchPages(stripLabel(search.value)); });
+    search.addEventListener('input', function () {
+      var value = stripLabel(search.value);
+      // Allow typing a raw page id directly.
+      if (/^\d+$/.test(value)) hidden.value = value;
+      fetchPages(value);
+    });
+    document.addEventListener('click', function (event) { if (!root.contains(event.target)) close(); });
+
+    // Label the current selection with its page name.
+    if (hidden.value) {
+      fetch(base + '?id=' + encodeURIComponent(hidden.value), { headers: { accept: 'application/json' } })
+        .then(function (response) { return response.ok ? response.json() : []; })
+        .then(function (data) {
+          if (data && data[0] && data[0].name) search.value = data[0].name + ' (#' + data[0].id + ')';
+        })
+        .catch(function () {});
+    }
+  }
+
+  function bindAll() { document.querySelectorAll('[data-page-ref]').forEach(bind); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindAll);
+  else bindAll();
+})();
+</script>

@@ -49,12 +49,44 @@ apiRoutes.get('/api/parent-pages', async (c) => {
   })));
 });
 
+// Pages of a given type, for the page-reference field's search combobox
+// (views/snippets/pagefield/page/basic.liquid). `q` filters by name/slug; `id`
+// resolves a single page (used to label the current selection). With neither,
+// returns the most-recently-updated pages of the type.
 apiRoutes.get('/api/pages/:type', async (c) => {
   const pageType = c.req.param('type');
-  const pages = await c.env.DB.prepare('SELECT id, name FROM draft_pages WHERE page_type = ? ORDER BY name ASC')
-    .bind(pageType)
-    .all<{ id: number; name: string }>();
-  return c.json(pages.results.map((page) => ({ page: page.id, name: page.name })));
+  const query = c.req.query('q')?.trim() ?? '';
+  const id = num(c.req.query('id'), 0);
+
+  const conditions = ['page_type = ?'];
+  const params: unknown[] = [pageType];
+  if (id) {
+    conditions.push('id = ?');
+    params.push(id);
+  } else if (query) {
+    const term = `%${query.replaceAll(' ', '%')}%`;
+    conditions.push('(name LIKE ? OR slug LIKE ?)');
+    params.push(term, term);
+  }
+
+  const pages = await c.env.DB.prepare(
+    `SELECT id, name, slug
+     FROM draft_pages
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY updated_at DESC, name ASC
+     LIMIT 20`,
+  )
+    .bind(...params)
+    .all<{ id: number; name: string; slug: string }>();
+
+  return c.json(pages.results.map((page) => ({
+    id: page.id,
+    // `page` retained for backward compatibility with earlier callers.
+    page: page.id,
+    name: page.name,
+    slug: page.slug,
+    label: `/${page.slug}`,
+  })));
 });
 
 apiRoutes.get('/api/tags/:type', async (c) => {
