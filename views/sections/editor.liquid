@@ -220,10 +220,19 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
           <span>Lect JSON</span>
           <span class="text-gray-400">Raw metadata</span>
         </summary>
-        <div class="flex min-w-0 gap-2 px-4 pb-3 sm:px-5">
-          <label for="lect_json" class="sr-only">Lect JSON</label>
-          <textarea id="lect_json" name="lect_json" rows="4"
-                    class="block min-w-0 w-full max-w-full rounded border border-gray-300 bg-gray-50 px-3 py-2 text-xs font-mono text-gray-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y">{{ page.lect | escape }}</textarea>
+        <div class="flex min-w-0 flex-col gap-2 px-4 pb-3 sm:px-5">
+          {% if hasLectDiff %}
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-400">
+              <span>diff vs current draft</span>
+              <span class="inline-flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-sm bg-emerald-200"></span> this version</span>
+              <span class="inline-flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-sm bg-rose-200"></span> current draft</span>
+            </div>
+            <pre class="block min-w-0 w-full max-w-full overflow-x-auto rounded border border-gray-300 bg-gray-50 p-3 text-[11px] leading-5 font-mono text-gray-800">{{ lectDiffHtml }}</pre>
+          {% else %}
+            <label for="lect_json" class="sr-only">Lect JSON</label>
+            <textarea id="lect_json" name="lect_json" rows="4"
+                      class="block min-w-0 w-full max-w-full rounded border border-gray-300 bg-gray-50 px-3 py-2 text-xs font-mono text-gray-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y">{{ page.lect | escape }}</textarea>
+          {% endif %}
         </div>
       </details>
     </div>

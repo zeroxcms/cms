@@ -516,6 +516,8 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
     action: withNativeFlag(c, `/admin/pages/${pageId}`),
     backHref,
     defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
+    // Current draft lect, so a version preview can diff against it.
+    draftLect: stringifyLect(lectForPage(config, pageType, page.lect)),
     structured: {
       config,
       language,

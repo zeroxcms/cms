@@ -1283,6 +1283,34 @@ describe('structured editor weights', () => {
   });
 });
 
+describe('Lect JSON version diff', () => {
+  it('shows a colour-coded diff against the current draft when previewing a version', async () => {
+    // A second version of page 101 whose lect differs from the current draft.
+    const changed = stringifyLect({ ...basePageLectObject, name: localizedFixture('About — REVISED') });
+    await env.DB.prepare('INSERT INTO page_versions (id, page_id, lect, action) VALUES (?, ?, ?, ?)')
+      .bind(502, 101, changed, 'update').run();
+
+    const html = await (await fetchWorker('/admin/pages/101/edit?version=502', {
+      headers: { Cookie: await authCookie() },
+    })).text();
+
+    // The raw-metadata panel renders the diff instead of the editable textarea.
+    expect(html).toContain('diff vs current draft');
+    expect(html).toContain('bg-emerald-50');    // a line only in this version
+    expect(html).toContain('bg-rose-50');        // a line only in the current draft
+    expect(html).toContain('About — REVISED');   // the version's value, highlighted
+    expect(html).not.toContain('name="lect_json"');
+  });
+
+  it('keeps the editable Lect JSON textarea when not previewing a version', async () => {
+    const html = await (await fetchWorker('/admin/pages/101/edit', {
+      headers: { Cookie: await authCookie() },
+    })).text();
+    expect(html).toContain('name="lect_json"');
+    expect(html).not.toContain('diff vs current draft');
+  });
+});
+
 async function expectRoute(route: RouteCase): Promise<Response> {
   const headers = new Headers(route.headers);
   if (route.authenticated) headers.set('Cookie', await authCookie());

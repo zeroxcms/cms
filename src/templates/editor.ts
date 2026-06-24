@@ -400,6 +400,66 @@ function editorChips(editors: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
+// ── Lect JSON version diff ──────────────────────────────────────────────────
+// When previewing a saved version, the raw-metadata panel shows a colour-coded
+// diff of that version's lect against the current draft instead of the editable
+// textarea, so it's obvious what changed.
+
+/** Recursively key-sorted, pretty-printed JSON so a line diff reflects value
+ *  changes rather than key-ordering noise. Falls back to the raw input. */
+function stablePrettyJson(json: string): string {
+  const sortDeep = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(sortDeep);
+    if (value && typeof value === 'object') {
+      const sorted: Record<string, unknown> = {};
+      for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+        sorted[key] = sortDeep((value as Record<string, unknown>)[key]);
+      }
+      return sorted;
+    }
+    return value;
+  };
+  try {
+    return JSON.stringify(sortDeep(JSON.parse(json)), null, 2);
+  } catch {
+    return json;
+  }
+}
+
+/**
+ * Renders an escaped, colour-coded line diff (LCS) of the previewed version's
+ * lect against the current draft's lect, as a run of block <span>s for a <pre>:
+ * emerald = only in this version, rose = only in the current draft, grey = same.
+ * Returns '' when there is no difference (or either side is missing).
+ */
+function renderLectDiff(draftJson: string, versionJson: string): string {
+  const base = stablePrettyJson(draftJson).split('\n');     // current draft
+  const target = stablePrettyJson(versionJson).split('\n'); // previewed version
+  const n = base.length;
+  const m = target.length;
+  // Suffix LCS-length table, to walk a minimal diff.
+  const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      lcs[i][j] = base[i] === target[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    }
+  }
+  const lines: string[] = [];
+  let changed = false;
+  const push = (cls: string, gutter: string, text: string) =>
+    lines.push(`<span class="block ${cls}"><span class="select-none text-gray-400">${gutter}</span>${escHtml(text)}</span>`);
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (base[i] === target[j]) { push('text-gray-500', '  ', target[j]); i++; j++; }
+    else if (lcs[i + 1][j] >= lcs[i][j + 1]) { push('bg-rose-50 text-rose-700', '- ', base[i]); i++; changed = true; }
+    else { push('bg-emerald-50 text-emerald-800', '+ ', target[j]); j++; changed = true; }
+  }
+  while (i < n) { push('bg-rose-50 text-rose-700', '- ', base[i++]); changed = true; }
+  while (j < m) { push('bg-emerald-50 text-emerald-800', '+ ', target[j++]); changed = true; }
+  return changed ? lines.join('') : '';
+}
+
 export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
   page?: Page;
   modifierName?: string;
@@ -418,6 +478,9 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
   defaultTimezone?: string;
   /** Where the back arrow / Cancel button return to (e.g. a plugin dashboard). Defaults to /admin. */
   backHref?: string;
+  /** Current draft's lect JSON — when previewing a version, the raw-metadata
+   *  panel diffs the version against this instead of showing the editable box. */
+  draftLect?: string;
   structured?: {
     config: CmsConfig;
     language: string;
@@ -466,6 +529,10 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
       selected: page?.page_id === parent.id || parentPages.length === 1,
     }));
   const selectedParent = parentOptions.find((parent) => parent.selected);
+  // When previewing a version, diff its lect against the current draft.
+  const lectDiffHtml = selectedVersion && opts.draftLect != null
+    ? renderLectDiff(opts.draftLect, page?.lect ?? '')
+    : '';
   const versions = structured?.versions.map((version) => ({
     label: `${version.created_at}${version.action ? ` - ${version.action}` : ''}`,
     href: `${versionHrefBase}?version=${version.id}`,
@@ -509,6 +576,8 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
       hasModifier: !!modifierName,
       lect: page?.lect ?? '',
     },
+    lectDiffHtml,
+    hasLectDiff: !!lectDiffHtml,
     parentOptions,
     selectedParent: {
       id: selectedParent?.id ?? '',
