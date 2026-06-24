@@ -39,6 +39,16 @@ export function blockPropsByName(config: CmsConfig): Record<string, ReturnType<t
   return props;
 }
 
+/**
+ * Block types offered in the editor's "add block" picker for a page type: the
+ * type's own block list when it defines one, otherwise every known block type
+ * (config + database + plugin), so a type without an explicit list isn't limited
+ * to the defaults.
+ */
+export function blockNamesFor(config: CmsConfig, pageType: string): string[] {
+  return config.blockLists[pageType] ?? Object.keys(config.blocks);
+}
+
 export function lectsMatch(left: string | null | undefined, right: string | null | undefined): boolean {
   if ((left ?? '') === (right ?? '')) return true;
   return stringifyLect(safeParseLect(left)) === stringifyLect(safeParseLect(right));

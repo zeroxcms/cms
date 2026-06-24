@@ -25,6 +25,7 @@ import {
 import { validatePageBasics } from '../../utils/validation';
 import {
   applyStructuredAction,
+  blockNamesFor,
   blockPropsByName,
   blueprintPropsFor,
   isStructuredEditorAction,
@@ -276,7 +277,7 @@ pagesRoutes.get('/pages/new', async (c) => {
       lect,
       blueprintProps: blueprintPropsFor(config, pageType),
       blockProps: blockPropsByName(config),
-      blockNames: config.blockLists[pageType] ?? config.blockLists.default,
+      blockNames: blockNamesFor(config, pageType),
       versions: [],
     },
   }, viewsFor(c.env));
@@ -351,7 +352,7 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
           lect,
           blueprintProps: blueprintPropsFor(config, pageType),
           blockProps: blockPropsByName(config),
-          blockNames: config.blockLists[pageType] ?? config.blockLists.default,
+          blockNames: blockNamesFor(config, pageType),
           versions: [],
         },
       }),
@@ -524,7 +525,7 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
       lect,
       blueprintProps: blueprintPropsFor(config, pageType),
       blockProps: blockPropsByName(config),
-      blockNames: config.blockLists[pageType] ?? config.blockLists.default,
+      blockNames: blockNamesFor(config, pageType),
       versions: versions.results,
     },
   }, viewsFor(c.env));
@@ -644,7 +645,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
           lect,
           blueprintProps: blueprintPropsFor(config, pageType),
           blockProps: blockPropsByName(config),
-          blockNames: config.blockLists[pageType] ?? config.blockLists.default,
+          blockNames: blockNamesFor(config, pageType),
           versions: versions.results,
         },
       }),

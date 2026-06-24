@@ -1311,6 +1311,31 @@ describe('Lect JSON version diff', () => {
   });
 });
 
+describe('Add-block picker scope', () => {
+  it('offers every block type when the page type defines no block list', async () => {
+    // Page type 'event' (seeded type 700) has no block list of its own.
+    await env.DB.prepare(
+      `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(105, 'page-uuid-105', 'Gala', 'gala', 5, 'event', stringifyLect({ _type: 'event' }), 1, '1').run();
+
+    const html = await (await fetchWorker('/admin/pages/105/edit', {
+      headers: { Cookie: await authCookie() },
+    })).text();
+    // 'hero' is a database block type, absent from the config default list — it
+    // appears only because the 'event' type falls back to every block type.
+    expect(html).toContain('<option value="hero">');
+  });
+
+  it("limits the picker to the page type's own block list when it defines one", async () => {
+    // Page type 'default' has a config block list (default/label/logos/paragraphs), no 'hero'.
+    const html = await (await fetchWorker('/admin/pages/101/edit', {
+      headers: { Cookie: await authCookie() },
+    })).text();
+    expect(html).not.toContain('<option value="hero">');
+  });
+});
+
 async function expectRoute(route: RouteCase): Promise<Response> {
   const headers = new Headers(route.headers);
   if (route.authenticated) headers.set('Cookie', await authCookie());
