@@ -290,6 +290,13 @@ so a half-built plugin can never lock an editor out of a page. Like proxied admi
 pages, the wrapped fragment runs under the CMS's strict nonce CSP — contribute
 any field markup through Liquid snippets / view files rather than inline scripts.
 
+Admin responses are `X-Frame-Options: DENY` by default. A plugin **full-document**
+admin response (no `x-cms-chrome`) may opt into being shown in a same-origin
+`<iframe>` by setting `x-cms-frame: 1`; the proxy translates it to
+`X-Frame-Options: SAMEORIGIN` with `frame-ancestors 'self'` (e.g. an EDM editor
+embedding its own email preview). It is same-origin only — the response is still
+served on the CMS origin.
+
 ### Adding a plugin
 
 1. Build/deploy the plugin Worker (see [`examples/plugin-events`](examples/plugin-events)

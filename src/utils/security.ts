@@ -1,7 +1,6 @@
 const SECURITY_HEADERS: Record<string, string> = {
   'Referrer-Policy': 'same-origin',
   'X-Content-Type-Options': 'nosniff',
-  'X-Frame-Options': 'DENY',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'Strict-Transport-Security': 'max-age=31536000',
 };
@@ -33,6 +32,11 @@ export function withSecurityHeaders(response: Response, cspNonce = ''): Response
   // A route may set its own (stricter) CSP, e.g. the media sandbox; don't clobber it.
   if (!secured.headers.has('Content-Security-Policy')) {
     secured.headers.set('Content-Security-Policy', buildContentSecurityPolicy(cspNonce));
+  }
+  // Default to DENY, but let a route opt into same-origin framing (e.g. the plugin
+  // admin proxy lets a plugin's preview be shown in a same-origin <iframe>).
+  if (!secured.headers.has('X-Frame-Options')) {
+    secured.headers.set('X-Frame-Options', 'DENY');
   }
   return secured;
 }

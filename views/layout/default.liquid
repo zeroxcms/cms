@@ -41,6 +41,20 @@
         }
       });
     });
+
+    // Auto-submit a control's form when it changes, for elements marked
+    // [data-autosubmit] (e.g. an editor language selector that should reload the
+    // page on change). CSP-safe replacement for an inline onchange handler — the
+    // form attribute association resolves the target form for fields outside it.
+    document.addEventListener('change', function(event) {
+      const el = event.target;
+      if (!(el instanceof Element) || !el.hasAttribute('data-autosubmit')) return;
+      const formId = el.getAttribute('form');
+      const form = (el instanceof HTMLSelectElement && el.form)
+        || (formId && document.getElementById(formId))
+        || el.closest('form');
+      if (form instanceof HTMLFormElement) form.submit();
+    });
   </script>
 </head>
 <body class="h-full">

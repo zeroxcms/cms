@@ -286,6 +286,41 @@ describe('plugin admin proxy', () => {
     expect(body).toContain('Gala 晚宴');                        // decoded unicode title
     // Wrapped pages get the CMS strict nonce CSP, not the relaxed plugin policy.
     expect(response.headers.get('Content-Security-Policy')).toContain("script-src 'self' 'nonce-");
+    // Default admin pages stay un-frameable.
+    expect(response.headers.get('X-Frame-Options')).toBe('DENY');
+  });
+
+  it('lets a plugin full-document response opt into same-origin framing', async () => {
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const url = 'https://plugin-frame.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(u).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        // A full document (no x-cms-chrome) opting into same-origin framing.
+        return new Response('<!doctype html><title>Preview</title><body>EMAIL</body>', {
+          headers: { 'content-type': 'text/html; charset=utf-8', 'x-cms-frame': '1' },
+        });
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/events/edm/5/preview', {
+      headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+
+    expect(response.status).toBe(200);
+    // The CMS turns the opt-in into same-origin framing instead of the global DENY.
+    expect(response.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
+    expect(response.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'self'");
+    // The internal opt-in header isn't leaked to the browser.
+    expect(response.headers.get('x-cms-frame')).toBeNull();
   });
 
   it('renders plugin nav items in the admin sidebar', async () => {

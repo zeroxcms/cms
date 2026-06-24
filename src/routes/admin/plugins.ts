@@ -101,6 +101,13 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
   // origin isolation — see warnSharedOrigin() — it only limits injection
   // into an otherwise-benign plugin.
   const response = new Response(upstreamResponse.body, upstreamResponse);
+  // A plugin can opt a full-document response into being shown in a same-origin
+  // <iframe> by setting `x-cms-frame: 1` (e.g. an EDM email preview embedded in
+  // the editor). Without it the global X-Frame-Options: DENY applies. Same-origin
+  // only — the response is still on the CMS origin, so this is not cross-site framing.
+  const allowFraming = upstreamResponse.headers.get('x-cms-frame') === '1';
+  response.headers.delete('x-cms-frame');
+  if (allowFraming) response.headers.set('X-Frame-Options', 'SAMEORIGIN');
   if (!response.headers.has('Content-Security-Policy')) {
     response.headers.set(
       'Content-Security-Policy',
@@ -111,6 +118,7 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
         "img-src 'self' data: https:",
         "object-src 'none'",
         "base-uri 'none'",
+        allowFraming ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
       ].join('; '),
     );
   }
