@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-50">
+<html lang="en" class="h-full overflow-x-hidden bg-gray-50">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -110,7 +110,7 @@
   </script>
   <link rel="stylesheet" href="/assets/admin.css">
 </head>
-<body class="h-full">
+<body class="h-full overflow-x-hidden">
   {% if admin %}
     <aside class="sticky top-0 z-40 bg-gray-900 text-white shadow-xl md:fixed md:inset-y-0 md:left-0 md:w-64 md:flex md:flex-col" data-admin-sidebar>
       <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-700 md:px-6 md:py-5">
@@ -120,7 +120,7 @@
         </svg>
         <span class="min-w-0 truncate font-bold text-lg tracking-tight">{{ siteTitle | escape }}</span>
       </div>
-      <nav class="flex gap-1 overflow-x-auto px-3 py-2 md:block md:flex-1 md:px-4 md:py-6 md:space-y-1">
+      <nav class="flex gap-1 overflow-x-auto px-3 py-2 md:block md:flex-1 md:px-4 md:py-6 md:space-y-1" data-scroll-frame>
         <a href="/admin"
            class="flex shrink-0 items-center gap-2 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors md:gap-3">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -137,7 +137,7 @@
           </svg>
           Tags
         </a>
-        <details class="group shrink-0 md:block">
+        <details class="group shrink-0 overflow-hidden md:block md:overflow-visible">
           <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors md:gap-3 [&::-webkit-details-marker]:hidden">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -149,7 +149,7 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
             </svg>
           </summary>
-          <div class="flex gap-1 md:mt-1 md:ml-3 md:block md:space-y-1 md:border-l md:border-gray-700 md:pl-3">
+          <div class="flex max-w-[calc(100vw-2rem)] gap-1 overflow-x-auto md:mt-1 md:ml-3 md:block md:max-w-none md:space-y-1 md:overflow-visible md:border-l md:border-gray-700 md:pl-3" data-scroll-frame>
             <a href="/admin/taxonomies"
                class="flex shrink-0 items-center gap-2 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors md:gap-3">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

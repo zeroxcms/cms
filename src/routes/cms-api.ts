@@ -35,7 +35,7 @@ import { deliverHook, type HookEvent, type HookPage } from '../plugins/hooks';
 import { blueprintToLect, mergeLects, safeParseLect, stringifyLect } from '../utils/lect';
 import type { Lect } from '../utils/lect';
 import { withDraftMetadata } from '../utils/page-logic';
-import { ensureUniqueDraftSlug, savePageVersion, trashDraftPage } from '../utils/admin-queries';
+import { ensureUniqueDraftSlug, savePageVersion, trashDraftPage, trashDraftPages } from '../utils/admin-queries';
 import { slugify } from '../utils/forms';
 import { unpublishPageFromTargets } from '../publish';
 
@@ -620,6 +620,46 @@ async function updatePage(c: AppContext): Promise<Response> {
   emitPluginHook(c, 'update', { id, uuid: page.uuid, page_type: pageType, name, slug }, auth.pluginId);
   return c.json({ page: serializePage(updated!) });
 }
+
+// Batch soft-delete pages to trash. Accepts { ids: number[] } (up to MAX_BATCH).
+// Pages not found are silently skipped. Returns the count actually trashed.
+// Must be registered BEFORE DELETE /pages/:id so "batch" isn't matched as an id.
+cmsApiRoutes.delete('/pages/batch', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const body = await c.req.json().catch(() => null) as { ids?: unknown } | null;
+  const rawIds = body && Array.isArray(body.ids) ? body.ids : null;
+  if (!rawIds) return c.json({ error: 'invalid_body' }, 400);
+
+  const ids = rawIds.filter((id): id is number => typeof id === 'number' && Number.isFinite(id));
+  if (!ids.length) return c.json({ ok: true, trashed: 0 });
+  if (ids.length > MAX_BATCH) return c.json({ error: 'batch_too_large', max: MAX_BATCH }, 413);
+
+  // Enforce scope: all requested ids must be allowed page types.
+  const ph = ids.map(() => '?').join(',');
+  const { results: types } = await c.env.DB.prepare(
+    `SELECT id, page_type FROM draft_pages WHERE id IN (${ph})`,
+  ).bind(...ids).all<{ id: number; page_type: string | null }>();
+
+  for (const row of types) {
+    if (!auth.allowedTypes.has(row.page_type ?? '')) return c.json({ error: 'forbidden_page_type' }, 403);
+  }
+
+  const pages = await trashDraftPages(c.env.DB, ids);
+
+  await Promise.allSettled(pages.map((page) => unpublishPageFromTargets(c.env, page.uuid)));
+  for (const page of pages) {
+    emitPluginHook(
+      c,
+      'delete',
+      { id: page.id, uuid: page.uuid, page_type: page.page_type, name: page.name, slug: page.slug },
+      auth.pluginId,
+    );
+  }
+
+  return c.json({ ok: true, trashed: pages.length });
+});
 
 // Soft-delete a page to trash.
 cmsApiRoutes.delete('/pages/:id', async (c) => {

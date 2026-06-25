@@ -184,6 +184,62 @@ export async function trashDraftPage(db: D1Database, pageId: number): Promise<Pa
   return page;
 }
 
+/**
+ * Batch-trash multiple draft pages in a single D1 transaction.
+ * Equivalent to calling trashDraftPage for each id, but uses INSERT-SELECT
+ * to copy pages, versions, and tags in bulk — O(1) round trips regardless
+ * of how many pages are deleted.
+ *
+ * Pages not found are silently skipped (same as the single-page variant).
+ * Returns the pages that were actually trashed.
+ */
+export async function trashDraftPages(db: D1Database, ids: number[]): Promise<Page[]> {
+  if (!ids.length) return [];
+  const ph = ids.map(() => '?').join(',');
+
+  const { results: pages } = await db.prepare(
+    `SELECT * FROM draft_pages WHERE id IN (${ph})`,
+  ).bind(...ids).all<Page>();
+  if (!pages.length) return [];
+
+  const foundIds = pages.map((p) => p.id);
+  const foundPh = foundIds.map(() => '?').join(',');
+
+  await db.batch([
+    // Copy pages into trash, resolving trash parent inline.
+    db.prepare(
+      `INSERT INTO trash_pages (id, uuid, name, slug, weight, start, end, timezone, page_type, current_page_version_id, lect, page_id, source_page_id, creator, editors)
+       SELECT dp.id, dp.uuid, dp.name, dp.slug, dp.weight, dp.start, dp.end, dp.timezone, dp.page_type, dp.current_page_version_id, dp.lect,
+         CASE WHEN dp.page_id IS NOT NULL AND EXISTS (SELECT 1 FROM trash_pages tp WHERE tp.id = dp.page_id) THEN dp.page_id ELSE NULL END,
+         dp.page_id, dp.creator, dp.editors
+       FROM draft_pages dp WHERE dp.id IN (${foundPh})
+       ON CONFLICT(uuid) DO UPDATE SET
+         name = excluded.name, slug = excluded.slug, weight = excluded.weight,
+         start = excluded.start, end = excluded.end, timezone = excluded.timezone,
+         page_type = excluded.page_type, current_page_version_id = excluded.current_page_version_id,
+         lect = excluded.lect, page_id = excluded.page_id, source_page_id = excluded.source_page_id,
+         creator = excluded.creator, editors = excluded.editors`,
+    ).bind(...foundIds),
+    // Copy page versions (join via uuid so the trash row's id is used, not the draft id).
+    db.prepare(
+      `INSERT OR IGNORE INTO trash_page_versions (id, uuid, created_at, page_id, lect, action)
+       SELECT pv.id, pv.uuid, pv.created_at, tp.id, pv.lect, pv.action
+       FROM page_versions pv
+       JOIN trash_pages tp ON tp.uuid = (SELECT dp.uuid FROM draft_pages dp WHERE dp.id = pv.page_id)
+       WHERE pv.page_id IN (${foundPh})`,
+    ).bind(...foundIds),
+    // Copy page tags.
+    db.prepare(
+      `INSERT OR IGNORE INTO trash_page_tags (uuid, page_id, tag_id, weight)
+       SELECT uuid, page_id, tag_id, weight FROM draft_page_tags WHERE page_id IN (${foundPh})`,
+    ).bind(...foundIds),
+    // Remove from draft.
+    db.prepare(`DELETE FROM draft_pages WHERE id IN (${foundPh})`).bind(...foundIds),
+  ]);
+
+  return pages;
+}
+
 export async function listDashboardDraftPages(
   db: D1Database,
   options: { pageType?: string; page: number; limit: number },
