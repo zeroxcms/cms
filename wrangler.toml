@@ -79,7 +79,7 @@ GITHUB_CLIENT_ID = "Ov23lis6jG7x2nBmbFM1"
 # Shared redirect URI – registered with every enabled provider
 OAUTH_REDIRECT_URI = "https://cms.eventuai.com/auth/callback"
 CANONICAL_ORIGIN = "https://cms.eventuai.com"
-SITE_TITLE = "Worker CMS"
+SITE_TITLE = "0xCMS"
 # Default timezone applied to a page's start/end window when none is set.
 # UTC offset (e.g. "+0800") or an IANA name (e.g. "Asia/Hong_Kong").
 DEFAULT_TIMEZONE = "+0800"

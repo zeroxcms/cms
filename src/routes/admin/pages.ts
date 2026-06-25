@@ -150,7 +150,7 @@ pagesRoutes.get('/pages/list/:pageType', async (c) => {
   const routeBase = `/admin/pages/list/${encodeURIComponent(pageType)}`;
 
   return renderPage(c, dashboardPage, {
-      siteTitle: `${c.env.SITE_TITLE ?? 'Worker CMS'} · ${pageType}`,
+      siteTitle: `${c.env.SITE_TITLE ?? '0xCMS'} · ${pageType}`,
       pages: draftPages.results.map((page) => ({
         ...page,
         isPublished: liveMap.has(page.uuid),

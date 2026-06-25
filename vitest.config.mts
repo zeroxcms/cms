@@ -19,7 +19,7 @@ export default defineConfig({
           GITHUB_CLIENT_SECRET: 'test-github-secret',
           OAUTH_REDIRECT_URI: 'https://cms.eventuai.com/auth/callback',
           CANONICAL_ORIGIN: 'https://cms.eventuai.com',
-          SITE_TITLE: 'Worker CMS',
+          SITE_TITLE: '0xCMS',
           TEST_MIGRATIONS: await readD1Migrations(path.join(rootDir, 'migrations')),
           TEST_PUBLISHED_MIGRATIONS: await readD1Migrations(path.join(rootDir, 'migrations/published')),
         },

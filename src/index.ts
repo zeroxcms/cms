@@ -1,5 +1,5 @@
 // ============================================================
-// Worker CMS – main entry point
+// 0xCMS - main entry point
 //
 // Routes:
 //   /auth/*   – OAuth 2.1 login / callback / logout / refresh
@@ -156,7 +156,7 @@ app.notFound(async (c) => {
       status: 404,
       title: 'Not Found',
       heading: 'Page Not Found',
-      siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
+      siteTitle: c.env.SITE_TITLE ?? '0xCMS',
     }),
     404,
   );
@@ -171,7 +171,7 @@ app.onError(async (err, c) => {
       title: 'Server Error',
       heading: 'Internal Server Error',
       message: 'Please try again later.',
-      siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
+      siteTitle: c.env.SITE_TITLE ?? '0xCMS',
     }),
     500,
   );

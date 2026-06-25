@@ -166,7 +166,7 @@ authRoutes.get('/login', async (c) => {
   const error = c.req.query('error');
   return c.html(
     await loginPage(c.env.VIEWS, {
-      siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
+      siteTitle: c.env.SITE_TITLE ?? '0xCMS',
       providers: providers.length > 0 ? providers : ['github'],
       error,
     }),

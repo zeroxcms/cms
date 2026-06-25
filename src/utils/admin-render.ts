@@ -65,7 +65,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
   const nav = visible.filter((item) => item.group !== 'settings').map(toLink);
   const settingsNav = visible.filter((item) => item.group === 'settings').map(toLink);
   return {
-    siteTitle: c.env.SITE_TITLE ?? 'Worker CMS',
+    siteTitle: c.env.SITE_TITLE ?? '0xCMS',
     userName: user.name,
     userRole: user.role,
     userAvatar: userAvatar ?? '',
@@ -218,7 +218,7 @@ export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all
   const pathOptionsByPageType = advancedSearchPathOptionsByPageType(config);
 
   return renderPage(c, advancedSearchPage, {
-      siteTitle: `${c.env.SITE_TITLE ?? 'Worker CMS'} · Advanced Search`,
+      siteTitle: `${c.env.SITE_TITLE ?? '0xCMS'} · Advanced Search`,
       pageTitle: selectedPageType === 'all' ? 'Advanced Search' : `Advanced Search: ${selectedPageType}`,
       pageType: selectedPageType,
       canSelectPageType,
