@@ -73,6 +73,7 @@ interface PluginAuth {
 
 /** Body accepted by create/update. All fields optional on update; `page_type` required on create. */
 interface PageInput {
+  id?: unknown;
   page_type?: unknown;
   name?: unknown;
   slug?: unknown;
@@ -86,6 +87,7 @@ interface PageInput {
 }
 
 interface PreparedCreate {
+  id: number | null;
   pageType: string;
   name: string;
   baseSlug: string;
@@ -251,6 +253,7 @@ function prepareCreateInput(
   return {
     ok: true,
     input: {
+      id: asFiniteNumber(input.id),
       pageType,
       name,
       baseSlug,
@@ -281,11 +284,13 @@ async function createPage(
   const preparedInput = prepared.input;
   const slug = await ensureUniqueDraftSlug(c.env.DB, preparedInput.baseSlug);
 
-  const result = await c.env.DB.prepare(
-    `INSERT INTO draft_pages (name, slug, weight, start, end, timezone, page_type, lect, page_id, creator)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  const explicitId = preparedInput.id ?? cmsId(new Set<number>());
+  await c.env.DB.prepare(
+    `INSERT INTO draft_pages (id, name, slug, weight, start, end, timezone, page_type, lect, page_id, creator)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
+      explicitId,
       preparedInput.name,
       slug,
       preparedInput.weight,
@@ -299,9 +304,8 @@ async function createPage(
     )
     .run();
 
-  // Custom DEFAULT id expression means last_row_id is the rowid; SELECT the id back.
-  const row = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE rowid = ?')
-    .bind(result.meta.last_row_id)
+  const row = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
+    .bind(explicitId)
     .first<Page>();
   if (!row) return { ok: false, status: 500, error: 'create_failed' };
 
@@ -493,7 +497,8 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
     const createdAt = cmsTimestamp();
 
     for (const item of prepared) {
-      const id = cmsId(usedIds);
+      const id = item.id ?? cmsId(usedIds);
+      usedIds.add(id);
       const uuid = crypto.randomUUID();
       const versionId = cmsId(usedIds);
       const versionUuid = crypto.randomUUID();
