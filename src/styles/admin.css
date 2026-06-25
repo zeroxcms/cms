@@ -171,6 +171,12 @@ th,
 .shadow-sm { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
 .shadow-xl { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
 
+/* Keep intentional horizontal scrollers from widening the root document on
+   mobile. The scroller still works; only its overflow stops affecting <html>. */
+[data-scroll-frame] {
+  contain: layout paint;
+}
+
 /* Light theme: restore conventional Tailwind-style tokens while keeping the
    same utility classes and markup. Dark remains the default for first visit. */
 html[data-theme="light"] {
