@@ -384,6 +384,62 @@ describe('admin routes', () => {
     await expectRoute(route);
   });
 
+  it('POST /admin/pages/batch-weight updates multiple page weights', async () => {
+    const cookie = await authCookie();
+    const updates = [
+      { id: 101, weight: 10 },
+      { id: 102, weight: 20 },
+    ];
+
+    const response = await fetchWorker('/admin/pages/batch-weight', {
+      method: 'POST',
+      headers: { 
+        Cookie: cookie,
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify({ updates }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true });
+
+    const rows = await env.DB.prepare('SELECT id, weight FROM draft_pages WHERE id IN (?, ?)')
+      .bind(101, 102)
+      .all<{ id: number; weight: number }>();
+    
+    const weights = rows.results.reduce((acc, row) => {
+      acc[row.id] = row.weight;
+      return acc;
+    }, {} as Record<number, number>);
+
+    expect(weights[101]).toBe(10);
+    expect(weights[102]).toBe(20);
+  });
+
+  it('POST /admin/pages/batch-weight rejects unauthenticated requests', async () => {
+    const response = await fetchWorker('/admin/pages/batch-weight', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates: [{ id: 101, weight: 10 }] }),
+    });
+
+    expect(response.status).toBe(401);
+  });
+
+  it('POST /admin/pages/batch-weight rejects malformed input', async () => {
+    const response = await fetchWorker('/admin/pages/batch-weight', {
+      method: 'POST',
+      headers: { 
+        Cookie: await authCookie(),
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify({ updates: 'not-an-array' }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Invalid input' });
+  });
+
   it('POST /admin/pages/:id/publish writes published content to PUBLISHED_DB only', async () => {
     await env.PUBLISHED_DB.prepare('DELETE FROM live_page_tags').run();
     await env.PUBLISHED_DB.prepare('DELETE FROM live_pages').run();

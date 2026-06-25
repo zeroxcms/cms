@@ -435,6 +435,25 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
   return c.redirect(`${backHref}${backHref.includes('?') ? '&' : '?'}${createdFlash}`);
 });
 
+pagesRoutes.post('/pages/batch-weight', requirePermission('content:write'), async (c) => {
+  const body = await c.req.json<{ updates: { id: number; weight: number }[] }>();
+  const { updates } = body;
+
+  if (!Array.isArray(updates)) return c.json({ error: 'Invalid input' }, 400);
+
+  const batch = c.env.DB.batch();
+  for (const { id, weight } of updates) {
+    batch.queue('UPDATE draft_pages SET weight = ? WHERE id = ?', weight, id);
+  }
+
+  const results = await batch.commit();
+  if (results.some((r) => !r.success)) {
+    return c.json({ error: 'Some updates failed' }, 500);
+  }
+
+  return c.json({ success: true });
+});
+
 // ── Edit page form ────────────────────────────────────────────────────────────
 
 pagesRoutes.get('/pages/:id/edit', async (c) => {
