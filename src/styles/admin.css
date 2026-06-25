@@ -105,6 +105,12 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Keep wide admin controls clipped without making body a nested scroller. */
+html.overflow-x-hidden,
+body.overflow-x-hidden {
+  overflow-x: clip;
+}
+
 /* Tight display headings, scoreboard-style. */
 h1, h2, h3 {
   letter-spacing: -0.02em;

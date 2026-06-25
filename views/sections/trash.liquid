@@ -1,13 +1,24 @@
 <div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
-  <div class="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-between">
+  <div class="flex flex-col gap-3 mb-6 sm:flex-row sm:items-start sm:justify-between">
     <div>
       <h2 class="text-2xl font-bold text-gray-900">Trash</h2>
       <p class="text-sm text-gray-500 mt-1">{{ pageCountLabel | escape }}</p>
     </div>
-    <div class="flex flex-wrap items-center gap-3">
+    <div class="flex flex-col gap-2 items-start sm:items-end">
       {% if hasPages %}
-        <form id="empty-trash-form" method="POST" action="{{ emptyTrashAction | escape }}">
-          <button type="submit" class="inline-flex h-9 items-center rounded-lg border border-transparent bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Empty Trash</button>
+        <form id="empty-trash-form" method="POST" action="{{ emptyTrashAction | escape }}" class="flex flex-wrap items-center gap-2">
+          {% if hasTypeFilter %}
+            <select name="type" id="empty-type-select" class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm">
+              <option value="">All types</option>
+              {% for t in typeCounts %}
+                <option value="{{ t.pageType | escape }}">{{ t.pageType | escape }} ({{ t.count }})</option>
+              {% endfor %}
+            </select>
+          {% endif %}
+          <button type="submit" name="action" value="now" class="inline-flex h-9 items-center rounded-lg border border-transparent bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Empty All</button>
+          {% if hasRecent %}
+            <button type="submit" name="action" value="1h" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">Last Hour ({{ recentCount }})</button>
+          {% endif %}
         </form>
       {% endif %}
       <a href="/admin" class="text-sm text-indigo-600 hover:underline">Back to Pages</a>
@@ -82,7 +93,21 @@
   const emptyTrashForm = document.getElementById('empty-trash-form');
   if (emptyTrashForm) {
     emptyTrashForm.addEventListener('submit', (e) => {
-      if (!confirm('Empty trash permanently?\n\nThis will delete all {{ total }} trashed page{% if total != 1 %}s{% endif %} forever. This cannot be undone.')) {
+      const submitter = e.submitter;
+      const typeSelect = document.getElementById('empty-type-select');
+      const typeLabel = typeSelect && typeSelect.value
+        ? typeSelect.options[typeSelect.selectedIndex].text
+        : '{{ total }} page{% if total != 1 %}s{% endif %}';
+
+      if (submitter && submitter.value === '1h') {
+        const n = submitter.textContent.match(/\d+/)?.[0] ?? '?';
+        if (!confirm('Permanently delete ' + n + ' page' + (n === '1' ? '' : 's') + ' trashed in the last hour?\n\nThis cannot be undone.')) {
+          e.preventDefault();
+        }
+        return;
+      }
+
+      if (!confirm('Empty trash permanently?\n\nThis will delete ' + typeLabel + ' forever. This cannot be undone.')) {
         e.preventDefault();
       }
     });

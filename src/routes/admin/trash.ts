@@ -18,7 +18,16 @@ trashRoutes.get('/trash', async (c) => {
   const pageSize = dashboardPageSize(c.req.query('pagesize'));
   const requestedPage = dashboardPageNumber(c.req.query('page'));
 
-  const countRow = await c.env.DB.prepare('SELECT COUNT(*) AS total FROM trash_pages').first<{ total: number }>();
+  const [countRow, typeRows, recentRow] = await Promise.all([
+    c.env.DB.prepare('SELECT COUNT(*) AS total FROM trash_pages').first<{ total: number }>(),
+    c.env.DB.prepare(
+      'SELECT page_type, COUNT(*) AS cnt FROM trash_pages GROUP BY page_type ORDER BY cnt DESC',
+    ).all<{ page_type: string | null; cnt: number }>(),
+    c.env.DB.prepare(
+      `SELECT COUNT(*) AS cnt FROM trash_pages WHERE created_at >= datetime('now', '-1 hour')`,
+    ).first<{ cnt: number }>(),
+  ]);
+
   const total = countRow?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(requestedPage, totalPages);
@@ -33,11 +42,15 @@ trashRoutes.get('/trash', async (c) => {
     pagination: { total, totalPages, currentPage, limit: pageSize },
   };
 
+  const typeCounts = typeRows.results.map((r) => ({ pageType: r.page_type ?? 'unknown', count: r.cnt }));
+
   return renderPage(c, trashPage, {
     pages: trashedPages.results,
     flash: flash || undefined,
     pagination: dashboardPagination('/admin/trash', paginationResult),
     total,
+    typeCounts,
+    recentCount: recentRow?.cnt ?? 0,
   });
 });
 
@@ -159,9 +172,37 @@ trashRoutes.post('/trash/:id/delete', requirePermission('trash:purge'), async (c
   return c.redirect('/admin/trash?flash=Page+permanently+deleted');
 });
 
-// ── Empty entire trash ────────────────────────────────────────────────────────
+// ── Empty trash (all, by type, or last-hour only) ────────────────────────────
+// Accepts optional form fields:
+//   type   — page type to purge (empty = all types)
+//   action — "now" (default) purge all matching; "1h" purge only those trashed within the last hour
 
 trashRoutes.post('/trash/empty', requirePermission('trash:purge'), async (c) => {
+  const form = await c.req.formData();
+  const pageType = (form.get('type') as string | null)?.trim() || null;
+  const action = (form.get('action') as string | null)?.trim();
+
+  if (action === '1h') {
+    if (pageType) {
+      await c.env.DB.prepare(
+        `DELETE FROM trash_pages WHERE page_type = ? AND created_at >= datetime('now', '-1 hour')`,
+      ).bind(pageType).run();
+    } else {
+      await c.env.DB.prepare(
+        `DELETE FROM trash_pages WHERE created_at >= datetime('now', '-1 hour')`,
+      ).run();
+    }
+    logAudit(c, 'page.purge_all', 'page', undefined);
+    const label = pageType ? `${pageType}+pages` : 'Trash';
+    return c.redirect(`/admin/trash?flash=${label}+from+last+hour+emptied`);
+  }
+
+  if (pageType) {
+    await c.env.DB.prepare('DELETE FROM trash_pages WHERE page_type = ?').bind(pageType).run();
+    logAudit(c, 'page.purge_all', 'page', undefined);
+    return c.redirect(`/admin/trash?flash=${pageType}+pages+emptied`);
+  }
+
   await c.env.DB.prepare('DELETE FROM trash_pages').run();
   logAudit(c, 'page.purge_all', 'page', undefined);
   return c.redirect('/admin/trash?flash=Trash+emptied');

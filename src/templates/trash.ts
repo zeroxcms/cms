@@ -12,13 +12,20 @@ interface TrashPagination {
   lastHref: string;
 }
 
+interface TypeCount {
+  pageType: string;
+  count: number;
+}
+
 export async function trashPage(views: Fetcher, opts: BaseTemplateProps & {
   pages: Page[];
   flash?: string;
   pagination?: TrashPagination;
   total?: number;
+  typeCounts?: TypeCount[];
+  recentCount?: number;
 }): Promise<string> {
-  const { pages, flash, pagination, total = pages.length } = opts;
+  const { pages, flash, pagination, total = pages.length, typeCounts = [], recentCount = 0 } = opts;
   const showPagination = (pagination?.totalPages ?? 1) > 1;
   const body = await renderView(views, '/templates/trash.json', {
     flash,
@@ -26,6 +33,11 @@ export async function trashPage(views: Fetcher, opts: BaseTemplateProps & {
     pageCountLabel: `${total} page${total === 1 ? '' : 's'} in trash`,
     hasPages: total > 0,
     emptyTrashAction: '/admin/trash/empty',
+    typeCounts,
+    hasTypeFilter: typeCounts.length > 0,
+    recentCount,
+    hasRecent: recentCount > 0,
+    total,
     pages: pages.map((page) => ({
       id: page.id,
       name: page.name,
