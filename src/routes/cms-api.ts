@@ -389,11 +389,25 @@ cmsApiRoutes.get('/pages', async (c) => {
   // Optional parent filter: e.g. all `guest` pages belonging to one event.
   const parentId = asFiniteNumber(c.req.query('page_id'));
 
+  // Optional pointer filter: pointer_key=mail_list&pointer_value=123
+  const pointerKey = (c.req.query('pointer_key') ?? '').trim();
+  const pointerValue = (c.req.query('pointer_value') ?? '').trim();
+  if ((pointerKey && !pointerValue) || (!pointerKey && pointerValue)) {
+    return c.json({ error: 'pointer_key_and_value_required_together' }, 400);
+  }
+  if (pointerKey && !/^[a-z0-9_-]+$/i.test(pointerKey)) {
+    return c.json({ error: 'invalid_pointer_key' }, 400);
+  }
+
   const params: unknown[] = [pageType];
   let where = 'WHERE page_type = ?';
   if (parentId !== null) {
     where += ' AND page_id = ?';
     params.push(parentId);
+  }
+  if (pointerKey && pointerValue) {
+    where += ' AND json_extract(lect, ?) = ?';
+    params.push(`$._pointers.${pointerKey}`, pointerValue);
   }
   if (q) {
     where += ' AND (name LIKE ? OR slug LIKE ?)';
