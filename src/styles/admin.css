@@ -171,6 +171,136 @@ th,
 .shadow-sm { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
 .shadow-xl { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
 
+/* Light theme: restore conventional Tailwind-style tokens while keeping the
+   same utility classes and markup. Dark remains the default for first visit. */
+html[data-theme="light"] {
+  color-scheme: light;
+  accent-color: #4f46e5;
+
+  --color-brand-50:  #eef2ff;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+
+  --color-indigo-50:  #eef2ff;
+  --color-indigo-100: #e0e7ff;
+  --color-indigo-400: #818cf8;
+  --color-indigo-500: #6366f1;
+  --color-indigo-600: #4f46e5;
+  --color-indigo-700: #4338ca;
+  --color-indigo-800: #3730a3;
+
+  --color-gray-50:  #f9fafb;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
+  --color-gray-900: #111827;
+
+  --color-green-50:  #f0fdf4;
+  --color-green-100: #dcfce7;
+  --color-green-200: #bbf7d0;
+  --color-green-500: #22c55e;
+  --color-green-600: #16a34a;
+  --color-green-700: #15803d;
+  --color-green-800: #166534;
+
+  --color-red-50:  #fef2f2;
+  --color-red-200: #fecaca;
+  --color-red-500: #ef4444;
+  --color-red-600: #dc2626;
+  --color-red-700: #b91c1c;
+
+  --color-yellow-50:  #fefce8;
+  --color-yellow-100: #fef9c3;
+  --color-yellow-300: #fde047;
+  --color-yellow-500: #eab308;
+  --color-yellow-600: #ca8a04;
+  --color-yellow-800: #854d0e;
+
+  --color-amber-50:  #fffbeb;
+  --color-amber-200: #fde68a;
+  --color-amber-400: #fbbf24;
+  --color-amber-600: #d97706;
+  --color-amber-700: #b45309;
+  --color-amber-800: #92400e;
+
+  --color-blue-100: #dbeafe;
+  --color-blue-700: #1d4ed8;
+}
+
+html[data-theme="light"],
+html[data-theme="light"] body {
+  background-color: #f6f7fb;
+  color: var(--color-gray-700);
+}
+
+html[data-theme="light"] ::selection {
+  background: rgba(79, 70, 229, 0.18);
+  color: var(--color-gray-900);
+}
+
+html[data-theme="light"] .bg-white { background-color: #ffffff; }
+html[data-theme="light"] .bg-gray-900 { background-color: var(--color-gray-900); }
+html[data-theme="light"] .bg-gray-700,
+html[data-theme="light"] .hover\:bg-gray-700:hover { background-color: var(--color-gray-700); }
+
+html[data-theme="light"] .border-gray-700 { border-color: var(--color-gray-700); }
+html[data-theme="light"] .border-gray-200 { border-color: var(--color-gray-200); }
+html[data-theme="light"] .border-gray-300 { border-color: var(--color-gray-300); }
+html[data-theme="light"] .border-gray-100,
+html[data-theme="light"] .divide-gray-100 > :not(:last-child) { border-color: var(--color-gray-100); }
+
+html[data-theme="light"] .hover\:bg-gray-50:hover { background-color: var(--color-gray-50); }
+html[data-theme="light"] .hover\:bg-gray-100:hover { background-color: var(--color-gray-100); }
+
+html[data-theme="light"] .bg-indigo-600.text-white,
+html[data-theme="light"] .bg-indigo-500,
+html[data-theme="light"] .hover\:bg-indigo-700:hover {
+  color: #ffffff;
+}
+
+html[data-theme="light"] .shadow-sm {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+html[data-theme="light"] .shadow-xl {
+  box-shadow: 0 20px 30px rgba(15, 23, 42, 0.14);
+}
+
+html[data-theme="light"] [data-admin-sidebar] {
+  background-color: #ffffff;
+  color: var(--color-gray-700);
+  box-shadow: 1px 0 0 var(--color-gray-200), 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+html[data-theme="light"] [data-admin-sidebar] .text-white { color: var(--color-gray-900); }
+html[data-theme="light"] [data-admin-sidebar] .text-gray-300,
+html[data-theme="light"] [data-admin-sidebar] .text-gray-400 { color: var(--color-gray-600); }
+html[data-theme="light"] [data-admin-sidebar] .border-gray-700,
+html[data-theme="light"] [data-admin-sidebar] .md\:border-gray-700 { border-color: var(--color-gray-200); }
+html[data-theme="light"] [data-admin-sidebar] .hover\:bg-gray-700:hover { background-color: var(--color-gray-100); }
+html[data-theme="light"] [data-admin-sidebar] .hover\:text-white:hover { color: var(--color-gray-900); }
+
+html[data-theme="light"] .\[\&_input\]\:bg-\[\#141a26\] input {
+  background-color: #ffffff;
+}
+
+html[data-theme="light"] * {
+  scrollbar-color: #cbd5e1 transparent;
+}
+html[data-theme="light"] *::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  background-clip: content-box;
+}
+html[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+  background-clip: content-box;
+}
+
 /* Dark, slim scrollbars to match the canvas. */
 * {
   scrollbar-width: thin;

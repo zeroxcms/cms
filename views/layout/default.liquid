@@ -4,8 +4,60 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ title | escape }} - {{ siteTitle | escape }}</title>
-  <link rel="stylesheet" href="/assets/admin.css">
   <script nonce="{{ nonce }}">
+    (function() {
+      var key = 'worker-cms-theme';
+      var root = document.documentElement;
+
+      function storedTheme() {
+        try {
+          var value = window.localStorage.getItem(key);
+          return value === 'light' || value === 'dark' ? value : 'dark';
+        } catch (error) {
+          return 'dark';
+        }
+      }
+
+      function persistTheme(theme) {
+        try {
+          window.localStorage.setItem(key, theme);
+        } catch (error) {
+          /* ignore */
+        }
+      }
+
+      function renderToggle(theme) {
+        var toggle = document.querySelector('[data-theme-toggle]');
+        if (!(toggle instanceof HTMLButtonElement)) return;
+        var isLight = theme === 'light';
+        toggle.setAttribute('aria-pressed', isLight ? 'true' : 'false');
+        toggle.setAttribute('aria-label', isLight ? 'Switch to dark theme' : 'Switch to light theme');
+        toggle.querySelectorAll('[data-theme-icon]').forEach(function(icon) {
+          icon.classList.toggle('hidden', icon.getAttribute('data-theme-icon') !== theme);
+        });
+        var label = toggle.querySelector('[data-theme-toggle-label]');
+        if (label) label.textContent = isLight ? 'Light' : 'Dark';
+      }
+
+      function applyTheme(theme) {
+        root.setAttribute('data-theme', theme);
+        renderToggle(theme);
+      }
+
+      applyTheme(storedTheme());
+
+      document.addEventListener('DOMContentLoaded', function() {
+        var toggle = document.querySelector('[data-theme-toggle]');
+        renderToggle(root.getAttribute('data-theme') || 'dark');
+        if (!(toggle instanceof HTMLButtonElement)) return;
+        toggle.addEventListener('click', function() {
+          var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+          applyTheme(next);
+          persistTheme(next);
+        });
+      });
+    })();
+
     (function() {
       const INTERVAL = 14 * 60 * 1000;
       async function refresh() {
@@ -56,10 +108,11 @@
       if (form instanceof HTMLFormElement) form.submit();
     });
   </script>
+  <link rel="stylesheet" href="/assets/admin.css">
 </head>
 <body class="h-full">
   {% if admin %}
-    <aside class="sticky top-0 z-40 bg-gray-900 text-white shadow-xl md:fixed md:inset-y-0 md:left-0 md:w-64 md:flex md:flex-col">
+    <aside class="sticky top-0 z-40 bg-gray-900 text-white shadow-xl md:fixed md:inset-y-0 md:left-0 md:w-64 md:flex md:flex-col" data-admin-sidebar>
       <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-700 md:px-6 md:py-5">
         <svg class="w-7 h-7 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -202,16 +255,33 @@
             <p class="text-xs text-gray-400 capitalize">{{ userRoleLabel | escape }}</p>
           </div>
         </div>
-        <form method="POST" action="/auth/logout" class="inline">
-          <button type="submit"
-                  class="flex shrink-0 items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="flex shrink-0 items-center gap-3 md:flex-col md:items-start">
+          <button type="button"
+                  class="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-700 px-2.5 py-1.5 text-sm text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+                  data-theme-toggle
+                  aria-pressed="false"
+                  aria-label="Switch to light theme">
+            <svg class="h-4 w-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" data-theme-icon="light">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
             </svg>
-            Sign out
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" data-theme-icon="dark">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 1012 21a8.96 8.96 0 008.354-5.646z"/>
+            </svg>
+            <span data-theme-toggle-label>Dark</span>
           </button>
-        </form>
+          <form method="POST" action="/auth/logout" class="inline">
+            <button type="submit"
+                    class="flex shrink-0 items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+              </svg>
+              Sign out
+            </button>
+          </form>
+        </div>
       </div>
     </aside>
   {% endif %}
