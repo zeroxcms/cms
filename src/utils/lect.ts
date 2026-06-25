@@ -169,7 +169,11 @@ export function postToLect(form: FormLike, language: string): Lect {
 
     match = name.match(/^\*(\w+)$/);
     if (match) {
-      setPointerValue(lect, match[1], scalar);
+      if (scalar === '' || scalar === null || scalar === undefined) {
+        delete lect._pointers?.[match[1]];
+      } else {
+        setPointerValue(lect, match[1], scalar);
+      }
       continue;
     }
 
@@ -184,7 +188,10 @@ export function postToLect(form: FormLike, language: string): Lect {
       const item = ensureNestedItem(lect, match[1], Number(match[2]), match[3], Number(match[4]));
       if (match[6]) setScalarPath(item, match[6], scalar);
       if (match[7]) setLocalizedValue(item, match[7], match[8] || language, scalar);
-      if (match[9]) setPointerValue(item, match[9], scalar);
+      if (match[9]) {
+        if (scalar === '' || scalar === null || scalar === undefined) delete item._pointers?.[match[9]];
+        else setPointerValue(item, match[9], scalar);
+      }
       continue;
     }
 
@@ -193,7 +200,10 @@ export function postToLect(form: FormLike, language: string): Lect {
       const item = ensureItem(lect, match[1], Number(match[2]));
       if (match[4]) setScalarPath(item, match[4], scalar);
       if (match[5]) setLocalizedValue(item, match[5], match[6] || language, scalar);
-      if (match[7]) setPointerValue(item, match[7], scalar);
+      if (match[7]) {
+        if (scalar === '' || scalar === null || scalar === undefined) delete item._pointers?.[match[7]];
+        else setPointerValue(item, match[7], scalar);
+      }
       continue;
     }
 

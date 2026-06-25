@@ -74,6 +74,7 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
     method: c.req.method,
     headers,
     body: hasBody ? await c.req.raw.arrayBuffer() : undefined,
+    redirect: 'manual',
   });
 
   // Opt-in chrome: a plugin that returns an HTML *fragment* with `x-cms-chrome: 1`

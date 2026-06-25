@@ -218,6 +218,45 @@ describe('plugin admin proxy', () => {
     expect(JSON.parse(forwarded.get('x-cms-user') ?? '{}')).toMatchObject({ id: '1', email: 'admin@example.com' });
   });
 
+  it('passes plugin redirects back to the browser instead of following them internally', async () => {
+    let capturedInit: RequestInit | undefined;
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const pluginUrl = 'https://plugin-redirect.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', pluginUrl).run();
+    __injectPluginFetcher(pluginUrl, {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(url).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        capturedInit = init;
+        return new Response(null, {
+          status: 302,
+          headers: { Location: '/admin/plugins/events/events/21862006647168' },
+        });
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/events/rsvp/new?event_id=21862006647168', {
+      method: 'POST',
+      headers: {
+        Cookie: `access_token=${token}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Sec-Fetch-Site': 'same-origin',
+      },
+      body: 'event_id=21862006647168&name=Staff+Badge+%28Green%29&allow_checkin=yes',
+      redirect: 'manual',
+    }));
+
+    expect(capturedInit?.redirect).toBe('manual');
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('/admin/plugins/events/events/21862006647168');
+  });
+
   it('fails closed when a plugin has no secret and no PLUGIN_SECRET fallback', async () => {
     delete testEnv.PLUGIN_SECRET;
     // A registered, reachable plugin (manifest resolves) but with no row secret

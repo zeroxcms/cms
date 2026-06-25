@@ -12,15 +12,21 @@
   <div id="{{ field.id | escape }}__ref" class="relative min-w-0"
        data-page-ref data-page-ref-type="{{ field.name | escape }}">
     <input type="hidden" name="{{ field.inputName | escape }}" value="{{ field.value | escape }}" data-page-ref-id>
-    <input id="{{ field.id | escape }}" type="text" autocomplete="off"
-           role="combobox" aria-expanded="false" aria-controls="{{ field.id | escape }}__results"
-           value="{% if field.value != blank %}#{{ field.value | escape }}{% endif %}"
-           placeholder="Search {{ field.name | escape }} pages…"
-           class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-           data-page-ref-search>
-    <div id="{{ field.id | escape }}__results"
-         class="absolute left-0 right-0 top-full z-20 mt-1 hidden max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
-         data-page-ref-results></div>
+    <div class="relative min-w-0">
+      <input id="{{ field.id | escape }}" type="text" autocomplete="off"
+             role="combobox" aria-expanded="false" aria-controls="{{ field.id | escape }}__results"
+             value="{% if field.value != blank %}#{{ field.value | escape }}{% endif %}"
+             placeholder="Search {{ field.name | escape }} pages…"
+             class="block min-w-0 w-full max-w-full px-3 py-2 pr-8 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+             data-page-ref-search>
+      <button type="button" data-page-ref-clear
+              class="absolute hidden items-center justify-center w-5 h-5 text-gray-400 hover:text-gray-600 cursor-pointer bg-transparent border-0 p-0.5 text-xs"
+              style="right:6px;top:50%;transform:translateY(-50%)"
+              title="Clear reference">&times;</button>
+      <div id="{{ field.id | escape }}__results"
+           class="absolute left-0 right-0 top-full z-20 mt-1 hidden max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+           data-page-ref-results></div>
+    </div>
   </div>
 </label>
 <script nonce="{{ nonce }}">
@@ -40,14 +46,29 @@
     var hidden = root.querySelector('[data-page-ref-id]');
     var search = root.querySelector('[data-page-ref-search]');
     var results = root.querySelector('[data-page-ref-results]');
+    var clearBtn = root.querySelector('[data-page-ref-clear]');
     var timer;
 
     function close() { results.classList.add('hidden'); search.setAttribute('aria-expanded', 'false'); }
     function open() { results.classList.remove('hidden'); search.setAttribute('aria-expanded', 'true'); }
 
+    function toggleClear() {
+      if (!clearBtn) return;
+      if (hidden.value) { clearBtn.classList.remove('hidden'); clearBtn.classList.add('inline-flex'); }
+      else { clearBtn.classList.add('hidden'); clearBtn.classList.remove('inline-flex'); }
+    }
+
+    function clearRef() {
+      hidden.value = '';
+      search.value = '';
+      toggleClear();
+      close();
+    }
+
     function choose(item) {
       hidden.value = item.id;
       search.value = item.name ? (item.name + ' (#' + item.id + ')') : ('#' + item.id);
+      toggleClear();
       close();
     }
 
@@ -94,11 +115,20 @@
       var value = stripLabel(search.value);
       // Allow typing a raw page id directly.
       if (/^\d+$/.test(value)) hidden.value = value;
+      if (!value) { hidden.value = ''; toggleClear(); }
       fetchPages(value);
     });
+    search.addEventListener('blur', function () {
+      setTimeout(function () {
+        if (!stripLabel(search.value)) { hidden.value = ''; search.value = ''; toggleClear(); }
+        else if (hidden.value && !search.value) { search.value = '#' + hidden.value; toggleClear(); }
+      }, 200);
+    });
+    if (clearBtn) clearBtn.addEventListener('click', function (event) { event.preventDefault(); clearRef(); });
     document.addEventListener('click', function (event) { if (!root.contains(event.target)) close(); });
 
     // Label the current selection with its page name.
+    toggleClear();
     if (hidden.value) {
       fetch(base + '?id=' + encodeURIComponent(hidden.value), { headers: { accept: 'application/json' } })
         .then(function (response) { return response.ok ? response.json() : []; })
