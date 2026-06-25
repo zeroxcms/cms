@@ -276,4 +276,36 @@ describe('F1 batch create', () => {
     expect(body.count).toBe(2);
     expect(body.errors).toEqual([{ index: 2, error: 'forbidden_page_type' }]);
   });
+
+  it('allocates unique slugs and versions within one batch', async () => {
+    const res = await cmsApi('POST', '/__cms/pages/batch', {
+      pages: [
+        { page_type: 'guest', name: 'Same Name' },
+        { page_type: 'guest', name: 'Same Name' },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { count: number; created: Array<{ id: number; slug: string }> };
+    expect(body.count).toBe(2);
+    expect(body.created.map((page) => page.slug)).toEqual(['same-name', 'same-name-2']);
+
+    const rows = await env.DB.prepare(
+      'SELECT slug, current_page_version_id FROM draft_pages WHERE id IN (?, ?) ORDER BY slug',
+    ).bind(body.created[0].id, body.created[1].id).all<{ slug: string; current_page_version_id: number }>();
+    expect(rows.results.map((row) => row.slug)).toEqual(['same-name', 'same-name-2']);
+    expect(rows.results.every((row) => row.current_page_version_id)).toBe(true);
+
+    const versions = await env.DB.prepare(
+      'SELECT COUNT(*) AS count FROM page_versions WHERE page_id IN (?, ?)',
+    ).bind(body.created[0].id, body.created[1].id).first<{ count: number }>();
+    expect(versions?.count).toBe(2);
+  });
+
+  it('caps batch size to keep CMS work bounded', async () => {
+    const res = await cmsApi('POST', '/__cms/pages/batch', {
+      pages: Array.from({ length: 101 }, (_, index) => ({ page_type: 'guest', name: `G${index}` })),
+    });
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: 'batch_too_large', max: 100 });
+  });
 });

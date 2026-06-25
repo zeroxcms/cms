@@ -42,7 +42,9 @@ import { unpublishPageFromTargets } from '../publish';
 export const cmsApiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /** Largest batch accepted by POST /pages/batch — bounds D1 write volume per call. */
-const MAX_BATCH = 200;
+const MAX_BATCH = 100;
+
+const CMS_ID_EPOCH_OFFSET = 1563741060;
 
 interface ApiPage {
   id: number;
@@ -81,6 +83,19 @@ interface PageInput {
   timezone?: unknown;
   page_id?: unknown;
   tags?: unknown;
+}
+
+interface PreparedCreate {
+  pageType: string;
+  name: string;
+  baseSlug: string;
+  lect: string;
+  weight: number;
+  start: string | null;
+  end: string | null;
+  timezone: string | null;
+  parentId: number | null;
+  tags: number[];
 }
 
 // ── Auth + scoping ────────────────────────────────────────────────────────────
@@ -157,23 +172,29 @@ function asFiniteNumber(value: unknown): number | null {
  * reuse it here).
  */
 function emitPluginHook(c: AppContext, event: HookEvent, page: HookPage, pluginId: string): void {
-  const auditPromise = c.env.DB.prepare(
-    `INSERT INTO audit_log (user_id, user_email, action, entity_type, entity_id, detail)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(
-      '0',
-      `plugin:${pluginId}`,
-      `page.${event}`,
-      'page',
-      String(page.id),
-      JSON.stringify({ name: page.name, slug: page.slug, page_type: page.page_type, via: `plugin:${pluginId}` }),
+  emitPluginHooks(c, event, [page], pluginId);
+}
+
+function emitPluginHooks(c: AppContext, event: HookEvent, pages: HookPage[], pluginId: string): void {
+  if (!pages.length) return;
+
+  const auditPromise = c.env.DB.batch(
+    pages.map((page) => c.env.DB.prepare(
+      `INSERT INTO audit_log (user_id, user_email, action, entity_type, entity_id, detail)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
-    .run()
-    .catch((error) => console.error('audit log failed', error));
+      .bind(
+        '0',
+        `plugin:${pluginId}`,
+        `page.${event}`,
+        'page',
+        String(page.id),
+        JSON.stringify({ name: page.name, slug: page.slug, page_type: page.page_type, via: `plugin:${pluginId}` }),
+      )),
+  ).catch((error) => console.error('audit log failed', error));
 
   // deliverHook tolerates a null user (passes user: null in the payload).
-  const hookPromise = deliverHook(c.env, undefined, event, page);
+  const hookPromise = Promise.all(pages.map((page) => deliverHook(c.env, undefined, event, page)));
 
   const combined = Promise.allSettled([auditPromise, hookPromise]);
   try {
@@ -198,25 +219,25 @@ async function notifyPageSaved(env: Env, pageId: number): Promise<void> {
 // ── Create (shared by POST /pages and POST /pages/batch) ──────────────────────
 
 type CreateResult = { ok: true; page: ApiPage } | { ok: false; status: number; error: string };
+type PrepareCreateResult = { ok: true; input: PreparedCreate } | { ok: false; status: number; error: string };
 
-async function createPage(
+function prepareCreateInput(
   c: AppContext,
   auth: PluginAuth,
+  config: Awaited<ReturnType<typeof resolveCmsConfig>>,
   input: PageInput,
-): Promise<CreateResult> {
+): PrepareCreateResult {
   const pageType = typeof input.page_type === 'string' ? input.page_type : '';
   if (!pageType) return { ok: false, status: 400, error: 'page_type_required' };
   if (!auth.allowedTypes.has(pageType)) return { ok: false, status: 403, error: 'forbidden_page_type' };
 
-  const config = await resolveCmsConfig(c.env);
   const name = typeof input.name === 'string' && input.name.trim()
     ? input.name.trim()
     : `Untitled ${pageType.replace(/[_-]/g, ' ')}`;
   const desiredSlug = typeof input.slug === 'string' && input.slug.trim()
     ? slugify(input.slug)
     : slugify(name);
-  const slug = await ensureUniqueDraftSlug(c.env.DB, desiredSlug || slugify(name) || pageType);
-
+  const baseSlug = desiredSlug || slugify(name) || pageType;
   const lect = stringifyLect(
     withDraftMetadata(
       mergeLects(
@@ -226,17 +247,56 @@ async function createPage(
       0,
     ),
   );
-  const weight = asFiniteNumber(input.weight) ?? 5;
-  const start = typeof input.start === 'string' ? input.start : null;
-  const end = typeof input.end === 'string' ? input.end : null;
-  const timezone = typeof input.timezone === 'string' ? input.timezone : (c.env.DEFAULT_TIMEZONE ?? '+0800');
-  const parentId = asFiniteNumber(input.page_id);
+
+  return {
+    ok: true,
+    input: {
+      pageType,
+      name,
+      baseSlug,
+      lect,
+      weight: asFiniteNumber(input.weight) ?? 5,
+      start: typeof input.start === 'string' ? input.start : null,
+      end: typeof input.end === 'string' ? input.end : null,
+      timezone: typeof input.timezone === 'string' ? input.timezone : (c.env.DEFAULT_TIMEZONE ?? '+0800'),
+      parentId: asFiniteNumber(input.page_id),
+      tags: tagIds(input.tags),
+    },
+  };
+}
+
+function tagIds(tags: unknown): number[] {
+  if (!Array.isArray(tags)) return [];
+  return tags.map(asFiniteNumber).filter((tagId): tagId is number => tagId !== null);
+}
+
+async function createPage(
+  c: AppContext,
+  auth: PluginAuth,
+  input: PageInput,
+): Promise<CreateResult> {
+  const config = await resolveCmsConfig(c.env);
+  const prepared = prepareCreateInput(c, auth, config, input);
+  if (!prepared.ok) return prepared;
+  const preparedInput = prepared.input;
+  const slug = await ensureUniqueDraftSlug(c.env.DB, preparedInput.baseSlug);
 
   const result = await c.env.DB.prepare(
     `INSERT INTO draft_pages (name, slug, weight, start, end, timezone, page_type, lect, page_id, creator)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
-    .bind(name, slug, weight, start, end, timezone, pageType, lect, parentId, null)
+    .bind(
+      preparedInput.name,
+      slug,
+      preparedInput.weight,
+      preparedInput.start,
+      preparedInput.end,
+      preparedInput.timezone,
+      preparedInput.pageType,
+      preparedInput.lect,
+      preparedInput.parentId,
+      null,
+    )
     .run();
 
   // Custom DEFAULT id expression means last_row_id is the rowid; SELECT the id back.
@@ -245,15 +305,56 @@ async function createPage(
     .first<Page>();
   if (!row) return { ok: false, status: 500, error: 'create_failed' };
 
-  const versionId = await savePageVersion(c.env.DB, row.id, lect, 'create');
+  const versionId = await savePageVersion(c.env.DB, row.id, preparedInput.lect, 'create');
   await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
     .bind(versionId, row.id)
     .run();
 
-  await applyTagList(c, row.id, input.tags, false);
+  await applyTagList(c, row.id, preparedInput.tags, false);
 
-  emitPluginHook(c, 'create', { id: row.id, uuid: row.uuid, page_type: pageType, name, slug }, auth.pluginId);
+  emitPluginHook(c, 'create', { id: row.id, uuid: row.uuid, page_type: preparedInput.pageType, name: preparedInput.name, slug }, auth.pluginId);
   return { ok: true, page: serializePage(row) };
+}
+
+async function existingSlugSet(db: D1Database, baseSlugs: string[]): Promise<Set<string>> {
+  const bases = [...new Set(baseSlugs)];
+  const out = new Set<string>();
+  for (let index = 0; index < bases.length; index += 25) {
+    const chunk = bases.slice(index, index + 25);
+    const where = chunk.map(() => '(slug = ? OR slug LIKE ?)').join(' OR ');
+    const params = chunk.flatMap((base) => [base, `${base}-%`]);
+    const rows = await db.prepare(`SELECT slug FROM draft_pages WHERE ${where}`)
+      .bind(...params)
+      .all<{ slug: string }>();
+    for (const row of rows.results) out.add(row.slug);
+  }
+  return out;
+}
+
+function allocateSlug(baseSlug: string, used: Set<string>): string {
+  let candidate = baseSlug;
+  let suffix = 2;
+  while (used.has(candidate)) {
+    candidate = `${baseSlug}-${suffix}`;
+    suffix += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+function cmsTimestamp(): string {
+  return new Date().toISOString().replace('T', ' ').slice(0, 19);
+}
+
+function cmsId(used: Set<number>): number {
+  const random = new Uint32Array(1);
+  let id = 0;
+  do {
+    crypto.getRandomValues(random);
+    id = ((Math.floor(Date.now() / 1000) - CMS_ID_EPOCH_OFFSET) * 100000) + (random[0] % 100000);
+  } while (used.has(id));
+  used.add(id);
+  return id;
 }
 
 /** Sets a page's tag links from a list of numeric tag ids. On update, `replace` clears existing first. */
@@ -360,12 +461,80 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
   if (!items) return c.json({ error: 'invalid_body' }, 400);
   if (items.length > MAX_BATCH) return c.json({ error: 'batch_too_large', max: MAX_BATCH }, 413);
 
+  const config = await resolveCmsConfig(c.env);
+  const prepared: PreparedCreate[] = [];
   const created: ApiPage[] = [];
   const errors: Array<{ index: number; error: string }> = [];
   for (let i = 0; i < items.length; i++) {
-    const result = await createPage(c, auth, (items[i] ?? {}) as PageInput);
-    if (result.ok) created.push(result.page);
+    const result = prepareCreateInput(c, auth, config, (items[i] ?? {}) as PageInput);
+    if (result.ok) prepared.push(result.input);
     else errors.push({ index: i, error: result.error });
+  }
+
+  if (prepared.length) {
+    const usedSlugs = await existingSlugSet(c.env.DB, prepared.map((item) => item.baseSlug));
+    const usedIds = new Set<number>();
+    const statements: D1PreparedStatement[] = [];
+    const hookPages: HookPage[] = [];
+    const createdAt = cmsTimestamp();
+
+    for (const item of prepared) {
+      const id = cmsId(usedIds);
+      const uuid = crypto.randomUUID();
+      const versionId = cmsId(usedIds);
+      const versionUuid = crypto.randomUUID();
+      const slug = allocateSlug(item.baseSlug, usedSlugs);
+
+      statements.push(c.env.DB.prepare(
+        `INSERT INTO draft_pages (id, uuid, created_at, updated_at, name, slug, weight, start, end, timezone, page_type, current_page_version_id, lect, page_id, creator)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        id,
+        uuid,
+        createdAt,
+        createdAt,
+        item.name,
+        slug,
+        item.weight,
+        item.start,
+        item.end,
+        item.timezone,
+        item.pageType,
+        versionId,
+        item.lect,
+        item.parentId,
+        null,
+      ));
+      statements.push(c.env.DB.prepare(
+        `INSERT INTO page_versions (id, uuid, created_at, updated_at, page_id, lect, action)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(versionId, versionUuid, createdAt, createdAt, id, item.lect, 'create'));
+      for (const tagId of item.tags) {
+        statements.push(c.env.DB.prepare('INSERT OR IGNORE INTO draft_page_tags (page_id, tag_id) VALUES (?, ?)')
+          .bind(id, tagId));
+      }
+
+      const page = {
+        id,
+        uuid,
+        page_type: item.pageType,
+        name: item.name,
+        slug,
+        weight: item.weight,
+        start: item.start,
+        end: item.end,
+        timezone: item.timezone,
+        page_id: item.parentId,
+        created_at: createdAt,
+        updated_at: createdAt,
+        lect: safeParseLect(item.lect),
+      };
+      created.push(page);
+      hookPages.push({ id, uuid, page_type: item.pageType, name: item.name, slug });
+    }
+
+    await c.env.DB.batch(statements);
+    emitPluginHooks(c, 'create', hookPages, auth.pluginId);
   }
 
   return c.json({ created, errors, count: created.length });
