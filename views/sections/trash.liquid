@@ -4,7 +4,14 @@
       <h2 class="text-2xl font-bold text-gray-900">Trash</h2>
       <p class="text-sm text-gray-500 mt-1">{{ pageCountLabel | escape }}</p>
     </div>
-    <a href="/admin" class="text-sm text-indigo-600 hover:underline">Back to Pages</a>
+    <div class="flex flex-wrap items-center gap-3">
+      {% if hasPages %}
+        <form id="empty-trash-form" method="POST" action="{{ emptyTrashAction | escape }}">
+          <button type="submit" class="inline-flex h-9 items-center rounded-lg border border-transparent bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Empty Trash</button>
+        </form>
+      {% endif %}
+      <a href="/admin" class="text-sm text-indigo-600 hover:underline">Back to Pages</a>
+    </div>
   </div>
 
   {% if hasFlash %}
@@ -54,9 +61,30 @@
       </tbody>
     </table>
   </div>
+
+  {% if showPagination %}
+    <div class="mt-4 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-gray-500">Page {{ currentPage }} of {{ totalPages }}</div>
+      <div class="flex flex-wrap gap-2">
+        {% if hasFirstPage %}<a href="{{ firstHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">First</a>{% endif %}
+        {% if hasPreviousPage %}<a href="{{ previousHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Previous</a>{% endif %}
+        {% if hasNextPage %}<a href="{{ nextHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Next</a>{% endif %}
+        {% if hasLastPage %}<a href="{{ lastHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Last</a>{% endif %}
+      </div>
+    </div>
+  {% endif %}
 </div>
 
 <script nonce="{{ nonce }}">
   const flash = document.getElementById('flash');
   if (flash) setTimeout(() => flash.remove(), 4000);
+
+  const emptyTrashForm = document.getElementById('empty-trash-form');
+  if (emptyTrashForm) {
+    emptyTrashForm.addEventListener('submit', (e) => {
+      if (!confirm('Empty trash permanently?\n\nThis will delete all {{ total }} trashed page{% if total != 1 %}s{% endif %} forever. This cannot be undone.')) {
+        e.preventDefault();
+      }
+    });
+  }
 </script>

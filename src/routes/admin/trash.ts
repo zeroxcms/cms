@@ -4,7 +4,8 @@ import { Hono } from 'hono';
 import { trashPage } from '../../templates/trash';
 import type { Env, Variables, Page, PageTag, PageVersion } from '../../types';
 import { savePageVersion } from '../../utils/admin-queries';
-import { renderPage } from '../../utils/admin-render';
+import { dashboardPagination, renderPage } from '../../utils/admin-render';
+import { dashboardPageNumber, dashboardPageSize } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 
@@ -14,12 +15,29 @@ export const trashRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 trashRoutes.get('/trash', async (c) => {
   const flash = c.req.query('flash') ?? '';
+  const pageSize = dashboardPageSize(c.req.query('pagesize'));
+  const requestedPage = dashboardPageNumber(c.req.query('page'));
 
-  const trashedPages = await c.env.DB.prepare('SELECT * FROM trash_pages ORDER BY updated_at DESC').all<Page>();
+  const countRow = await c.env.DB.prepare('SELECT COUNT(*) AS total FROM trash_pages').first<{ total: number }>();
+  const total = countRow?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(requestedPage, totalPages);
+  const offset = (currentPage - 1) * pageSize;
+
+  const trashedPages = await c.env.DB.prepare(
+    'SELECT * FROM trash_pages ORDER BY updated_at DESC LIMIT ? OFFSET ?',
+  ).bind(pageSize, offset).all<Page>();
+
+  const paginationResult = {
+    results: trashedPages.results,
+    pagination: { total, totalPages, currentPage, limit: pageSize },
+  };
 
   return renderPage(c, trashPage, {
     pages: trashedPages.results,
     flash: flash || undefined,
+    pagination: dashboardPagination('/admin/trash', paginationResult),
+    total,
   });
 });
 
@@ -139,4 +157,12 @@ trashRoutes.post('/trash/:id/delete', requirePermission('trash:purge'), async (c
   await c.env.DB.prepare('DELETE FROM trash_pages WHERE id = ?').bind(trashId).run();
   logAudit(c, 'page.purge', 'page', trashId);
   return c.redirect('/admin/trash?flash=Page+permanently+deleted');
+});
+
+// ── Empty entire trash ────────────────────────────────────────────────────────
+
+trashRoutes.post('/trash/empty', requirePermission('trash:purge'), async (c) => {
+  await c.env.DB.prepare('DELETE FROM trash_pages').run();
+  logAudit(c, 'page.purge_all', 'page', undefined);
+  return c.redirect('/admin/trash?flash=Trash+emptied');
 });

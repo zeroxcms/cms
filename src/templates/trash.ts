@@ -2,17 +2,30 @@ import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 import type { Page } from '../types';
 
+interface TrashPagination {
+  total: number;
+  totalPages: number;
+  currentPage: number;
+  firstHref: string;
+  previousHref: string;
+  nextHref: string;
+  lastHref: string;
+}
+
 export async function trashPage(views: Fetcher, opts: BaseTemplateProps & {
   pages: Page[];
   flash?: string;
+  pagination?: TrashPagination;
+  total?: number;
 }): Promise<string> {
-  const { pages, flash } = opts;
-  const pageCount = pages.length;
+  const { pages, flash, pagination, total = pages.length } = opts;
+  const showPagination = (pagination?.totalPages ?? 1) > 1;
   const body = await renderView(views, '/templates/trash.json', {
     flash,
     hasFlash: !!flash,
-    pageCountLabel: `${pageCount} page${pageCount === 1 ? '' : 's'} in trash`,
-    hasPages: pageCount > 0,
+    pageCountLabel: `${total} page${total === 1 ? '' : 's'} in trash`,
+    hasPages: total > 0,
+    emptyTrashAction: '/admin/trash/empty',
     pages: pages.map((page) => ({
       id: page.id,
       name: page.name,
@@ -22,6 +35,19 @@ export async function trashPage(views: Fetcher, opts: BaseTemplateProps & {
       restoreAction: `/admin/trash/${page.id}/restore`,
       deleteAction: `/admin/trash/${page.id}/delete`,
     })),
+    showPagination,
+    ...(showPagination && pagination ? {
+      currentPage: pagination.currentPage,
+      totalPages: pagination.totalPages,
+      hasFirstPage: !!pagination.firstHref,
+      firstHref: pagination.firstHref,
+      hasPreviousPage: !!pagination.previousHref,
+      previousHref: pagination.previousHref,
+      hasNextPage: !!pagination.nextHref,
+      nextHref: pagination.nextHref,
+      hasLastPage: !!pagination.lastHref,
+      lastHref: pagination.lastHref,
+    } : {}),
   });
 
   return adminLayout(views, opts, { title: 'Trash', body });
