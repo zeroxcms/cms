@@ -386,6 +386,12 @@ describe('admin routes', () => {
 
   it('POST /admin/pages/batch-weight updates multiple page weights', async () => {
     const cookie = await authCookie();
+    await env.DB.prepare(
+      `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(102, 'page-uuid-102', 'Contact', 'contact', 5, 'default', basePageLect, 1, '1')
+      .run();
     const updates = [
       { id: 101, weight: 10 },
       { id: 102, weight: 20 },
@@ -423,7 +429,8 @@ describe('admin routes', () => {
       body: JSON.stringify({ updates: [{ id: 101, weight: 10 }] }),
     });
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/auth/login');
   });
 
   it('POST /admin/pages/batch-weight rejects malformed input', async () => {

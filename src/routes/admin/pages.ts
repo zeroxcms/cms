@@ -441,12 +441,19 @@ pagesRoutes.post('/pages/batch-weight', requirePermission('content:write'), asyn
 
   if (!Array.isArray(updates)) return c.json({ error: 'Invalid input' }, 400);
 
-  const batch = c.env.DB.batch();
-  for (const { id, weight } of updates) {
-    batch.queue('UPDATE draft_pages SET weight = ? WHERE id = ?', weight, id);
+  const statements = [];
+  for (const update of updates) {
+    const id = Number(update?.id);
+    const weight = Number(update?.weight);
+    if (!Number.isInteger(id) || id <= 0 || !Number.isFinite(weight)) {
+      return c.json({ error: 'Invalid input' }, 400);
+    }
+    statements.push(c.env.DB.prepare('UPDATE draft_pages SET weight = ? WHERE id = ?').bind(weight, id));
   }
 
-  const results = await batch.commit();
+  if (!statements.length) return c.json({ success: true });
+
+  const results = await c.env.DB.batch(statements);
   if (results.some((r) => !r.success)) {
     return c.json({ error: 'Some updates failed' }, 500);
   }
