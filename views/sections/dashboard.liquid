@@ -4,7 +4,7 @@
       <h2 class="text-2xl font-bold text-gray-900">{{ pageTitle | escape }}</h2>
       <p class="text-sm text-gray-500 mt-1">{{ pageCountLabel | escape }}</p>
     </div>
-    <div class="flex w-full flex-col gap-2 sm:flex-row xl:max-w-3xl xl:justify-end">
+    <div class="flex w-full flex-row gap-2 xl:max-w-3xl xl:justify-end">
       <form method="GET" action="{{ searchAction | escape }}" class="flex min-w-0 flex-1 gap-2">
         <input type="hidden" name="operator" value="AND">
         <input type="hidden" name="pagesize" value="20">
@@ -33,7 +33,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M7.5 10.5L12 15m0 0l4.5-4.5M12 15V3"/>
           </svg>
-          Export CSV
+          <span class="hidden lg:inline">Export CSV</span>
         </a>
       {% endif %}
       {% if hasImportHref %}
@@ -45,7 +45,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M12 3v12m0-12l4 4m-4-4L8 7M4.5 15.75v3A2.25 2.25 0 006.75 21h10.5a2.25 2.25 0 002.25-2.25v-3"/>
           </svg>
-          Import CSV
+          <span class="hidden lg:inline">Import CSV</span>
         </a>
       {% endif %}
       <a href="/admin/pages/new"
@@ -53,7 +53,7 @@
         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
         </svg>
-        New Page
+        <span class="hidden lg:inline">New Page</span>
       </a>
     </div>
   </div>
@@ -67,7 +67,7 @@
     </div>
   {% endif %}
 
-  <div class="min-w-0 max-w-full overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm" data-scroll-frame>
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
     <table class="w-full text-left{% if hasPages %} min-w-[760px]{% endif %}">
       {% if hasPages %}
       <thead class="bg-gray-50 border-b border-gray-200">
