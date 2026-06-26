@@ -50,6 +50,7 @@ adminRoutes.get('/views/*', async (c) => {
   } else if (path.endsWith('.liquid')) {
     headers.set('Content-Type', 'text/plain; charset=utf-8');
   }
+  headers.set('Cache-Control', 'private, max-age=86400');
   return new Response(response.body, { status: response.status, headers });
 });
 

@@ -115,7 +115,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
   <link rel="stylesheet" href="/assets/admin.css">
 </head>
 <body class="h-full overflow-x-hidden">
-  <div id="cms-client-root" class="min-h-full"></div>
+  <div id="cms-client-root" class="min-h-full">${loadingMarkup('100vh')}</div>
   <script id="cms-render-payload" type="application/json" nonce="${escHtml(nonce)}">${jsonScript(payload)}</script>
   <script src="/assets/liquid.browser.min.js" nonce="${escHtml(nonce)}" defer></script>
   <script src="/assets/client-render.js" nonce="${escHtml(nonce)}" defer></script>
@@ -140,4 +140,15 @@ function jsonScript(value: unknown): string {
     .replace(/&/g, '\\u0026')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
+}
+
+function loadingMarkup(minHeight: string): string {
+  return `<div role="status" aria-label="Loading" style="min-height:${escHtml(minHeight)};display:flex;align-items:center;justify-content:center;color:#6b7280">
+    <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true" style="display:block">
+      <circle cx="16" cy="16" r="12" fill="none" stroke="currentColor" stroke-width="3" opacity="0.2"></circle>
+      <path d="M28 16a12 12 0 0 0-12-12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+        <animateTransform attributeName="transform" type="rotate" from="0 16 16" to="360 16 16" dur="0.8s" repeatCount="indefinite"></animateTransform>
+      </path>
+    </svg>
+  </div>`;
 }
