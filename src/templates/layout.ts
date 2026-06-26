@@ -29,6 +29,8 @@ export interface BaseTemplateProps extends NavFlags {
   pluginNav: Array<{ label: string; href: string }>;
   /** Plugin nav entries targeting the Settings group (group: 'settings'). */
   pluginSettingsNav: Array<{ label: string; href: string }>;
+  /** Cache-busting revision appended to browser-fetched view files. */
+  viewRevision: string;
   canManageUsers: boolean;
   canManageRoles: boolean;
   canManagePlugins: boolean;
@@ -55,6 +57,7 @@ export async function adminLayout(
     userAvatar: base.userAvatar,
     pluginNav: base.pluginNav,
     pluginSettingsNav: base.pluginSettingsNav,
+    viewRevision: base.viewRevision,
   });
 }
 
@@ -71,6 +74,8 @@ export interface LayoutOptions extends NavFlags {
   pluginNav?: Array<{ label: string; href: string }>;
   /** Plugin nav entries for the Settings group (already role-filtered). */
   pluginSettingsNav?: Array<{ label: string; href: string }>;
+  /** Cache-busting revision appended to browser-fetched view files. */
+  viewRevision?: string;
 }
 
 export async function layout(views: Fetcher, opts: LayoutOptions): Promise<string> {
@@ -79,6 +84,8 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
   const hasUserAvatar = normalizedUserAvatar.length > 0;
   const userRoleLabel = userRole.split(',').map((role) => role.trim()).filter(Boolean).join(', ');
   const nonce = currentCspNonce();
+  const revision = opts.viewRevision || 'dev';
+  const revisionQuery = revision ? `?r=${encodeURIComponent(revision)}` : '';
   const layoutData = {
     ...opts,
     body: isClientView(opts.body) ? '' : opts.body,
@@ -95,10 +102,12 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     canManagePlugins: opts.canManagePlugins ?? false,
     pluginNav: opts.pluginNav ?? [],
     pluginSettingsNav: opts.pluginSettingsNav ?? [],
+    viewRevision: revision,
     nonce,
   };
   const payload = {
     nonce,
+    viewRevision: revision,
     viewBasePath: admin ? '/admin/views' : '/views',
     layoutPath: '/layout/default.liquid',
     layoutData,
@@ -117,8 +126,8 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
 <body class="h-full overflow-x-hidden">
   <div id="cms-client-root" class="min-h-full">${loadingMarkup('100vh')}</div>
   <script id="cms-render-payload" type="application/json" nonce="${escHtml(nonce)}">${jsonScript(payload)}</script>
-  <script src="/assets/liquid.browser.min.js" nonce="${escHtml(nonce)}" defer></script>
-  <script src="/assets/client-render.js" nonce="${escHtml(nonce)}" defer></script>
+  <script src="/assets/liquid.browser.min.js${escHtml(revisionQuery)}" nonce="${escHtml(nonce)}" defer></script>
+  <script src="/assets/client-render.js${escHtml(revisionQuery)}" nonce="${escHtml(nonce)}" defer></script>
 </body>
 </html>`;
 }

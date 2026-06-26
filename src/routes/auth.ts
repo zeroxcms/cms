@@ -22,6 +22,7 @@ import {
   setAuthCookie,
 } from '../utils/cookies';
 import { normalizeRoles } from '../utils/roles';
+import { viewRevision } from '../utils/view-revision';
 import { loginPage } from '../templates/login';
 import type { Env, Variables, JWTPayload } from '../types';
 
@@ -169,6 +170,7 @@ authRoutes.get('/login', async (c) => {
       siteTitle: c.env.SITE_TITLE ?? '0xCMS',
       providers: providers.length > 0 ? providers : ['github'],
       error,
+      viewRevision: viewRevision(c.env),
     }),
   );
 });

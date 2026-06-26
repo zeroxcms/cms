@@ -21,6 +21,7 @@ export async function loginPage(views: Fetcher, opts: {
   siteTitle: string;
   providers: string[];
   error?: string;
+  viewRevision?: string;
 }): Promise<string> {
   const { siteTitle, providers, error } = opts;
 
@@ -43,5 +44,5 @@ export async function loginPage(views: Fetcher, opts: {
     }),
   });
 
-  return layout(views, { title: 'Sign In', siteTitle, body });
+  return layout(views, { title: 'Sign In', siteTitle, body, viewRevision: opts.viewRevision });
 }

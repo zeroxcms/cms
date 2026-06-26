@@ -29,6 +29,7 @@ import { lectsMatch } from './page-logic';
 import { strParam } from './forms';
 import { effectivePermissions, resolveRolePermissions } from './roles';
 import type { Page, Permission } from '../types';
+import { viewRevision } from './view-revision';
 
 export type { BaseTemplateProps } from '../templates/layout';
 import type { BaseTemplateProps } from '../templates/layout';
@@ -72,6 +73,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     currentUserId: String(user.sub),
     pluginNav: nav,
     pluginSettingsNav: settingsNav,
+    viewRevision: viewRevision(c.env),
     canManageUsers: permissions.has('users:manage'),
     canManageRoles: permissions.has('roles:manage'),
     canManagePlugins: permissions.has('plugin:manage'),

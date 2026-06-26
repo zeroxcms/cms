@@ -45,12 +45,18 @@
     return path.startsWith('/') ? path : '/' + path;
   }
 
+  function withRevision(url) {
+    const revision = payload.viewRevision;
+    if (!revision) return url;
+    return url + (url.includes('?') ? '&' : '?') + 'r=' + encodeURIComponent(revision);
+  }
+
   async function loadTemplate(path) {
     const normalized = normalizePath(path);
     if (templateCache.has(normalized)) return templateCache.get(normalized);
 
     const basePath = payload.viewBasePath || '/admin/views';
-    const promise = fetch(basePath + normalized, {
+    const promise = fetch(withRevision(basePath + normalized), {
       credentials: 'same-origin',
       headers: { Accept: normalized.endsWith('.json') ? 'application/json' : 'text/plain' },
     }).then(async (response) => {

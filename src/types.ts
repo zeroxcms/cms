@@ -284,6 +284,10 @@ export interface Env {
   DB: D1Database;
   PUBLISHED_DB: D1Database;
   VIEWS: Fetcher;
+  /** Cloudflare Worker version metadata; changes on every deploy. */
+  CF_VERSION_METADATA?: WorkerVersionMetadata;
+  /** Optional manual fallback for local/dev environments without version metadata. */
+  VIEW_REVISION?: string;
   MEDIA_BUCKET?: R2Bucket;
   /** Comma-separated built-in publish targets ("d1", "r2"). Defaults to "d1".
    *  Plugin publish targets are discovered from manifests, not listed here. */
