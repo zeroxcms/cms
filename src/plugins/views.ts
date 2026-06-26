@@ -2,9 +2,9 @@
 // Composite view source — wraps env.VIEWS so plugin-owned Liquid
 // templates (field/block snippets) resolve transparently.
 //
-// The Liquid engine (templates/liquid.ts) only ever calls `.fetch()`
-// on the views binding, so a Fetcher-shaped wrapper can add a
-// fallback chain without touching any template signatures.
+// The admin template endpoint calls `.fetch()` on the returned view source, so
+// a Fetcher-shaped wrapper can add a fallback chain without touching template
+// endpoint signatures.
 //
 // Resolution order for a path like /snippets/pagefield/events-map/basic.liquid:
 //   1. primary CMS assets (env.VIEWS)

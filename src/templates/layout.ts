@@ -1,4 +1,5 @@
-import { renderLiquid } from './liquid';
+import { currentCspNonce } from '../utils/request-context';
+import { isClientView, type RenderedView } from './liquid';
 
 /** Nav-gating flags forwarded into the sidebar; default false (hidden). */
 export interface NavFlags {
@@ -41,7 +42,7 @@ export interface BaseTemplateProps extends NavFlags {
 export async function adminLayout(
   views: Fetcher,
   base: BaseTemplateProps,
-  opts: { title: string; body: string },
+  opts: { title: string; body: RenderedView },
 ): Promise<string> {
   return layout(views, {
     ...navFlags(base),
@@ -60,7 +61,7 @@ export async function adminLayout(
 export interface LayoutOptions extends NavFlags {
   title: string;
   siteTitle: string;
-  body: string;
+  body: RenderedView;
   /** Include the admin sidebar? */
   admin?: boolean;
   userName?: string;
@@ -77,9 +78,10 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
   const normalizedUserAvatar = userAvatar.trim();
   const hasUserAvatar = normalizedUserAvatar.length > 0;
   const userRoleLabel = userRole.split(',').map((role) => role.trim()).filter(Boolean).join(', ');
-
-  return renderLiquid(views, '/layout/default.liquid', {
+  const nonce = currentCspNonce();
+  const layoutData = {
     ...opts,
+    body: isClientView(opts.body) ? '' : opts.body,
     admin,
     userName,
     userRole,
@@ -93,7 +95,32 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     canManagePlugins: opts.canManagePlugins ?? false,
     pluginNav: opts.pluginNav ?? [],
     pluginSettingsNav: opts.pluginSettingsNav ?? [],
-  });
+    nonce,
+  };
+  const payload = {
+    nonce,
+    viewBasePath: admin ? '/admin/views' : '/views',
+    layoutPath: '/layout/default.liquid',
+    layoutData,
+    bodyView: isClientView(opts.body) ? opts.body : null,
+  };
+
+  void views;
+  return `<!DOCTYPE html>
+<html lang="en" class="h-full overflow-x-hidden bg-gray-50">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escHtml(opts.title)} - ${escHtml(opts.siteTitle)}</title>
+  <link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body class="h-full overflow-x-hidden">
+  <div id="cms-client-root" class="min-h-full"></div>
+  <script id="cms-render-payload" type="application/json" nonce="${escHtml(nonce)}">${jsonScript(payload)}</script>
+  <script src="/assets/liquid.browser.min.js" nonce="${escHtml(nonce)}" defer></script>
+  <script src="/assets/client-render.js" nonce="${escHtml(nonce)}" defer></script>
+</body>
+</html>`;
 }
 
 /** Minimal HTML escaping to prevent XSS in pre-rendered HTML fragments. */
@@ -104,4 +131,13 @@ export function escHtml(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function jsonScript(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
 }

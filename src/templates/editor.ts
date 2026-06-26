@@ -1,5 +1,5 @@
 import { adminLayout, escHtml, type BaseTemplateProps } from './layout';
-import { renderLiquid, renderView, templateExists } from './liquid';
+import { renderView } from './liquid';
 import type { Page, PageVersion, Tag, Taxonomy } from '../types';
 import {
   getLectBlocks,
@@ -12,10 +12,54 @@ import type { BlueprintProps, FieldProps, Lect, LectItem } from '../utils/lect';
 import type { CmsConfig } from '../cms-config';
 
 interface RenderedLectFields {
-  settingsHtml: string;
-  contentHtml: string;
+  settingsFields: PageFieldRenderModel[];
+  contentFields: PageFieldRenderModel[];
+  itemGroups: ItemGroupRenderModel[];
   hasSettings: boolean;
   hasContent: boolean;
+}
+
+interface PageFieldRenderModel {
+  templatePath: string | null;
+  inputName: string;
+  label: string;
+  value: string;
+  type: string;
+  placeholder: string;
+  data: {
+    field: {
+      name: string;
+      type: string;
+      kind: 'attribute' | 'pointer' | 'value';
+      prefix: string;
+      inputName: string;
+      id: string;
+      label: string;
+      value: string;
+      placeholder: string;
+      language: string;
+      defaultLanguage: string;
+    };
+    values: Record<string, string>;
+    names: Record<string, string>;
+  };
+}
+
+interface ItemGroupRenderModel {
+  name: string;
+  addAction: string;
+  rows: Array<{
+    label: string;
+    weightInputName: string;
+    weight: unknown;
+    deleteAction: string;
+    showDelete: boolean;
+    settingsFields: PageFieldRenderModel[];
+    contentFields: PageFieldRenderModel[];
+    itemGroups: ItemGroupRenderModel[];
+    hasSettings: boolean;
+    hasContent: boolean;
+  }>;
 }
 
 const implicitBlockAttributes: FieldProps[] = [
@@ -27,7 +71,35 @@ const implicitItemAttributes: FieldProps[] = [
   { name: '_weight', type: 'number' },
 ];
 
-async function renderStructuredEditor(views: Fetcher, opts: {
+interface StructuredEditorRenderModel {
+  languageOptions: Array<{ value: string; selected: boolean }>;
+  hasSettings: boolean;
+  hasContent: boolean;
+  hasLanguageContent: boolean;
+  settingsFields: PageFieldRenderModel[];
+  contentFields: PageFieldRenderModel[];
+  itemGroups: ItemGroupRenderModel[];
+  blockOptions: Array<{ value: string }>;
+  hasBlockOptions: boolean;
+  hasBlocks: boolean;
+  blocks: Array<{
+    index: number;
+    type: string;
+    name: string;
+    id: unknown;
+    weight: number;
+    weightInputName: string;
+    weightInputId: string;
+    deleteAction: string;
+    hasSettings: boolean;
+    hasContent: boolean;
+    settingsFields: PageFieldRenderModel[];
+    contentFields: PageFieldRenderModel[];
+    itemGroups: ItemGroupRenderModel[];
+  }>;
+}
+
+function renderStructuredEditor(opts: {
   config: CmsConfig;
   language: string;
   lect: Lect;
@@ -35,20 +107,19 @@ async function renderStructuredEditor(views: Fetcher, opts: {
   blockProps: Record<string, BlueprintProps>;
   blockNames: string[];
   versions: PageVersion[];
-}): Promise<string> {
+}): StructuredEditorRenderModel {
   const { config, language, lect, blueprintProps, blockProps, blockNames } = opts;
-  const rootFields = await renderLectFields(views, '', lect, blueprintProps, language, config.defaultLanguage);
-  const blocks = await Promise.all(getLectBlocks(lect)
+  const rootFields = renderLectFields('', lect, blueprintProps, language, config.defaultLanguage);
+  const blocks = getLectBlocks(lect)
     .map((block, index) => ({ block, index }))
     .sort(
       (left, right) =>
         blockWeight(left.block, left.index) - blockWeight(right.block, right.index) || left.index - right.index,
     )
-    .map(async ({ block, index }) => {
+    .map(({ block, index }) => {
       const type = String(block._type || 'default');
       const blockWithDefaults = withImplicitBlockAttributes(block, type, index);
-      const blockFields = await renderLectFields(
-        views,
+      const blockFields = renderLectFields(
         `#${index}`,
         blockWithDefaults,
         withImplicitBlockProps(blockProps[type] ?? blockProps.default),
@@ -65,28 +136,30 @@ async function renderStructuredEditor(views: Fetcher, opts: {
         weightInputName: `#${index}@_weight`,
         weightInputId: fieldId(`#${index}@_weight`),
         deleteAction: `block-delete:${index}`,
-        settingsHtml: blockFields.settingsHtml,
-        contentHtml: blockFields.contentHtml,
         hasSettings: blockFields.hasSettings,
         hasContent: blockFields.hasContent,
+        settingsFields: blockFields.settingsFields,
+        contentFields: blockFields.contentFields,
+        itemGroups: blockFields.itemGroups,
       };
-    }));
+    });
 
-  return renderLiquid(views, '/snippets/structured-editor.liquid', {
+  return {
     languageOptions: config.languages.map((lang) => ({
       value: lang,
       selected: lang === language,
     })),
-    settingsHtml: rootFields.settingsHtml,
-    contentHtml: rootFields.contentHtml,
     hasSettings: rootFields.hasSettings,
     hasContent: rootFields.hasContent,
     hasLanguageContent: rootFields.hasContent || blocks.some((block) => block.hasContent),
+    settingsFields: rootFields.settingsFields,
+    contentFields: rootFields.contentFields,
+    itemGroups: rootFields.itemGroups,
     blockOptions: blockNames.map((name) => ({ value: name })),
     hasBlockOptions: blockNames.length > 0,
     hasBlocks: blocks.length > 0,
     blocks,
-  });
+  };
 }
 
 function withImplicitBlockProps(props: BlueprintProps): BlueprintProps {
@@ -137,18 +210,17 @@ function itemWeight(item: LectItem, fallback: number): number {
   return Number.isFinite(weight) ? weight : fallback;
 }
 
-async function renderLectFields(
-  views: Fetcher,
+function renderLectFields(
   prefix: string,
   lect: Lect | LectItem,
   props: BlueprintProps,
   language: string,
   defaultLanguage: string,
   options: { omitWeight?: boolean } = {},
-): Promise<RenderedLectFields> {
-  const attributeFields = (await Promise.all(props.attributes
+): RenderedLectFields {
+  const attributeFields = props.attributes
     .filter((field) => !options.omitWeight || field.name !== '_weight')
-    .map((field) => renderPageField(views, {
+    .map((field) => renderPageField({
     prefix,
     field,
     kind: 'attribute',
@@ -158,8 +230,8 @@ async function renderLectFields(
     language,
     defaultLanguage,
     lect,
-  })))).join('');
-  const pointerFields = (await Promise.all(props.pointers.map((field) => renderPageField(views, {
+  }));
+  const pointerFields = props.pointers.map((field) => renderPageField({
     prefix,
     field,
     kind: 'pointer',
@@ -169,8 +241,8 @@ async function renderLectFields(
     language,
     defaultLanguage,
     lect,
-  })))).join('');
-  const valueFields = (await Promise.all(props.fields.map((field) => renderPageField(views, {
+  }));
+  const valueFields = props.fields.map((field) => renderPageField({
     prefix,
     field,
     kind: 'value',
@@ -181,37 +253,26 @@ async function renderLectFields(
     language,
     defaultLanguage,
     lect,
-  })))).join('');
-  const itemFields = (await Promise.all(
-    props.items.map((item) => renderItemGroup(views, prefix, item, getLectItems(lect, item.name), language, defaultLanguage)),
-  )).join('');
-  const settingsHtml = renderFieldGrid(`${attributeFields}${pointerFields}`);
-  const contentHtml = `${renderFieldGrid(valueFields)}${itemFields}`;
+  }));
+  const itemGroups = props.items.map((item) => renderItemGroup(prefix, item, getLectItems(lect, item.name), language, defaultLanguage));
+  const settingsFields = [...attributeFields, ...pointerFields];
 
   return {
-    settingsHtml,
-    contentHtml,
-    hasSettings: settingsHtml.length > 0,
-    hasContent: contentHtml.length > 0,
+    settingsFields,
+    contentFields: valueFields,
+    itemGroups,
+    hasSettings: settingsFields.length > 0,
+    hasContent: valueFields.length > 0 || itemGroups.length > 0,
   };
 }
 
-function renderFieldGrid(fieldsHtml: string): string {
-  if (!fieldsHtml.trim()) return '';
-  return `
-    <div class="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
-      ${fieldsHtml}
-    </div>`;
-}
-
-async function renderItemGroup(
-  views: Fetcher,
+function renderItemGroup(
   prefix: string,
   props: NonNullable<BlueprintProps['items'][number]>,
   items: LectItem[],
   language: string,
   defaultLanguage: string,
-): Promise<string> {
+): ItemGroupRenderModel {
   const rows = items.length
     ? items
         .map((item, index) => ({ item, index }))
@@ -225,15 +286,16 @@ async function renderItemGroup(
     fields: props.fields,
     items: props.items ?? [],
   });
-  const rowHtml = rows.length
-    ? (await Promise.all(rows.map(async ({ item, index }, displayIndex) => {
+  return {
+    name: props.name,
+    addAction,
+    rows: rows.map(({ item, index }, displayIndex) => {
       const itemPrefix = `${prefix}.${props.name}[${index}]`;
       const deleteAction = blockMatch
         ? `block-item-delete:${blockMatch[1]}|${props.name}|${index}`
         : `item-delete:${props.name}|${index}`;
       const itemWithDefaults = withImplicitItemAttributes(item, index);
-      const itemFields = await renderLectFields(
-        views,
+      const itemFields = renderLectFields(
         itemPrefix,
         itemWithDefaults,
         groupProps,
@@ -242,58 +304,23 @@ async function renderItemGroup(
         { omitWeight: true },
       );
       const weightInputName = `${itemPrefix}@_weight`;
-      const deleteButton = rows.length > 1
-        ? `<button type="submit" name="action" value="${escHtml(deleteAction)}"
-                   title="Delete item ${displayIndex + 1}" aria-label="Delete item ${displayIndex + 1}"
-                   class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50 hover:text-red-700">
-             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#trash-can"></use></svg>
-             <span class="sr-only">Delete</span>
-           </button>`
-        : '';
-      return `<div class="min-w-0 rounded-lg bg-white border border-gray-200 p-4 space-y-3">
-                <div class="flex items-center justify-between gap-3">
-                  <span class="min-w-0 text-xs text-gray-400">Item ${displayIndex + 1}</span>
-                  <div class="flex shrink-0 items-center gap-3">
-                    ${renderCompactWeightInput(weightInputName, itemWithDefaults._weight, `Weight for item ${displayIndex + 1}`)}
-                    ${deleteButton}
-                  </div>
-                </div>
-                ${
-                  itemFields.hasSettings
-                    ? `<div class="space-y-3">
-                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">Settings</p>
-                         ${itemFields.settingsHtml}
-                       </div>`
-                    : ''
-                }
-                ${itemFields.contentHtml}
-              </div>`;
-    }))).join('')
-    : '<p class="text-sm text-gray-400">No items yet.</p>';
-
-  return `
-    <div class="min-w-0 rounded-lg border border-gray-100 bg-gray-50 p-4 space-y-4">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p class="min-w-0 break-words text-sm font-semibold text-gray-700">${escHtml(props.name)}</p>
-        <button type="submit" name="action" value="${escHtml(addAction)}"
-                class="w-full shrink-0 px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-xs font-semibold text-gray-700 sm:w-auto">Add Item</button>
-      </div>
-      ${rowHtml}
-    </div>`;
+      return {
+        label: `Item ${displayIndex + 1}`,
+        weightInputName,
+        weight: itemWithDefaults._weight,
+        deleteAction,
+        showDelete: rows.length > 1,
+        settingsFields: itemFields.settingsFields,
+        contentFields: itemFields.contentFields,
+        itemGroups: itemFields.itemGroups,
+        hasSettings: itemFields.hasSettings,
+        hasContent: itemFields.hasContent,
+      };
+    }),
+  };
 }
 
-function renderCompactWeightInput(name: string, value: unknown, label: string): string {
-  const id = fieldId(name);
-  return `<div class="flex items-center gap-1 text-sm text-gray-500">
-            <span aria-hidden="true">#</span>
-            <label for="${escHtml(id)}" class="sr-only">${escHtml(label)}</label>
-            <input type="number" id="${escHtml(id)}" name="${escHtml(name)}"
-                   value="${escHtml(String(value ?? ''))}"
-                   class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg font-bold focus:border-indigo-500 focus:outline-none">
-          </div>`;
-}
-
-async function renderPageField(views: Fetcher, opts: {
+function renderPageField(opts: {
   prefix: string;
   field: FieldProps;
   kind: 'attribute' | 'pointer' | 'value';
@@ -304,13 +331,16 @@ async function renderPageField(views: Fetcher, opts: {
   defaultLanguage: string;
   lect: Lect | LectItem;
   placeholder?: string;
-}): Promise<string> {
+}): PageFieldRenderModel {
   const templatePath = opts.field.renderer ? pageFieldTemplatePath(opts.field.renderer) : null;
-  if (!templatePath || !(await templateExists(views, templatePath))) {
-    return renderInput(opts.inputName, opts.label, opts.value, opts.field.type, opts.placeholder);
-  }
-
-  return renderLiquid(views, templatePath, {
+  return {
+    templatePath,
+    inputName: opts.inputName,
+    label: opts.label,
+    value: opts.value,
+    type: opts.field.type,
+    placeholder: opts.placeholder ?? '',
+    data: {
     field: {
       name: opts.field.name,
       type: opts.field.type,
@@ -326,7 +356,8 @@ async function renderPageField(views: Fetcher, opts: {
     },
     values: pageFieldValues(opts.lect, opts.field.name, opts.language, opts.defaultLanguage),
     names: pageFieldNames(opts.prefix, opts.field.name, opts.kind, opts.language),
-  });
+    },
+  };
 }
 
 function pageFieldTemplatePath(type: string): string | null {
@@ -359,25 +390,6 @@ function pageFieldNames(prefix: string, name: string, kind: 'attribute' | 'point
     end: `${prefix}.${name}__end|${language}`,
     timezone: `${prefix}.${name}__timezone|${language}`,
   };
-}
-
-function renderInput(name: string, label: string, value: string, type: string, placeholder = ''): string {
-  const isLong = type.includes('textarea') || label === 'body' || label === 'description';
-  const inputType = type === 'date' || type === 'number' ? type : 'text';
-  const id = fieldId(name);
-  const input = isLong
-    ? `<textarea id="${escHtml(id)}" name="${escHtml(name)}" rows="4"
-                 placeholder="${escHtml(placeholder)}"
-                 class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y">${escHtml(value)}</textarea>`
-    : `<input id="${escHtml(id)}" type="${inputType}" name="${escHtml(name)}"
-              value="${escHtml(value)}"
-              placeholder="${escHtml(placeholder)}"
-              class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">`;
-
-  return `<label for="${escHtml(id)}" class="${isLong ? 'sm:col-span-2' : ''} min-w-0 block">
-            <span class="block text-sm font-medium text-gray-700 mb-1">${escHtml(label)}</span>
-            ${input}
-          </label>`;
 }
 
 function fieldId(name: string): string {
@@ -513,7 +525,7 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
   const selectedVersion = isVersionPreview && version ? version : undefined;
   const pageTitle = isEdit ? `Edit: ${page.name}` : 'New Page';
   const pageType = (structured ? getLectScalar(structured.lect, '_type') : '') || page?.page_type || defaultPageType || 'default';
-  const structuredBlock = structured ? await renderStructuredEditor(views, structured) : '';
+  const structuredModel = structured ? renderStructuredEditor(structured) : null;
   const versionHrefBase = page ? `/admin/pages/${page.id}/edit` : action;
   const pageEditorChips = editorChips(page?.editors);
   const parentOptions = parentPages
@@ -583,7 +595,8 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
     pageTypeOptions: structured
       ? Object.keys(structured.config.blueprint).map((pageType) => ({ value: pageType }))
       : [],
-    structuredBlock,
+    structuredBlock: '',
+    structuredModel,
     ...editorTagGroups(
       tags,
       taxonomies,

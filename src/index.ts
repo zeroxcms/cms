@@ -111,6 +111,23 @@ app.get('/media/*', async (c) => {
   return await mediaObjectResponse(c.env.MEDIA_BUCKET, key) ?? c.notFound();
 });
 
+app.get('/views/*', async (c) => {
+  const path = c.req.path.slice('/views'.length);
+  if (!path.startsWith('/') || path.includes('..')) return c.notFound();
+
+  const response = await c.env.VIEWS.fetch(`https://views.local${path}`);
+  if (!response.ok) return c.notFound();
+
+  const headers = new Headers(response.headers);
+  if (path.endsWith('.json')) {
+    headers.set('Content-Type', 'application/json; charset=utf-8');
+  } else if (path.endsWith('.liquid')) {
+    headers.set('Content-Type', 'text/plain; charset=utf-8');
+  }
+  headers.set('Cache-Control', 'public, max-age=86400');
+  return new Response(response.body, { status: response.status, headers });
+});
+
 async function mediaObjectResponse(bucket: R2Bucket, key: string): Promise<Response | null> {
   const object = await bucket.get(key);
   if (!object) return null;
