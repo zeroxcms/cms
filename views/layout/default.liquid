@@ -251,16 +251,33 @@
   // [data-reorder-handle-only]: drag may only start from [data-reorder-handle] cells.
   (function() {
     var dragSrc = null, dragTable = null, mdTarget = null;
+    var markQueued = false;
     // Invisible 1×1 element used as the drag image so no ghost floats around.
     var ghost = document.createElement('span');
     ghost.style.cssText = 'position:fixed;pointer-events:none;opacity:0;width:1px;height:1px';
     document.body.appendChild(ghost);
+    function markDraggableRows(scope) {
+      Array.from((scope || document).querySelectorAll('table[data-reorder] tbody tr[data-id], table[data-reorder] tbody tr[data-index]')).forEach(function(tr) {
+        tr.setAttribute('draggable', 'true');
+      });
+    }
+    function queueMarkDraggableRows() {
+      if (markQueued) return;
+      markQueued = true;
+      requestAnimationFrame(function() {
+        markQueued = false;
+        markDraggableRows(document);
+      });
+    }
     // Track mousedown so handle-only tables know whether the drag started on a handle.
-    document.addEventListener('mousedown', function(e) { mdTarget = e.target; });
-    // Make every eligible row draggable.
-    Array.from(document.querySelectorAll('table[data-reorder] tbody tr[data-id], table[data-reorder] tbody tr[data-index]')).forEach(function(tr) {
-      tr.setAttribute('draggable', 'true');
+    document.addEventListener('mousedown', function(e) {
+      mdTarget = e.target;
+      var table = e.target.closest && e.target.closest('table[data-reorder]');
+      if (table) markDraggableRows(table);
     });
+    // Make every eligible row draggable.
+    markDraggableRows(document);
+    new MutationObserver(queueMarkDraggableRows).observe(document.body, { childList: true, subtree: true });
     document.addEventListener('dragstart', function(e) {
       var tr = e.target.closest && e.target.closest('tr[data-id],tr[data-index]');
       if (!tr) return;
