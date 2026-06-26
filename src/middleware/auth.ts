@@ -12,7 +12,7 @@
 // ============================================================
 
 import { createMiddleware } from 'hono/factory';
-import { signJWT, verifyJWT, hashToken, generateTokenId } from '../utils/jwt';
+import { verifyJWT } from '../security/jwt';
 import { effectivePermissions, resolveRolePermissions, splitRoles } from '../utils/roles';
 import type { Permission } from '../types';
 import {
@@ -21,11 +21,14 @@ import {
   readAuthCookie,
   refreshCookieName,
   setAuthCookie,
-} from '../utils/cookies';
+} from '../security/cookies';
 import type { Env, Variables, JWTPayload } from '../types';
-
-const ACCESS_TOKEN_TTL = 15 * 60;       // 15 minutes
-const REFRESH_TOKEN_TTL = 7 * 24 * 3600; // 7 days
+import {
+  ACCESS_TOKEN_TTL,
+  REFRESH_TOKEN_TTL,
+  purgeExpiredSessions,
+  rotateAuthSession,
+} from '../security/sessions';
 
 function wantsJsonResponse(request: Request): boolean {
   const url = new URL(request.url);
@@ -61,76 +64,17 @@ export const authMiddleware = createMiddleware<{
     const refreshToken = readAuthCookie(c, refreshCookieName);
     if (!refreshToken) return null;
 
-    const refreshPayload = await verifyJWT(refreshToken, secret);
-    if (!refreshPayload || refreshPayload.type !== 'refresh' || !refreshPayload.jti) {
-      return null;
-    }
-
-    // Revocation check – the hashed jti must exist in the sessions table
-    const tokenHash = await hashToken(refreshPayload.jti);
-    const session = await c.env.DB.prepare(
-      'SELECT id, user_id FROM sessions WHERE refresh_token_hash = ? AND expires_at > CURRENT_TIMESTAMP',
-    )
-      .bind(tokenHash)
-      .first<{ id: number; user_id: number }>();
-
-    if (!session) return null;
-
-    // Fetch up-to-date user data (role may have changed)
-    const user = await c.env.DB.prepare(
-      'SELECT id, email, name, role FROM users WHERE id = ?',
-    )
-      .bind(session.user_id)
-      .first<{ id: number; email: string; name: string; role: string }>();
-
-    if (!user) return null;
-
-    const now = Math.floor(Date.now() / 1000);
-    const newJti = generateTokenId();
-
-    // Issue new access token
-    const accessPayload: JWTPayload = {
-      sub: String(user.id),
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      type: 'access',
-      exp: now + ACCESS_TOKEN_TTL,
-      iat: now,
-    };
-    const newAccessToken = await signJWT(accessPayload, secret);
-
-    // Issue new refresh token (rotation)
-    const newRefreshPayload: JWTPayload = {
-      sub: String(user.id),
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      type: 'refresh',
-      jti: newJti,
-      exp: now + REFRESH_TOKEN_TTL,
-      iat: now,
-    };
-    const newRefreshToken = await signJWT(newRefreshPayload, secret);
-    const newTokenHash = await hashToken(newJti);
-
-    // Rotate session row
-    await c.env.DB.prepare(
-      `UPDATE sessions SET refresh_token_hash = ?, expires_at = datetime('now', '+7 days') WHERE id = ?`,
-    )
-      .bind(newTokenHash, session.id)
-      .run();
+    const rotated = await rotateAuthSession(c.env.DB, secret, refreshToken);
+    if (!rotated.ok) return null;
 
     // Opportunistic hygiene: purge expired sessions without blocking the response.
-    c.executionCtx.waitUntil(
-      c.env.DB.prepare('DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP').run(),
-    );
+    c.executionCtx.waitUntil(purgeExpiredSessions(c.env.DB));
 
     // Set cookies
-    setAuthCookie(c, accessCookieName, newAccessToken, ACCESS_TOKEN_TTL);
-    setAuthCookie(c, refreshCookieName, newRefreshToken, REFRESH_TOKEN_TTL);
+    setAuthCookie(c, accessCookieName, rotated.accessToken, ACCESS_TOKEN_TTL);
+    setAuthCookie(c, refreshCookieName, rotated.refreshToken, REFRESH_TOKEN_TTL);
 
-    return accessPayload;
+    return rotated.accessPayload;
   };
 
   let user = await readAccess();

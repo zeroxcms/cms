@@ -11,14 +11,14 @@ import { Hono } from 'hono';
 import { authRoutes } from './routes/auth';
 import { adminRoutes } from './routes/admin';
 import { cmsApiRoutes } from './routes/cms-api';
+import { mediaRoutes } from './routes/media';
 import { errorPage } from './templates/errors';
 import {
   canonicalHostResponse,
   rejectCrossOriginMutation,
   withSensitiveCacheHeaders,
   withSecurityHeaders,
-} from './utils/security';
-import { applyMediaResponseHeaders } from './utils/media';
+} from './security/http';
 import { generateCspNonce, requestContext } from './utils/request-context';
 import type { Env, Variables } from './types';
 
@@ -80,36 +80,7 @@ app.route('/admin', adminRoutes);
 app.route('/__cms', cmsApiRoutes);
 
 // ── Media files from optional R2 binding ──────────────────────────────────────
-app.get('/media-preview/*', async (c) => {
-  if (!c.env.MEDIA_BUCKET) return c.notFound();
-  const key = c.req.path.replace(/^\/media-preview\//, '');
-  const mediaUrl = new URL(`/media/${key}`, c.req.url);
-
-  if (!isLocalHost(mediaUrl.hostname)) {
-    try {
-      const resized = await fetch(mediaUrl.toString(), {
-        cf: {
-          image: {
-            width: 100,
-            height: 100,
-            fit: 'cover',
-          },
-        },
-      });
-      if (resized.ok) return resized;
-    } catch {
-      // Fall back to the original R2 object when Image Resizing is unavailable.
-    }
-  }
-
-  return await mediaObjectResponse(c.env.MEDIA_BUCKET, key) ?? c.notFound();
-});
-
-app.get('/media/*', async (c) => {
-  if (!c.env.MEDIA_BUCKET) return c.notFound();
-  const key = c.req.path.replace(/^\/media\//, '');
-  return await mediaObjectResponse(c.env.MEDIA_BUCKET, key) ?? c.notFound();
-});
+app.route('/', mediaRoutes);
 
 app.get('/views/*', async (c) => {
   const path = c.req.path.slice('/views'.length);
@@ -127,18 +98,6 @@ app.get('/views/*', async (c) => {
   headers.set('Cache-Control', 'public, max-age=86400');
   return new Response(response.body, { status: response.status, headers });
 });
-
-async function mediaObjectResponse(bucket: R2Bucket, key: string): Promise<Response | null> {
-  const object = await bucket.get(key);
-  if (!object) return null;
-
-  const headers = new Headers();
-  object.writeHttpMetadata(headers);
-  headers.set('Cache-Control', 'public, max-age=31536000');
-  headers.set('ETag', object.httpEtag);
-  applyMediaResponseHeaders(headers, key);
-  return new Response(object.body, { headers });
-}
 
 function isLocalHost(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';

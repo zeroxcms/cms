@@ -5,7 +5,7 @@ import { cmsConfig } from '../../cms-config';
 import { getLectLocalizedValue, safeParseLect } from '../../utils/lect';
 import type { Env, Variables, Tag, Taxonomy } from '../../types';
 import { num, slugify, str } from '../../utils/forms';
-import { validateUpload } from '../../utils/media';
+import { validateUpload } from '../../security/media';
 import { rateLimitByIP } from '../../middleware/rate-limit';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
