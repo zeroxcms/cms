@@ -284,18 +284,26 @@ html[data-theme="light"] .shadow-xl {
   box-shadow: 0 20px 30px rgba(15, 23, 42, 0.14);
 }
 
-html[data-theme="light"] [data-admin-sidebar] {
+html[data-theme="light"] [data-admin-sidebar],
+html[data-theme="light"] [data-admin-mobile-bar] {
   background-color: #ffffff;
   color: var(--color-gray-700);
   box-shadow: 1px 0 0 var(--color-gray-200), 0 10px 30px rgba(15, 23, 42, 0.08);
 }
-html[data-theme="light"] [data-admin-sidebar] .text-white { color: var(--color-gray-900); }
+html[data-theme="light"] [data-admin-sidebar] .text-white,
+html[data-theme="light"] [data-admin-mobile-bar] .text-white { color: var(--color-gray-900); }
 html[data-theme="light"] [data-admin-sidebar] .text-gray-300,
-html[data-theme="light"] [data-admin-sidebar] .text-gray-400 { color: var(--color-gray-600); }
+html[data-theme="light"] [data-admin-sidebar] .text-gray-400,
+html[data-theme="light"] [data-admin-mobile-bar] .text-gray-300,
+html[data-theme="light"] [data-admin-mobile-bar] .text-gray-400 { color: var(--color-gray-600); }
 html[data-theme="light"] [data-admin-sidebar] .border-gray-700,
-html[data-theme="light"] [data-admin-sidebar] .md\:border-gray-700 { border-color: var(--color-gray-200); }
-html[data-theme="light"] [data-admin-sidebar] .hover\:bg-gray-700:hover { background-color: var(--color-gray-100); }
-html[data-theme="light"] [data-admin-sidebar] .hover\:text-white:hover { color: var(--color-gray-900); }
+html[data-theme="light"] [data-admin-sidebar] .md\:border-gray-700,
+html[data-theme="light"] [data-admin-mobile-bar],
+html[data-theme="light"] [data-admin-mobile-bar] .border-gray-700 { border-color: var(--color-gray-200); }
+html[data-theme="light"] [data-admin-sidebar] .hover\:bg-gray-700:hover,
+html[data-theme="light"] [data-admin-mobile-bar] .hover\:bg-gray-700:hover { background-color: var(--color-gray-100); }
+html[data-theme="light"] [data-admin-sidebar] .hover\:text-white:hover,
+html[data-theme="light"] [data-admin-mobile-bar] .hover\:text-white:hover { color: var(--color-gray-900); }
 
 html[data-theme="light"] .\[\&_input\]\:bg-\[\#141a26\] input {
   background-color: #ffffff;
