@@ -13,7 +13,7 @@
 
 import { createMiddleware } from 'hono/factory';
 import { signJWT, verifyJWT, hashToken, generateTokenId } from '../utils/jwt';
-import { effectivePermissions, resolveRolePermissions } from '../utils/roles';
+import { effectivePermissions, resolveRolePermissions, splitRoles } from '../utils/roles';
 import type { Permission } from '../types';
 import {
   accessCookieName,
@@ -170,14 +170,19 @@ export const editorGuard = createMiddleware<{
 });
 
 /**
- * Middleware factory that enforces a specific capability. Apply per-route on
- * top of editorGuard so each mutation requires the least privilege it needs.
+ * Middleware factory that enforces a specific capability. Accepts both built-in
+ * permissions and plugin-declared permission strings. The admin role always
+ * passes — plugin permissions are not stored in the built-in permission set so
+ * admin is special-cased here rather than re-deriving the full set on every call.
+ * Apply per-route on top of editorGuard so each mutation requires the least
+ * privilege it needs.
  */
-export function requirePermission(permission: Permission) {
+export function requirePermission(permission: Permission | string) {
   return createMiddleware<{ Bindings: Env; Variables: Variables }>(async (c, next) => {
     const user = c.get('user');
+    if (splitRoles(user.role).includes('admin')) return next();
     const map = await resolveRolePermissions(c.env);
-    if (!effectivePermissions(map, user.role).has(permission)) {
+    if (!effectivePermissions(map, user.role).has(permission as Permission)) {
       if (wantsJsonResponse(c.req.raw)) {
         return jsonError({ success: false, error: 'Insufficient permissions' }, 403, 'insufficient-permissions');
       }

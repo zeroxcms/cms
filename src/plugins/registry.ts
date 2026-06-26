@@ -143,6 +143,22 @@ export async function pluginsForHook(env: Env, event: string): Promise<ResolvedP
   return plugins.filter((plugin) => (plugin.manifest.hooks ?? []).includes(event));
 }
 
+/** All permissions declared by active plugins, deduplicated by value. */
+export async function allPluginPermissions(env: Env): Promise<Array<{ value: string; label: string }>> {
+  const plugins = await getPlugins(env);
+  const seen = new Set<string>();
+  const result: Array<{ value: string; label: string }> = [];
+  for (const plugin of plugins) {
+    for (const perm of plugin.manifest.permissions ?? []) {
+      if (!seen.has(perm.value)) {
+        seen.add(perm.value);
+        result.push(perm);
+      }
+    }
+  }
+  return result;
+}
+
 /** Clears the per-isolate manifest + plugin-list caches (after admin mutations / in tests). */
 export function clearManifestCache(): void {
   manifestCache.clear();

@@ -5,7 +5,7 @@
 // for how these rows feed resolveRolePermissions().
 // ============================================================
 
-import { PERMISSIONS, USER_ROLES } from '../types';
+import { USER_ROLES } from '../types';
 import type { Env, Permission } from '../types';
 import { ROLE_LABELS, resolveRolePermissions } from './roles';
 
@@ -67,9 +67,10 @@ export async function getRoleForEdit(env: Env, name: string): Promise<{ name: st
 }
 
 /** Replaces a role's permission grants. Marks the role as managed so a built-in
- *  override (including an empty set) overrides its code default. */
+ *  override (including an empty set) overrides its code default. Accepts both
+ *  built-in permissions and plugin-declared permissions (namespaced strings). */
 export async function saveRolePermissions(env: Env, name: string, label: string, permissions: string[]): Promise<void> {
-  const valid = permissions.filter((permission): permission is Permission => (PERMISSIONS as readonly string[]).includes(permission));
+  const valid = [...new Set(permissions.filter((p) => /^[a-z][a-z0-9]*(?::[a-z][a-z0-9]*)+$/.test(p)))];
   const builtin = BUILTIN.has(name) ? 1 : 0;
   await env.DB.prepare(
     `INSERT INTO roles (name, label, builtin) VALUES (?, ?, ?)

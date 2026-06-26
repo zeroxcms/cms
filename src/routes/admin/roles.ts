@@ -10,6 +10,7 @@ import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 import { renderPage } from '../../utils/admin-render';
 import { clearRolePermissionsCache } from '../../utils/roles';
+import { allPluginPermissions } from '../../plugins/registry';
 import {
   createCustomRole,
   deleteCustomRole,
@@ -23,22 +24,34 @@ export const rolesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 rolesRoutes.use('/roles', requirePermission('roles:manage'));
 rolesRoutes.use('/roles/*', requirePermission('roles:manage'));
 
-function permissionOptions(granted: Set<Permission>) {
-  return PERMISSIONS.map((permission) => ({
-    value: permission,
-    label: PERMISSION_DESCRIPTIONS[permission],
-    checked: granted.has(permission),
-  }));
+async function buildPermissionOptions(env: Env, granted: Set<Permission | string>): Promise<Array<{ value: string; label: string; checked: boolean }>> {
+  const pluginPerms = await allPluginPermissions(env);
+  return [
+    ...PERMISSIONS.map((permission) => ({
+      value: permission,
+      label: PERMISSION_DESCRIPTIONS[permission],
+      checked: granted.has(permission),
+    })),
+    ...pluginPerms.map((perm) => ({
+      value: perm.value,
+      label: perm.label,
+      checked: granted.has(perm.value),
+    })),
+  ];
 }
 
 rolesRoutes.get('/roles', async (c) => {
-  const roles = await listRolesForAdmin(c.env);
+  const [roles, pluginPerms] = await Promise.all([
+    listRolesForAdmin(c.env),
+    allPluginPermissions(c.env),
+  ]);
+  const totalPermCount = PERMISSIONS.length + pluginPerms.length;
   return renderPage(c, rolesPage, {
     roles: roles.map((role) => ({
       name: role.name,
       label: role.label,
       badge: role.builtin ? (role.locked ? 'admin' : 'built-in') : 'custom',
-      permissionCount: role.locked ? PERMISSIONS.length : role.permissionCount,
+      permissionCount: role.locked ? totalPermCount : role.permissionCount,
       editHref: `/admin/roles/${encodeURIComponent(role.name)}/edit`,
       deleteAction: `/admin/roles/${encodeURIComponent(role.name)}/delete`,
       canDelete: !role.builtin,
@@ -55,7 +68,7 @@ rolesRoutes.get('/roles/new', async (c) => {
     label: '',
     builtin: false,
     locked: false,
-    permissionOptions: [],
+    permissionOptions: await buildPermissionOptions(c.env, new Set()),
   });
 });
 
@@ -86,13 +99,14 @@ rolesRoutes.post('/roles', async (c) => {
 rolesRoutes.get('/roles/:name/edit', async (c) => {
   const role = await getRoleForEdit(c.env, c.req.param('name'));
   if (!role) return c.notFound();
+  const granted: Set<Permission | string> = role.locked ? new Set([...PERMISSIONS, ...(await allPluginPermissions(c.env)).map((p) => p.value)]) : role.permissions;
   return renderPage(c, roleFormPage, {
     isNew: false,
     name: role.name,
     label: role.label,
     builtin: role.builtin,
     locked: role.locked,
-    permissionOptions: permissionOptions(role.locked ? new Set(PERMISSIONS) : role.permissions),
+    permissionOptions: await buildPermissionOptions(c.env, granted),
   });
 });
 

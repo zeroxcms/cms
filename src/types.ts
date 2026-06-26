@@ -266,6 +266,12 @@ export interface PluginManifest {
    * editor. See src/plugins/edit-view.ts.
    */
   editViews?: string[];
+  /**
+   * Additional permission types this plugin contributes. They appear in the
+   * Roles admin alongside built-in permissions so editors can grant them to
+   * custom roles. Values should be namespaced by plugin id (e.g. "events:manage").
+   */
+  permissions?: Array<{ value: string; label: string }>;
 }
 
 /** A resolved, active plugin: its declared binding name, Fetcher, and manifest. */
