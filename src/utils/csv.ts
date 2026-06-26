@@ -18,8 +18,9 @@ import {
   getPathValue,
 } from './search';
 import type { BlueprintPathKind } from './search';
-import { editorTaxonomy, savePageVersion } from './admin-queries';
+import { editorTaxonomy } from './admin-queries';
 import { lectForPage, withDraftMetadata } from './page-logic';
+import { savePageVersionAndSetCurrent } from './page-store';
 
 export interface CsvPathSpec {
   header: string;
@@ -811,10 +812,7 @@ async function updateImportedPage(
     )
       .bind(name, slug, weight, start, end, timezone, lectValue, existing.id)
       .run();
-    const versionId = await savePageVersion(db, existing.id, lectValue, 'import');
-    await db.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
-      .bind(versionId, existing.id)
-      .run();
+    await savePageVersionAndSetCurrent(db, existing.id, lectValue, 'import');
   }
 
   return true;

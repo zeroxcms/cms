@@ -54,6 +54,22 @@ export function lectsMatch(left: string | null | undefined, right: string | null
   return stringifyLect(safeParseLect(left)) === stringifyLect(safeParseLect(right));
 }
 
+export function withLiveStatus<T extends { uuid: string; weight: number; lect: string | null | undefined }>(
+  pages: T[],
+  liveMap: Map<string, { weight: number; lect: string | null | undefined }>,
+) {
+  return pages.map((page) => {
+    const livePage = liveMap.get(page.uuid);
+    return {
+      ...page,
+      isPublished: !!livePage,
+      liveWeight: livePage?.weight,
+      hasLiveWeightDrift: !!livePage && livePage.weight !== page.weight,
+      hasLiveLectDrift: !!livePage && !lectsMatch(livePage.lect, page.lect),
+    };
+  });
+}
+
 export function lectForPage(config: CmsConfig, pageType: string, stored: string | null | undefined): Lect {
   return mergeLects(
     blueprintToLect(pageType, config.blueprint, config.defaultLanguage),

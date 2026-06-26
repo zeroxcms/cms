@@ -31,8 +31,8 @@ import {
   isStructuredEditorAction,
   lectForPage,
   lectFromForm,
-  lectsMatch,
   withDraftMetadata,
+  withLiveStatus,
 } from '../../utils/page-logic';
 import {
   editorTaxonomy,
@@ -40,7 +40,6 @@ import {
   fetchUserName,
   listDashboardDraftPages,
   parentPageOption,
-  savePageVersion,
   trashDraftPage,
 } from '../../utils/admin-queries';
 import {
@@ -54,6 +53,7 @@ import type { PublishOutcome } from '../../publish';
 import { buildBaseProps, dashboardPagination, exportPageList, renderPage } from '../../utils/admin-render';
 import { requirePermission } from '../../middleware/auth';
 import type { AppContext } from '../../utils/context';
+import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../../utils/page-store';
 
 export const pagesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -71,17 +71,6 @@ function preferNativeEditor(c: AppContext): boolean {
 function withNativeFlag(c: AppContext, url: string): string {
   if (!preferNativeEditor(c)) return url;
   return `${url}${url.includes('?') ? '&' : '?'}native=1`;
-}
-
-// Tell the page's sync Durable Object that the page was saved, so it commits
-// the live overlay and notifies connected editors. Best-effort.
-async function notifyPageSaved(env: Env, pageId: number): Promise<void> {
-  try {
-    const id = env.PAGE_SYNC.idFromName(`page-${pageId}`);
-    await env.PAGE_SYNC.get(id).fetch('https://page-sync/?action=saved', { method: 'POST' });
-  } catch {
-    // Sync is a non-critical overlay; never block a save on it.
-  }
 }
 
 // Flash message for a publish fan-out: plain success, or success qualified
@@ -110,13 +99,7 @@ pagesRoutes.get('/', async (c) => {
   });
   const liveMap = await liveMapForDraftPages(c.env, draftPages.results);
 
-  const pages = draftPages.results.map((p) => ({
-    ...p,
-    isPublished: liveMap.has(p.uuid),
-    liveWeight: liveMap.get(p.uuid)?.weight,
-    hasLiveWeightDrift: liveMap.has(p.uuid) && liveMap.get(p.uuid)?.weight !== p.weight,
-    hasLiveLectDrift: liveMap.has(p.uuid) && !lectsMatch(liveMap.get(p.uuid)?.lect, p.lect),
-  }));
+  const pages = withLiveStatus(draftPages.results, liveMap);
 
   return renderPage(c, dashboardPage, {
     pages,
@@ -151,13 +134,7 @@ pagesRoutes.get('/pages/list/:pageType', async (c) => {
 
   return renderPage(c, dashboardPage, {
       siteTitle: `${c.env.SITE_TITLE ?? '0xCMS'} · ${pageType}`,
-      pages: draftPages.results.map((page) => ({
-        ...page,
-        isPublished: liveMap.has(page.uuid),
-        liveWeight: liveMap.get(page.uuid)?.weight,
-        hasLiveWeightDrift: liveMap.has(page.uuid) && liveMap.get(page.uuid)?.weight !== page.weight,
-        hasLiveLectDrift: liveMap.has(page.uuid) && !lectsMatch(liveMap.get(page.uuid)?.lect, page.lect),
-      })),
+      pages: withLiveStatus(draftPages.results, liveMap),
       flash: flash || undefined,
       returnPath: dashboardPageHref(routeBase, draftPages.pagination.currentPage, pageSize),
       pageTypeFilter: pageType,
@@ -219,10 +196,7 @@ pagesRoutes.post('/pages/new_post/:pageType', requirePermission('content:write')
     .first<{ id: number }>();
   if (!page) return c.notFound();
 
-  const versionId = await savePageVersion(c.env.DB, page.id, lect, 'create');
-  await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
-    .bind(versionId, page.id)
-    .run();
+  await savePageVersionAndSetCurrent(c.env.DB, page.id, lect, 'create');
 
   dispatchHook(c, 'create', { id: page.id, page_type: pageType, name, slug });
 
@@ -410,24 +384,8 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
   const pageId = pageRow!.id;
 
   // Insert page version
-  const versionId = await savePageVersion(c.env.DB, pageId, lectVal, 'create');
-
-  // Link current version
-  await c.env.DB.prepare(
-    'UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?',
-  )
-    .bind(versionId, pageId)
-    .run();
-
-  // Save tag associations
-  const tagIds = form.getAll('tag_ids');
-  for (const tagId of tagIds) {
-    await c.env.DB.prepare(
-      'INSERT OR IGNORE INTO draft_page_tags (page_id, tag_id) VALUES (?, ?)',
-    )
-      .bind(pageId, parseInt(String(tagId), 10))
-      .run();
-  }
+  await savePageVersionAndSetCurrent(c.env.DB, pageId, lectVal, 'create');
+  await setDraftPageTags(c.env.DB, pageId, form.getAll('tag_ids'), false);
 
   dispatchHook(c, 'create', { id: pageId, page_type: pageTypeVal, name, slug: uniqueSlug });
 
@@ -715,36 +673,18 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
     )
     .run();
 
-  const newVersionId = await savePageVersion(
+  await savePageVersionAndSetCurrent(
     c.env.DB,
     pageId,
     lectVal,
     action || 'update',
   );
 
-  await c.env.DB.prepare(
-    'UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?',
-  )
-    .bind(newVersionId, pageId)
-    .run();
-
   // Commit the live CRDT overlay: clears uncommitted ops so a save-then-leave
   // doesn't revert, and pushes the saved values as everyone's new baseline.
   await notifyPageSaved(c.env, pageId);
 
-  // Replace tag associations
-  await c.env.DB.prepare('DELETE FROM draft_page_tags WHERE page_id = ?')
-    .bind(pageId)
-    .run();
-
-  const tagIds = form.getAll('tag_ids');
-  for (const tagId of tagIds) {
-    await c.env.DB.prepare(
-      'INSERT OR IGNORE INTO draft_page_tags (page_id, tag_id) VALUES (?, ?)',
-    )
-      .bind(pageId, parseInt(String(tagId), 10))
-      .run();
-  }
+  await setDraftPageTags(c.env.DB, pageId, form.getAll('tag_ids'), true);
 
   if (action === 'publish') {
     const outcome = await publishPageToTargets(c.env, pageId);

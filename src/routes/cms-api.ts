@@ -35,9 +35,10 @@ import { deliverHook, type HookEvent, type HookPage } from '../plugins/hooks';
 import { blueprintToLect, mergeLects, safeParseLect, stringifyLect } from '../utils/lect';
 import type { Lect } from '../utils/lect';
 import { withDraftMetadata } from '../utils/page-logic';
-import { ensureUniqueDraftSlug, savePageVersion, trashDraftPage, trashDraftPages } from '../utils/admin-queries';
+import { ensureUniqueDraftSlug, trashDraftPage, trashDraftPages } from '../utils/admin-queries';
 import { slugify } from '../utils/forms';
 import { unpublishPageFromTargets } from '../publish';
+import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../utils/page-store';
 
 export const cmsApiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -207,17 +208,6 @@ function emitPluginHooks(c: AppContext, event: HookEvent, pages: HookPage[], plu
   }
 }
 
-// Tell the page's sync Durable Object the page was saved so any open editor's
-// CRDT overlay commits rather than reverting. Best-effort — never blocks a write.
-async function notifyPageSaved(env: Env, pageId: number): Promise<void> {
-  try {
-    const id = env.PAGE_SYNC.idFromName(`page-${pageId}`);
-    await env.PAGE_SYNC.get(id).fetch('https://page-sync/?action=saved', { method: 'POST' });
-  } catch {
-    // Sync is a non-critical overlay.
-  }
-}
-
 // ── Create (shared by POST /pages and POST /pages/batch) ──────────────────────
 
 type CreateResult = { ok: true; page: ApiPage } | { ok: false; status: number; error: string };
@@ -309,12 +299,8 @@ async function createPage(
     .first<Page>();
   if (!row) return { ok: false, status: 500, error: 'create_failed' };
 
-  const versionId = await savePageVersion(c.env.DB, row.id, preparedInput.lect, 'create');
-  await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
-    .bind(versionId, row.id)
-    .run();
-
-  await applyTagList(c, row.id, preparedInput.tags, false);
+  await savePageVersionAndSetCurrent(c.env.DB, row.id, preparedInput.lect, 'create');
+  await setDraftPageTags(c.env.DB, row.id, preparedInput.tags, false);
 
   emitPluginHook(c, 'create', { id: row.id, uuid: row.uuid, page_type: preparedInput.pageType, name: preparedInput.name, slug }, auth.pluginId);
   return { ok: true, page: serializePage(row) };
@@ -359,21 +345,6 @@ function cmsId(used: Set<number>): number {
   } while (used.has(id));
   used.add(id);
   return id;
-}
-
-/** Sets a page's tag links from a list of numeric tag ids. On update, `replace` clears existing first. */
-async function applyTagList(c: AppContext, pageId: number, tags: unknown, replace: boolean): Promise<void> {
-  if (!Array.isArray(tags)) return;
-  if (replace) {
-    await c.env.DB.prepare('DELETE FROM draft_page_tags WHERE page_id = ?').bind(pageId).run();
-  }
-  for (const raw of tags) {
-    const tagId = asFiniteNumber(raw);
-    if (tagId === null) continue;
-    await c.env.DB.prepare('INSERT OR IGNORE INTO draft_page_tags (page_id, tag_id) VALUES (?, ?)')
-      .bind(pageId, tagId)
-      .run();
-  }
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -607,12 +578,8 @@ async function updatePage(c: AppContext): Promise<Response> {
     .bind(name, slug, weight, start, end, timezone, lectVal, parentId, id)
     .run();
 
-  const versionId = await savePageVersion(c.env.DB, id, lectVal, 'update');
-  await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
-    .bind(versionId, id)
-    .run();
-
-  if ('tags' in body) await applyTagList(c, id, body.tags, true);
+  await savePageVersionAndSetCurrent(c.env.DB, id, lectVal, 'update');
+  if ('tags' in body) await setDraftPageTags(c.env.DB, id, body.tags, true);
 
   await notifyPageSaved(c.env, id);
 

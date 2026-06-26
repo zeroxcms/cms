@@ -23,6 +23,24 @@ interface FakePlugin {
   hookCalls: Array<{ event: string; body: Record<string, unknown> | null; headers: Headers }>;
 }
 
+interface RenderPayload {
+  layoutData: Record<string, unknown>;
+  bodyView: null | {
+    viewPath: string;
+    data: Record<string, unknown>;
+  };
+}
+
+function renderPayload(html: string): RenderPayload {
+  const match = html.match(/<script id="cms-render-payload"[^>]*>(.*?)<\/script>/s);
+  if (!match) throw new Error('Missing cms-render-payload script');
+  return JSON.parse(match[1]) as RenderPayload;
+}
+
+function bodyData(html: string): Record<string, unknown> {
+  return renderPayload(html).bodyView?.data ?? {};
+}
+
 function makePlugin(manifest: unknown, views: Record<string, string> = {}): FakePlugin {
   const hookCalls: FakePlugin['hookCalls'] = [];
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -319,9 +337,11 @@ describe('plugin admin proxy', () => {
 
     expect(response.status).toBe(200);
     const body = await response.text();
+    const payload = renderPayload(body);
     expect(body).toContain('FRAGMENT_MARKER');                 // the plugin's content
     expect(body).toContain('/assets/admin.css');               // CMS layout chrome
-    expect(body).toContain('Sign out');                        // CMS sidebar
+    expect(payload.layoutData.admin).toBe(true);               // CMS sidebar/layout data
+    expect(payload.layoutData.userName).toBe('Admin User');
     expect(body).toContain('Gala 晚宴');                        // decoded unicode title
     // Wrapped pages get the CMS strict nonce CSP, not the relaxed plugin policy.
     expect(response.headers.get('Content-Security-Policy')).toContain("script-src 'self' 'nonce-");
@@ -386,9 +406,11 @@ describe('plugin admin proxy', () => {
 
     expect(response.status).toBe(200);
     const body = await response.text();
+    const payload = renderPayload(body);
     // The plugin's nav entry (EVENTS_MANIFEST.nav) must reach the rendered sidebar.
-    expect(body).toContain('/admin/plugins/events/dashboard');
-    expect(body).toContain('Events');
+    expect(payload.layoutData.pluginNav).toEqual(expect.arrayContaining([
+      { label: 'Events', href: '/admin/plugins/events/dashboard' },
+    ]));
   });
 
   it('renders an event page edit view from the plugin and falls back when it declines', async () => {
@@ -438,9 +460,10 @@ describe('plugin admin proxy', () => {
       const served = await worker.fetch(request());
       expect(served.status).toBe(200);
       const servedBody = await served.text();
+      const servedPayload = renderPayload(servedBody);
       expect(servedBody).toContain('PLUGIN_EDIT_MARKER');   // plugin-rendered form
       expect(servedBody).toContain('/assets/admin.css');    // wrapped in CMS chrome
-      expect(servedBody).toContain('Edit event');           // decoded title
+      expect(servedPayload.layoutData.title).toBe('Edit event'); // decoded title
       // The CMS hands the plugin the editor context + trusted user, with the
       // form action pointing back at the CMS save handler.
       expect(captured).toHaveLength(1);
@@ -456,9 +479,10 @@ describe('plugin admin proxy', () => {
       const native = await worker.fetch(request('?native=1'));
       expect(native.status).toBe(200);
       const nativeBody = await native.text();
+      const nativeData = bodyData(nativeBody);
       expect(nativeBody).not.toContain('PLUGIN_EDIT_MARKER');
-      expect(nativeBody).toContain('name="name"');                 // built-in editor fields
-      expect(nativeBody).toContain('action="/admin/pages/' + pageId + '?native=1"'); // flag carried into the form
+      expect(nativeData.page).toMatchObject({ id: pageId, name: 'Gala', slug: 'gala' });
+      expect(nativeData.action).toBe(`/admin/pages/${pageId}?native=1`); // flag carried into the form
       expect(captured).toHaveLength(1); // plugin /__plugin/edit was not called again
 
       // When the plugin declines (404), the CMS renders its built-in editor.
@@ -467,8 +491,9 @@ describe('plugin admin proxy', () => {
       const fallback = await worker.fetch(request());
       expect(fallback.status).toBe(200);
       const fallbackBody = await fallback.text();
+      const fallbackData = bodyData(fallbackBody);
       expect(fallbackBody).not.toContain('PLUGIN_EDIT_MARKER');
-      expect(fallbackBody).toContain('name="name"'); // built-in editor fields
+      expect(fallbackData.page).toMatchObject({ id: pageId, name: 'Gala', slug: 'gala' });
     } finally {
       await env.DB.prepare('DELETE FROM draft_pages WHERE id = ?').bind(pageId).run();
     }
@@ -495,7 +520,10 @@ describe('plugin admin proxy', () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain('data-page-type-plugin="event" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">plugin (Events)</span>');
+    const data = bodyData(await response.text());
+    expect(data.pageTypes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ slug: 'event', source: 'plugin', pluginName: 'Events' }),
+    ]));
   });
 
   it('lists plugin-contributed block types with the contributing plugin name', async () => {
@@ -520,7 +548,10 @@ describe('plugin admin proxy', () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain('data-block-type-plugin="hero" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">plugin (Events)</span>');
+    const data = bodyData(await response.text());
+    expect(data.blockTypes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ slug: 'hero', source: 'plugin', pluginName: 'Events' }),
+    ]));
   });
 
   it('places a group:settings nav item inside the Settings group, not the top level', async () => {
@@ -551,13 +582,12 @@ describe('plugin admin proxy', () => {
     }));
 
     expect(response.status).toBe(200);
-    const body = await response.text();
-    const trashIdx = body.indexOf('/admin/trash');
-    const settingsNavIdx = body.indexOf('/admin/plugins/events/mail-settings');
-    const topNavIdx = body.indexOf('/admin/plugins/events/dashboard');
-    // The Settings group renders before Trash; top-level plugin nav renders after.
-    expect(settingsNavIdx).toBeGreaterThan(-1);
-    expect(settingsNavIdx).toBeLessThan(trashIdx);
-    expect(topNavIdx).toBeGreaterThan(trashIdx);
+    const payload = renderPayload(await response.text());
+    expect(payload.layoutData.pluginSettingsNav).toEqual([
+      { label: 'Mail Settings', href: '/admin/plugins/events/mail-settings' },
+    ]);
+    expect(payload.layoutData.pluginNav).toEqual([
+      { label: 'Events', href: '/admin/plugins/events/dashboard' },
+    ]);
   });
 });

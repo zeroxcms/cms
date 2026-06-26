@@ -25,7 +25,7 @@ import { pluginNav } from '../plugins/registry';
 import { editorTaxonomy, fetchUserAvatar } from './admin-queries';
 import { listLiveByTypes } from '../publish';
 import type { DashboardListResult } from './admin-queries';
-import { lectsMatch } from './page-logic';
+import { withLiveStatus } from './page-logic';
 import { strParam } from './forms';
 import { effectivePermissions, resolveRolePermissions } from './roles';
 import type { Page, Permission } from '../types';
@@ -248,12 +248,6 @@ export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all
       resetHref: routeBase,
       exportHref: `${exportBase}?${queryWithoutPage}`,
       queryWithoutPage,
-      pages: result.results.map((page) => ({
-        ...page,
-        isPublished: liveMap.has(page.uuid),
-        liveWeight: liveMap.get(page.uuid)?.weight,
-        hasLiveWeightDrift: liveMap.has(page.uuid) && liveMap.get(page.uuid)?.weight !== page.weight,
-        hasLiveLectDrift: liveMap.has(page.uuid) && !lectsMatch(liveMap.get(page.uuid)?.lect, page.lect),
-      })),
+      pages: withLiveStatus(result.results, liveMap),
   });
 }

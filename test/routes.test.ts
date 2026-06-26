@@ -23,6 +23,24 @@ interface RouteCase {
   json?: unknown;
 }
 
+interface RenderPayload {
+  layoutData: Record<string, unknown>;
+  bodyView: null | {
+    viewPath: string;
+    data: Record<string, unknown>;
+  };
+}
+
+function renderPayload(html: string): RenderPayload {
+  const match = html.match(/<script id="cms-render-payload"[^>]*>(.*?)<\/script>/s);
+  if (!match) throw new Error('Missing cms-render-payload script');
+  return JSON.parse(match[1]) as RenderPayload;
+}
+
+function bodyData(html: string): Record<string, unknown> {
+  return renderPayload(html).bodyView?.data ?? {};
+}
+
 function localizedFixture(base: string): Record<string, string> {
   return Object.fromEntries(cmsConfig.languages.map((language) => [
     language,
@@ -494,10 +512,10 @@ describe('admin routes', () => {
     const response = await fetchWorker('/admin', {
       headers: { Cookie: await authCookie() },
     });
-    const html = await response.text();
+    const payload = renderPayload(await response.text());
 
-    expect(html).toContain('data-avatar-fallback');
-    expect(html).not.toMatch(/<img[^>]+data-avatar-img/);
+    expect(payload.layoutData.hasUserAvatar).toBe(false);
+    expect(payload.layoutData.userInitial).toBe('A');
   });
 
   it('CMS DB migration does not create live or runtime presence tables', async () => {
@@ -516,14 +534,14 @@ describe('admin routes', () => {
       body: form({ csv: 'name,slug\nFresh CSV,fresh-csv\nAbout,about' }),
       headers: { Cookie: await authCookie() },
     });
-    const html = await response.text();
+    const data = bodyData(await response.text());
 
     expect(response.status).toBe(200);
-    expect(html).toContain('Confirm Import');
-    expect(html).toContain('New + Add Missing Fields');
-    expect(html).toContain('Treat All Rows As New Pages');
-    expect(html).toContain('Fresh CSV');
-    expect(html).toContain('#101 About');
+    expect(data.isConfirmImport).toBe(true);
+    expect(JSON.stringify(data.importModeOptions)).toContain('New + Add Missing Fields');
+    expect(JSON.stringify(data.importModeOptions)).toContain('Treat All Rows As New Pages');
+    expect(JSON.stringify(data.newRows)).toContain('Fresh CSV');
+    expect(data.existingRows).toMatchObject([{ existingId: 101, existingName: 'About' }]);
     expect(await env.DB.prepare('SELECT id FROM draft_pages WHERE slug = ?')
       .bind('fresh-csv')
       .first<{ id: number }>()).toBeNull();
@@ -731,34 +749,35 @@ describe('admin routes', () => {
       fetchWorker('/admin/pages/list/default', { headers: { Cookie: await authCookie() } }),
     ]);
 
-    const dashboardHtml = await dashboard.text();
-    const pageTypeListHtml = await pageTypeList.text();
+    const dashboardData = bodyData(await dashboard.text());
+    const pageTypeListData = bodyData(await pageTypeList.text());
 
-    expect(dashboardHtml).toContain('href="/admin/pages/import-v2/default"');
-    expect(dashboardHtml).toContain('href="/admin/pages/export"');
-    expect(pageTypeListHtml).toContain('href="/admin/pages/import-v2/default"');
-    expect(pageTypeListHtml).toContain('href="/admin/pages/export/default"');
+    expect(dashboardData.importHref).toBe('/admin/pages/import-v2/default');
+    expect(dashboardData.exportHref).toBe('/admin/pages/export');
+    expect(pageTypeListData.importHref).toBe('/admin/pages/import-v2/default');
+    expect(pageTypeListData.exportHref).toBe('/admin/pages/export/default');
   });
 
   it('GET /admin paginates draft pages', async () => {
     await seedDraftPages('default', 105, 1000, 'Bulk Default');
 
     const firstPage = await fetchWorker('/admin', { headers: { Cookie: await authCookie() } });
-    const firstHtml = await firstPage.text();
+    const firstData = bodyData(await firstPage.text());
 
     expect(firstPage.status).toBe(200);
-    expect(firstHtml).toContain('Showing 1-100 of 106 pages in draft');
-    expect(firstHtml).toContain('Page 1 of 2');
-    expect(firstHtml).toContain('href="/admin?page=2&amp;pagesize=100"');
-    expect(firstHtml).not.toContain('Bulk Default 105');
+    expect(firstData.pageCountLabel).toBe('Showing 1-100 of 106 pages in draft');
+    expect(firstData.currentPage).toBe(1);
+    expect(firstData.totalPages).toBe(2);
+    expect(firstData.nextHref).toBe('/admin?page=2&pagesize=100');
+    expect(JSON.stringify(firstData.pages)).not.toContain('Bulk Default 105');
 
     const secondPage = await fetchWorker('/admin?page=2', { headers: { Cookie: await authCookie() } });
-    const secondHtml = await secondPage.text();
+    const secondData = bodyData(await secondPage.text());
 
     expect(secondPage.status).toBe(200);
-    expect(secondHtml).toContain('Showing 101-106 of 106 pages in draft');
-    expect(secondHtml).toContain('Bulk Default 105');
-    expect(secondHtml).toContain('href="/admin?page=1&amp;pagesize=100"');
+    expect(secondData.pageCountLabel).toBe('Showing 101-106 of 106 pages in draft');
+    expect(JSON.stringify(secondData.pages)).toContain('Bulk Default 105');
+    expect(secondData.previousHref).toBe('/admin?page=1&pagesize=100');
   });
 
   it('GET /admin/pages/list/:pageType paginates one page type', async () => {
@@ -767,16 +786,17 @@ describe('admin routes', () => {
     const response = await fetchWorker('/admin/pages/list/company?page=2&pagesize=25', {
       headers: { Cookie: await authCookie() },
     });
-    const html = await response.text();
+    const data = bodyData(await response.text());
 
     expect(response.status).toBe(200);
-    expect(html).toContain('Showing 26-50 of 105 pages in draft');
-    expect(html).toContain('Page 2 of 5');
-    expect(html).toContain('Company Bulk 026');
-    expect(html).toContain('Company Bulk 050');
-    expect(html).not.toContain('Company Bulk 001');
-    expect(html).toContain('href="/admin/pages/list/company?page=1&amp;pagesize=25"');
-    expect(html).toContain('href="/admin/pages/list/company?page=3&amp;pagesize=25"');
+    expect(data.pageCountLabel).toBe('Showing 26-50 of 105 pages in draft');
+    expect(data.currentPage).toBe(2);
+    expect(data.totalPages).toBe(5);
+    expect(JSON.stringify(data.pages)).toContain('Company Bulk 026');
+    expect(JSON.stringify(data.pages)).toContain('Company Bulk 050');
+    expect(JSON.stringify(data.pages)).not.toContain('Company Bulk 001');
+    expect(data.previousHref).toBe('/admin/pages/list/company?page=1&pagesize=25');
+    expect(data.nextHref).toBe('/admin/pages/list/company?page=3&pagesize=25');
   });
 
   it('POST /admin/pages/import-v2/:pageType/confirm imports explicit localized CSV columns', async () => {
@@ -1180,20 +1200,22 @@ describe('capability enforcement', () => {
 
 describe('permission-aware admin UI', () => {
   it('shows Users/Roles nav links only to users who can manage them', async () => {
-    const adminHtml = await (await fetchWorker('/admin', { headers: { Cookie: await authCookie() } })).text();
-    expect(adminHtml).toContain('/admin/users');
-    expect(adminHtml).toContain('/admin/roles');
+    const adminPayload = renderPayload(await (await fetchWorker('/admin', { headers: { Cookie: await authCookie() } })).text());
+    expect(adminPayload.layoutData.canManageUsers).toBe(true);
+    expect(adminPayload.layoutData.canManageRoles).toBe(true);
 
-    const editorHtml = await (await fetchWorker('/admin', { headers: { Cookie: await authCookie('editor') } })).text();
-    expect(editorHtml).not.toContain('/admin/users');
-    expect(editorHtml).not.toContain('/admin/roles');
+    const editorPayload = renderPayload(await (await fetchWorker('/admin', { headers: { Cookie: await authCookie('editor') } })).text());
+    expect(editorPayload.layoutData.canManageUsers).toBe(false);
+    expect(editorPayload.layoutData.canManageRoles).toBe(false);
   });
 
   it('renders page types read-only for users without pagetype:write', async () => {
     // Editors lack pagetype:write.
-    const list = await (await fetchWorker('/admin/page_types', { headers: { Cookie: await authCookie('editor') } })).text();
-    expect(list).not.toContain('New Page Type');
-    expect(list).toContain('/admin/page_types/700/edit'); // seeded 'event' type still linked
+    const list = bodyData(await (await fetchWorker('/admin/page_types', { headers: { Cookie: await authCookie('editor') } })).text());
+    expect(list.canWrite).toBe(false);
+    expect(list.pageTypes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ editHref: '/admin/page_types/700/edit' }),
+    ]));
 
     // The "new" form is not reachable.
     const newForm = await fetchWorker('/admin/page_types/new', { headers: { Cookie: await authCookie('editor') } });
@@ -1201,16 +1223,15 @@ describe('permission-aware admin UI', () => {
     expect(newForm.headers.get('Location')).toBe('/admin/page_types');
 
     // The edit route renders read-only (no Save button).
-    const editForm = await (await fetchWorker('/admin/page_types/700/edit', { headers: { Cookie: await authCookie('editor') } })).text();
-    expect(editForm).not.toMatch(/<button[^>]*>Save<\/button>/);
-    expect(editForm).toContain('cannot be edited');
+    const editForm = bodyData(await (await fetchWorker('/admin/page_types/700/edit', { headers: { Cookie: await authCookie('editor') } })).text());
+    expect(editForm.readOnly).toBe(true);
   });
 
   it('keeps page types editable for admins', async () => {
-    const list = await (await fetchWorker('/admin/page_types', { headers: { Cookie: await authCookie() } })).text();
-    expect(list).toContain('New Page Type');
-    const editForm = await (await fetchWorker('/admin/page_types/700/edit', { headers: { Cookie: await authCookie() } })).text();
-    expect(editForm).toMatch(/<button[^>]*>Save<\/button>/);
+    const list = bodyData(await (await fetchWorker('/admin/page_types', { headers: { Cookie: await authCookie() } })).text());
+    expect(list.canWrite).toBe(true);
+    const editForm = bodyData(await (await fetchWorker('/admin/page_types/700/edit', { headers: { Cookie: await authCookie() } })).text());
+    expect(editForm.readOnly).toBe(false);
   });
 });
 
@@ -1272,13 +1293,17 @@ describe('page type block/taxonomy multi-select', () => {
     expect(JSON.parse(row!.block_lists)).toEqual(['logos', 'paragraphs']);
     expect(JSON.parse(row!.taxonomy_lists)).toEqual(['categories']);
 
-    const editHtml = await (await fetchWorker(
+    const editData = bodyData(await (await fetchWorker(
       `/admin/page_types/${(await env.DB.prepare('SELECT id FROM page_types WHERE slug = ?').bind('landing').first<{ id: number }>())!.id}/edit`,
       { headers: { Cookie: await authCookie() } },
-    )).text();
+    )).text());
     // The stored selections render as checked checkboxes.
-    expect(editHtml).toMatch(/name="block_lists" value="logos" checked/);
-    expect(editHtml).toMatch(/name="taxonomy_lists" value="categories" checked/);
+    expect(editData.blockOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: 'logos', checked: true }),
+    ]));
+    expect(editData.taxonomyOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: 'categories', checked: true }),
+    ]));
   });
 });
 
@@ -1300,12 +1325,14 @@ describe('database page type with a scalar @name field', () => {
       .bind('main-menu')
       .first<{ id: number }>();
 
-    const editHtml = await (await fetchWorker(`/admin/pages/${row!.id}/edit`, {
+    const editData = bodyData(await (await fetchWorker(`/admin/pages/${row!.id}/edit`, {
       headers: { Cookie: await authCookie() },
-    })).text();
-    const nameField = editHtml.match(/name="@name"[^>]*value="([^"]*)"/);
-    expect(nameField?.[1]).toBe('Main Menu');
-    expect(editHtml).not.toContain('[object Object]');
+    })).text());
+    const structuredModel = editData.structuredModel as { settingsFields: Array<{ inputName: string; value: string }> };
+    expect(structuredModel.settingsFields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ inputName: '@name', value: 'Main Menu' }),
+    ]));
+    expect(JSON.stringify(editData)).not.toContain('[object Object]');
   });
 });
 
@@ -1319,30 +1346,33 @@ describe('structured editor weights', () => {
       .bind(JSON.stringify(lect), 101)
       .run();
 
-    const singleItemHtml = await (await fetchWorker('/admin/pages/101/edit', {
+    const singleItemData = bodyData(await (await fetchWorker('/admin/pages/101/edit', {
       headers: { Cookie: await authCookie() },
-    })).text();
-    expect(singleItemHtml).not.toContain('item-delete:items|0');
+    })).text());
+    let structuredModel = singleItemData.structuredModel as {
+      itemGroups: Array<{ rows: Array<{ deleteAction: string; showDelete: boolean }> }>;
+    };
+    expect(structuredModel.itemGroups[0].rows[0]).toMatchObject({ deleteAction: 'item-delete:items|0', showDelete: false });
 
     items.push({ _weight: 8, name: { en: 'Second item' } });
     await env.DB.prepare('UPDATE draft_pages SET lect = ? WHERE id = ?')
       .bind(JSON.stringify(lect), 101)
       .run();
 
-    const editHtml = await (await fetchWorker('/admin/pages/101/edit', {
+    const editData = bodyData(await (await fetchWorker('/admin/pages/101/edit', {
       headers: { Cookie: await authCookie() },
-    })).text();
-    expect(editHtml).toMatch(/name="\.items\[0\]@_weight"\s+value="4"\s+class="w-12 border-b/);
-    expect(editHtml).toMatch(/name="#0@_weight"\s+value="7"\s+class="w-12 border-b/);
-    expect(editHtml).toContain('value="item-delete:items|0"');
-    expect(editHtml).toContain('aria-label="Delete item 1"');
-    expect(editHtml).toContain('value="item-delete:items|1"');
-    expect(editHtml).toContain('aria-label="Delete item 2"');
-    expect(editHtml).toContain('value="block-delete:0"');
-    expect(editHtml).toContain('<section class="min-w-0 space-y-3 [&_input]:bg-[#141a26]">');
-    expect(editHtml).toMatch(/<details id="lect_json_details" class="[^"]*">/);
-    expect(editHtml).toContain('<span>Lect JSON</span>');
-    expect(editHtml).not.toContain('<span class="block text-sm font-medium text-gray-700 mb-1">_weight</span>');
+    })).text());
+    structuredModel = editData.structuredModel as {
+      itemGroups: Array<{ rows: Array<{ weightInputName: string; weight: number; deleteAction: string; showDelete: boolean }> }>;
+      blocks: Array<{ weightInputName: string; weight: number; deleteAction: string }>;
+    };
+    expect(structuredModel.itemGroups[0].rows).toEqual([
+      expect.objectContaining({ weightInputName: '.items[0]@_weight', weight: 4, deleteAction: 'item-delete:items|0', showDelete: true }),
+      expect.objectContaining({ weightInputName: '.items[1]@_weight', weight: 8, deleteAction: 'item-delete:items|1', showDelete: true }),
+    ]);
+    expect(structuredModel.blocks).toEqual([
+      expect.objectContaining({ weightInputName: '#0@_weight', weight: 7, deleteAction: 'block-delete:0' }),
+    ]);
   });
 });
 
@@ -1353,24 +1383,23 @@ describe('Lect JSON version diff', () => {
     await env.DB.prepare('INSERT INTO page_versions (id, page_id, lect, action) VALUES (?, ?, ?, ?)')
       .bind(502, 101, changed, 'update').run();
 
-    const html = await (await fetchWorker('/admin/pages/101/edit?version=502', {
+    const data = bodyData(await (await fetchWorker('/admin/pages/101/edit?version=502', {
       headers: { Cookie: await authCookie() },
-    })).text();
+    })).text());
 
     // The raw-metadata panel renders the diff instead of the editable textarea.
-    expect(html).toContain('diff vs current draft');
-    expect(html).toContain('bg-emerald-50');    // a line only in this version
-    expect(html).toContain('bg-rose-50');        // a line only in the current draft
-    expect(html).toContain('About — REVISED');   // the version's value, highlighted
-    expect(html).not.toContain('name="lect_json"');
+    expect(data.hasLectDiff).toBe(true);
+    expect(data.lectDiffHtml).toContain('bg-emerald-50');    // a line only in this version
+    expect(data.lectDiffHtml).toContain('bg-rose-50');        // a line only in the current draft
+    expect(data.lectDiffHtml).toContain('About — REVISED');   // the version's value, highlighted
   });
 
   it('keeps the editable Lect JSON textarea when not previewing a version', async () => {
-    const html = await (await fetchWorker('/admin/pages/101/edit', {
+    const data = bodyData(await (await fetchWorker('/admin/pages/101/edit', {
       headers: { Cookie: await authCookie() },
-    })).text();
-    expect(html).toContain('name="lect_json"');
-    expect(html).not.toContain('diff vs current draft');
+    })).text());
+    expect(data.hasLectDiff).toBe(false);
+    expect((data.page as { lect: string }).lect).toContain('"name"');
   });
 });
 
@@ -1382,20 +1411,24 @@ describe('Add-block picker scope', () => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(105, 'page-uuid-105', 'Gala', 'gala', 5, 'event', stringifyLect({ _type: 'event' }), 1, '1').run();
 
-    const html = await (await fetchWorker('/admin/pages/105/edit', {
+    const data = bodyData(await (await fetchWorker('/admin/pages/105/edit', {
       headers: { Cookie: await authCookie() },
-    })).text();
+    })).text());
     // 'hero' is a database block type, absent from the config default list — it
     // appears only because the 'event' type falls back to every block type.
-    expect(html).toContain('<option value="hero">');
+    expect((data.structuredModel as { blockOptions: Array<{ value: string }> }).blockOptions).toEqual(expect.arrayContaining([
+      { value: 'hero' },
+    ]));
   });
 
   it("limits the picker to the page type's own block list when it defines one", async () => {
     // Page type 'default' has a config block list (default/label/logos/paragraphs), no 'hero'.
-    const html = await (await fetchWorker('/admin/pages/101/edit', {
+    const data = bodyData(await (await fetchWorker('/admin/pages/101/edit', {
       headers: { Cookie: await authCookie() },
-    })).text();
-    expect(html).not.toContain('<option value="hero">');
+    })).text());
+    expect((data.structuredModel as { blockOptions: Array<{ value: string }> }).blockOptions).not.toEqual(expect.arrayContaining([
+      { value: 'hero' },
+    ]));
   });
 });
 
