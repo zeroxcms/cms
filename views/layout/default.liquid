@@ -46,16 +46,24 @@
 
       applyTheme(storedTheme());
 
-      document.addEventListener('DOMContentLoaded', function() {
+      function bindThemeToggle() {
         var toggle = document.querySelector('[data-theme-toggle]');
         renderToggle(root.getAttribute('data-theme') || 'dark');
         if (!(toggle instanceof HTMLButtonElement)) return;
+        if (toggle.dataset.themeBound === '1') return;
+        toggle.dataset.themeBound = '1';
         toggle.addEventListener('click', function() {
           var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
           applyTheme(next);
           persistTheme(next);
         });
-      });
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindThemeToggle);
+      } else {
+        bindThemeToggle();
+      }
     })();
 
     (function() {
