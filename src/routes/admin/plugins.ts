@@ -1,42 +1,42 @@
 // ============================================================
-// Plugin admin shell — renders /admin/plugins/<id>/* as CMS chrome containing
-// a sandboxed iframe pointed at the plugin Worker's own /__plugin/admin/* URL.
+// Plugin admin proxy — forwards /admin/plugins/<id>/* to the
+// plugin Worker's /__plugin/admin/* handler.
 //
 // Mounted under the authenticated, editor-guarded admin router, so
-// the signed-in user is already verified. The plugin receives a short-lived
-// signed launch token in the iframe URL instead of CMS cookies.
+// the signed-in user is already verified. We forward a trusted
+// user summary + the shared PLUGIN_SECRET, and strip CMS cookies
+// so the plugin never sees CMS session credentials.
 // ============================================================
 
 import { Hono } from 'hono';
 import type { Env, Variables } from '../../types';
-import { pluginById, PLUGIN_PREFIX } from '../../plugins/registry';
+import { pluginById, PLUGIN_ORIGIN, PLUGIN_PREFIX } from '../../plugins/registry';
 import type { AppContext } from '../../utils/context';
-import { requirePermission } from '../../middleware/auth';
-import { escHtml } from '../../templates/layout';
+import { requireAdmin } from '../../middleware/auth';
 import { adminLayout } from '../../templates/layout';
 import { buildBaseProps } from '../../utils/admin-render';
 import { viewsFor } from '../../plugins/views';
 import {
-  buildPluginFrameShellCsp,
-  signPluginLaunchToken,
+  buildPluginProxyHeaders,
+  decodePluginTitle,
+  pluginDocumentResponse,
+  warnSharedPluginOrigin,
+  wantsCmsChrome,
 } from '../../security/plugin-proxy';
-import { currentCspNonce } from '../../utils/request-context';
 
 export const pluginAdminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-// Plugin admin pages can execute arbitrary plugin code. Access still requires
-// the explicit plugin capability, while the actual plugin document runs on its
-// own origin inside a sandboxed iframe so plugin script does not receive
-// CMS-origin authority.
-pluginAdminRoutes.use('/plugins/:pluginId', requirePermission('plugin:access'));
-pluginAdminRoutes.use('/plugins/:pluginId/*', requirePermission('plugin:access'));
+// Plugin admin pages render in the CMS origin (see proxyToPlugin), so a hostile
+// or compromised plugin would run with the CMS's same-origin authority. Until
+// plugins are served from a dedicated origin, restrict access to admins only to
+// minimize who can be exposed to that risk.
+pluginAdminRoutes.use('/plugins/:pluginId', requireAdmin);
+pluginAdminRoutes.use('/plugins/:pluginId/*', requireAdmin);
 
-pluginAdminRoutes.get('/plugins/:pluginId', (c) => pluginFrameShell(c));
-pluginAdminRoutes.get('/plugins/:pluginId/*', (c) => pluginFrameShell(c));
-pluginAdminRoutes.all('/plugins/:pluginId', (c) => c.text('Method Not Allowed', 405));
-pluginAdminRoutes.all('/plugins/:pluginId/*', (c) => c.text('Method Not Allowed', 405));
+pluginAdminRoutes.all('/plugins/:pluginId', (c) => proxyToPlugin(c));
+pluginAdminRoutes.all('/plugins/:pluginId/*', (c) => proxyToPlugin(c));
 
-async function pluginFrameShell(c: AppContext): Promise<Response> {
+async function proxyToPlugin(c: AppContext): Promise<Response> {
   const pluginId = c.req.param('pluginId');
   if (!pluginId) return c.notFound();
 
@@ -56,41 +56,41 @@ async function pluginFrameShell(c: AppContext): Promise<Response> {
   const url = new URL(c.req.url);
   const prefix = `/admin/plugins/${pluginId}`;
   const rest = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) : '';
-  const pluginBase = plugin.binding.replace(/\/+$/, '');
-  const pluginOrigin = new URL(pluginBase).origin;
-  const pluginPath = `${PLUGIN_PREFIX}/admin${rest || ''}`;
-  const frameUrl = new URL(`${pluginBase}${pluginPath}`);
-  for (const [key, value] of url.searchParams) frameUrl.searchParams.append(key, value);
-  frameUrl.searchParams.set('cms_embed', '1');
-  frameUrl.searchParams.set('cms_launch', await signPluginLaunchToken({
-    pluginId,
-    pluginOrigin,
-    path: `${pluginPath}${url.search}`,
-    user: c.get('user'),
-    secret: plugin.secret,
-  }));
+  const upstream = `${PLUGIN_ORIGIN}${PLUGIN_PREFIX}/admin${rest}${url.search}`;
 
-  const title = plugin.manifest.name || 'Plugin';
-  const base = await buildBaseProps(c);
-  const shell = await adminLayout(viewsFor(c.env), base, {
-    title,
-    body: pluginIframeMarkup(title, frameUrl.toString(), pluginOrigin),
+  const headers = buildPluginProxyHeaders(c.req.raw.headers, c.get('user'), plugin.secret);
+
+  warnSharedPluginOrigin();
+
+  const hasBody = c.req.method !== 'GET' && c.req.method !== 'HEAD';
+  const upstreamResponse = await plugin.fetcher.fetch(upstream, {
+    method: c.req.method,
+    headers,
+    body: hasBody ? await c.req.raw.arrayBuffer() : undefined,
+    redirect: 'manual',
   });
-  const response = c.html(shell);
-  response.headers.set('Content-Security-Policy', buildPluginFrameShellCsp(currentCspNonce(), pluginOrigin));
-  return response;
-}
 
-function pluginIframeMarkup(title: string, src: string, pluginOrigin: string): string {
-  return `
-    <section class="h-[calc(100vh-3.5rem)] md:h-screen bg-white">
-      <iframe
-        title="${escHtml(title)}"
-        src="${escHtml(src)}"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
-        referrerpolicy="no-referrer"
-        class="block w-full h-full border-0"
-        data-plugin-origin="${escHtml(pluginOrigin)}"></iframe>
-    </section>
-  `;
+  // Opt-in chrome: a plugin that returns an HTML *fragment* with `x-cms-chrome: 1`
+  // gets wrapped in the standard admin layout — same sidebar, fonts, and
+  // /assets/admin.css as every CMS page — so plugin admin UIs match the CMS
+  // without each plugin reinventing the shell. The wrapped page runs under the
+  // CMS's strict nonce CSP (no `unsafe-inline` scripts), which is stricter than
+  // the relaxed full-document policy below. Plugins that return a full document
+  // (no header) keep the legacy behavior.
+  if (wantsCmsChrome(upstreamResponse)) {
+    const fragment = await upstreamResponse.text();
+    const title = decodePluginTitle(upstreamResponse.headers.get('x-cms-title')) || plugin.manifest.name || 'Plugin';
+    const base = await buildBaseProps(c);
+    const wrapped = await adminLayout(viewsFor(c.env), base, { title, body: fragment });
+    // No explicit CSP here — the global security middleware applies the strict
+    // nonce policy (matching the nonce adminLayout embeds), like any CMS page.
+    return c.html(wrapped, upstreamResponse.status as 200);
+  }
+
+  // Give full-document plugin pages their own CSP so (a) the CMS's strict nonce
+  // CSP isn't imposed on plugin HTML (which would break legitimate plugin
+  // scripts) and (b) plugin pages still get baseline hardening. This is NOT
+  // origin isolation - see warnSharedPluginOrigin() - it only limits injection
+  // into an otherwise-benign plugin.
+  return pluginDocumentResponse(upstreamResponse);
 }
