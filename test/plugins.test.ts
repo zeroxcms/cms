@@ -6,6 +6,7 @@ import { deliverHook } from '../src/plugins/hooks';
 import { viewsFor } from '../src/plugins/views';
 import { cmsConfig } from '../src/cms-config';
 import { signJWT } from '../src/utils/jwt';
+import { verifyPluginLaunchToken } from '../src/security/plugin-proxy';
 import type { Env, JWTPayload } from '../src/types';
 
 const EVENTS_MANIFEST = {
@@ -198,17 +199,17 @@ describe('plugin admin proxy', () => {
     }
   });
 
-  it('never forwards client cookies or smuggled trust headers to the plugin', async () => {
-    const captured: Array<{ url: string; headers: Headers }> = [];
+  it('renders plugin admin pages in a sandboxed cross-origin iframe with a launch token', async () => {
+    const fetched: string[] = [];
     testEnv.PLUGIN_SECRET = 'server-secret';
     const pluginUrl = 'https://plugin-proxy.local';
     await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', pluginUrl).run();
     __injectPluginFetcher(pluginUrl, {
-      fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        fetched.push(url);
         if (new URL(url).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
-        captured.push({ url, headers: new Headers(init?.headers) });
-        return new Response('plugin ok');
+        return new Response('plugin html must not be proxied', { status: 500 });
       },
     } as unknown as Fetcher);
 
@@ -218,7 +219,7 @@ describe('plugin admin proxy', () => {
       type: 'access', exp: now + 900, iat: now,
     }, env.JWT_SECRET);
 
-    const response = await worker.fetch(new Request('http://localhost/admin/plugins/events/dashboard', {
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/events/dashboard?event_id=21862006647168', {
       headers: {
         Cookie: `access_token=${token}`,
         'Sec-Fetch-Site': 'same-origin',
@@ -228,28 +229,44 @@ describe('plugin admin proxy', () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(captured).toHaveLength(1);
-    const forwarded = captured[0].headers;
-    expect(forwarded.get('cookie')).toBeNull();
-    expect(forwarded.get('x-plugin-secret')).toBe('server-secret');
-    // x-cms-user must be the server-derived identity, not the client header.
-    expect(JSON.parse(forwarded.get('x-cms-user') ?? '{}')).toMatchObject({ id: '1', email: 'admin@example.com' });
+    expect(fetched).toEqual(['https://plugin.local/__plugin/manifest']);
+
+    const html = await response.text();
+    const payload = renderPayload(html);
+    expect(payload.layoutData.admin).toBe(true);
+    expect(payload.layoutData.userName).toBe('Admin User');
+    expect(String(payload.layoutData.body)).toContain('<iframe');
+    expect(String(payload.layoutData.body)).toContain('sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"');
+    expect(String(payload.layoutData.body)).toContain('referrerpolicy="no-referrer"');
+
+    const src = String(payload.layoutData.body).match(/src="([^"]+)"/)?.[1]?.replaceAll('&amp;', '&');
+    expect(src).toBeTruthy();
+    const frameUrl = new URL(src ?? '');
+    expect(frameUrl.origin).toBe(pluginUrl);
+    expect(frameUrl.pathname).toBe('/__plugin/admin/dashboard');
+    expect(frameUrl.searchParams.get('event_id')).toBe('21862006647168');
+    expect(frameUrl.searchParams.get('cms_embed')).toBe('1');
+
+    const launch = await verifyPluginLaunchToken(frameUrl.searchParams.get('cms_launch') ?? '', 'server-secret');
+    expect(launch).toMatchObject({
+      pluginId: 'events',
+      pluginOrigin: pluginUrl,
+      path: '/__plugin/admin/dashboard?event_id=21862006647168',
+      user: { id: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin' },
+    });
+    expect(response.headers.get('Content-Security-Policy')).toContain(`frame-src 'self' ${pluginUrl}`);
+    expect(response.headers.get('X-Frame-Options')).toBe('DENY');
   });
 
-  it('passes plugin redirects back to the browser instead of following them internally', async () => {
-    let capturedInit: RequestInit | undefined;
+  it('rejects CMS-origin plugin admin mutations after iframe isolation', async () => {
     testEnv.PLUGIN_SECRET = 'server-secret';
-    const pluginUrl = 'https://plugin-redirect.local';
+    const pluginUrl = 'https://plugin-post.local';
     await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', pluginUrl).run();
     __injectPluginFetcher(pluginUrl, {
-      fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         if (new URL(url).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
-        capturedInit = init;
-        return new Response(null, {
-          status: 302,
-          headers: { Location: '/admin/plugins/events/events/21862006647168' },
-        });
+        return new Response('plugin html must not be proxied', { status: 500 });
       },
     } as unknown as Fetcher);
 
@@ -259,20 +276,19 @@ describe('plugin admin proxy', () => {
       type: 'access', exp: now + 900, iat: now,
     }, env.JWT_SECRET);
 
-    const response = await worker.fetch(new Request('http://localhost/admin/plugins/events/rsvp/new?event_id=21862006647168', {
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/events/rsvp/new', {
       method: 'POST',
       headers: {
         Cookie: `access_token=${token}`,
         'Content-Type': 'application/x-www-form-urlencoded',
         'Sec-Fetch-Site': 'same-origin',
       },
-      body: 'event_id=21862006647168&name=Staff+Badge+%28Green%29&allow_checkin=yes',
+      body: 'event_id=21862006647168',
       redirect: 'manual',
     }));
 
-    expect(capturedInit?.redirect).toBe('manual');
-    expect(response.status).toBe(302);
-    expect(response.headers.get('location')).toBe('/admin/plugins/events/events/21862006647168');
+    expect(response.status).toBe(405);
+    expect(await response.text()).toBe('Method Not Allowed');
   });
 
   it('fails closed when a plugin has no secret and no PLUGIN_SECRET fallback', async () => {
@@ -306,7 +322,7 @@ describe('plugin admin proxy', () => {
     expect(response.headers.get('X-CMS-Error')).toBe('plugin-secret-required');
   });
 
-  it('wraps an x-cms-chrome fragment in the CMS admin layout', async () => {
+  it('does not render x-cms-chrome fragments on the CMS origin', async () => {
     testEnv.PLUGIN_SECRET = 'server-secret';
     const url = 'https://plugin-chrome.local';
     await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', url).run();
@@ -338,18 +354,17 @@ describe('plugin admin proxy', () => {
     expect(response.status).toBe(200);
     const body = await response.text();
     const payload = renderPayload(body);
-    expect(body).toContain('FRAGMENT_MARKER');                 // the plugin's content
+    expect(body).not.toContain('FRAGMENT_MARKER');
     expect(body).toContain('/assets/admin.css');               // CMS layout chrome
     expect(payload.layoutData.admin).toBe(true);               // CMS sidebar/layout data
     expect(payload.layoutData.userName).toBe('Admin User');
-    expect(body).toContain('Gala 晚宴');                        // decoded unicode title
-    // Wrapped pages get the CMS strict nonce CSP, not the relaxed plugin policy.
+    expect(String(payload.layoutData.body)).toContain('src="https://plugin-chrome.local/__plugin/admin/dashboard?');
     expect(response.headers.get('Content-Security-Policy')).toContain("script-src 'self' 'nonce-");
-    // Default admin pages stay un-frameable.
+    expect(response.headers.get('Content-Security-Policy')).toContain("frame-src 'self' https://plugin-chrome.local");
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
   });
 
-  it('lets a plugin full-document response opt into same-origin framing', async () => {
+  it('does not proxy full-document plugin responses onto the CMS origin', async () => {
     testEnv.PLUGIN_SECRET = 'server-secret';
     const url = 'https://plugin-frame.local';
     await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', url).run();
@@ -375,10 +390,12 @@ describe('plugin admin proxy', () => {
     }));
 
     expect(response.status).toBe(200);
-    // The CMS turns the opt-in into same-origin framing instead of the global DENY.
-    expect(response.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
-    expect(response.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'self'");
-    // The internal opt-in header isn't leaked to the browser.
+    const body = await response.text();
+    const payload = renderPayload(body);
+    expect(body).not.toContain('EMAIL');
+    expect(String(payload.layoutData.body)).toContain('src="https://plugin-frame.local/__plugin/admin/edm/5/preview?');
+    expect(response.headers.get('X-Frame-Options')).toBe('DENY');
+    expect(response.headers.get('Content-Security-Policy')).toContain("frame-src 'self' https://plugin-frame.local");
     expect(response.headers.get('x-cms-frame')).toBeNull();
   });
 

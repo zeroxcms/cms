@@ -4,6 +4,7 @@ import { cmsConfig } from '../src/cms-config';
 import { hashToken, signJWT } from '../src/utils/jwt';
 import { blueprintToLect, stringifyLect } from '../src/utils/lect';
 import { clearConfigCache } from '../src/plugins/config';
+import { __clearInjectedFetchers, __injectPluginFetcher, clearManifestCache } from '../src/plugins/registry';
 import { clearRolePermissionsCache } from '../src/utils/roles';
 import type { JWTPayload } from '../src/types';
 
@@ -68,6 +69,8 @@ const basePageLect = stringifyLect(basePageLectObject);
 beforeEach(async () => {
   vi.unstubAllGlobals();
   clearRolePermissionsCache();
+  clearManifestCache();
+  __clearInjectedFetchers();
   await resetData();
   await seedBaseData();
 });
@@ -1070,18 +1073,29 @@ describe('capability enforcement', () => {
     expect(plugin.status).toBe(403);
   });
 
-  it('keeps plugin admin pages admin-only even when a custom role has plugin:access', async () => {
+  it('allows custom plugin:access roles to reach the isolated plugin shell', async () => {
     await env.DB.prepare('INSERT INTO roles (name, label, builtin) VALUES (?, ?, 0)').bind('pluginviewer', 'Plugin Viewer').run();
     await env.DB.prepare('INSERT INTO role_permissions (role, permission) VALUES (?, ?)').bind('pluginviewer', 'plugin:access').run();
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled, secret) VALUES (?, ?, 1, ?)')
+      .bind('Events', 'https://plugin-viewer.local', 'server-secret')
+      .run();
+    __injectPluginFetcher('https://plugin-viewer.local', {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(url).pathname === '/__plugin/manifest') {
+          return Response.json({ id: 'events', name: 'Events', version: '1.0.0' });
+        }
+        return new Response('plugin html must not be proxied', { status: 500 });
+      },
+    } as unknown as Fetcher);
     clearRolePermissionsCache();
 
     const response = await fetchWorker('/admin/plugins/events/dashboard', {
       headers: { Cookie: await authCookie('pluginviewer') },
     });
 
-    expect(response.status).toBe(403);
-    expect(response.headers.get('X-CMS-Error')).toBeNull();
-    expect(await response.text()).toBe('Forbidden: admin role required');
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('https://plugin-viewer.local/__plugin/admin/dashboard');
   });
 
   it('lets an editor view page types but not create them (admin only)', async () => {
@@ -1629,6 +1643,7 @@ async function resetData(): Promise<void> {
     'block_types',
     'roles',
     'role_permissions',
+    'plugins',
     'sessions',
     'users',
     'audit_log',
