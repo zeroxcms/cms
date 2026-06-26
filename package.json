@@ -14,9 +14,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "emmet": "^2.4.11",
-    "hono": "^4.12.23",
-    "liquidjs": "^10.27.0"
+    "hono": "^4.12.23"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.12",
