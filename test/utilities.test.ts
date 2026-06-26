@@ -19,6 +19,8 @@ import {
   postToLect,
   safeParseLect,
 } from '../src/utils/lect';
+import { lectFromForm } from '../src/utils/page-logic';
+import type { CmsConfig } from '../src/cms-config';
 
 describe('lect utilities', () => {
   it('builds the flatter lect shape from blueprint definitions', () => {
@@ -74,6 +76,29 @@ describe('lect utilities', () => {
         subject: { en: 'Block subject' },
       }],
     });
+  });
+
+  it('lets an empty submitted pointer clear an existing pointer during form merge', () => {
+    const config: CmsConfig = {
+      defaultLanguage: 'en',
+      languages: ['en'],
+      blueprint: { rsvp: ['*event:page/basic', 'name'] },
+      blocks: {},
+      blockLists: {},
+      taxonomyLists: {},
+    };
+    const existing = {
+      _type: 'rsvp',
+      _pointers: { event: '21867037820176' },
+      name: { en: 'VIP list' },
+    };
+    const form = new FormData();
+    form.set('lect_json', JSON.stringify(existing));
+    form.set('*event', '');
+
+    const lect = lectFromForm(config, 'rsvp', existing, form, 'en');
+
+    expect(lect._pointers?.event).toBe('');
   });
 
   it('preserves compatibility with legacy original-style JSON', () => {
