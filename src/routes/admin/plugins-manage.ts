@@ -43,7 +43,7 @@ function normalizeUrl(raw: string): [string, string | null] {
     return [trimmed, 'Enter a valid URL.'];
   }
   if (parsed.protocol === 'https:') return [trimmed, null];
-  if (parsed.protocol === 'http:' && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')) {
+  if (parsed.protocol === 'http:' && parsed.hostname === 'localhost') {
     return [trimmed, null];
   }
   return [trimmed, 'URL must be HTTPS (http is allowed only for localhost).'];

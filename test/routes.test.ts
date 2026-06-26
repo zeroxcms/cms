@@ -1070,6 +1070,20 @@ describe('capability enforcement', () => {
     expect(plugin.status).toBe(403);
   });
 
+  it('keeps plugin admin pages admin-only even when a custom role has plugin:access', async () => {
+    await env.DB.prepare('INSERT INTO roles (name, label, builtin) VALUES (?, ?, 0)').bind('pluginviewer', 'Plugin Viewer').run();
+    await env.DB.prepare('INSERT INTO role_permissions (role, permission) VALUES (?, ?)').bind('pluginviewer', 'plugin:access').run();
+    clearRolePermissionsCache();
+
+    const response = await fetchWorker('/admin/plugins/events/dashboard', {
+      headers: { Cookie: await authCookie('pluginviewer') },
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get('X-CMS-Error')).toBeNull();
+    expect(await response.text()).toBe('Forbidden: admin role required');
+  });
+
   it('lets an editor view page types but not create them (admin only)', async () => {
     const view = await fetchWorker('/admin/page_types', {
       headers: { Cookie: await authCookie('editor') },
@@ -1195,6 +1209,68 @@ describe('capability enforcement', () => {
       headers: { Cookie: await authCookie('taxer') },
     });
     expect(taxerTag.status).toBe(403);
+  });
+
+  it('requires content:read for draft page lookup APIs', async () => {
+    await env.DB.prepare('INSERT INTO roles (name, label, builtin) VALUES (?, ?, 0)').bind('tagger', 'Tagger').run();
+    await env.DB.prepare('INSERT INTO role_permissions (role, permission) VALUES (?, ?)').bind('tagger', 'tag:write').run();
+    clearRolePermissionsCache();
+
+    const response = await fetchWorker('/admin/api/pages/default', {
+      headers: { Cookie: await authCookie('tagger') },
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get('X-CMS-Error')).toBe('insufficient-permissions');
+    expect(await response.json()).toEqual({ success: false, error: 'Insufficient permissions' });
+  });
+
+  it('requires content permissions and an existing page for sync and presence', async () => {
+    const readPresence = await fetchWorker('/admin/api/presence/999999', {
+      headers: { Cookie: await authCookie() },
+    });
+    expect(readPresence.status).toBe(404);
+    expect(await readPresence.json()).toEqual({ error: 'page_not_found' });
+
+    const writePresence = await fetchWorker('/admin/api/presence/101', {
+      method: 'POST',
+      body: JSON.stringify({}),
+      headers: { Cookie: await authCookie('moderator'), 'Content-Type': 'application/json' },
+    });
+    expect(writePresence.status).toBe(403);
+    expect(writePresence.headers.get('X-CMS-Error')).toBe('insufficient-permissions');
+
+    const sync = await fetchWorker('/admin/api/sync/999999', {
+      headers: { Cookie: await authCookie(), Upgrade: 'websocket' },
+    });
+    expect(sync.status).toBe(404);
+    expect(await sync.text()).toBe('Page not found');
+  });
+
+  it('allows HTTPS plugin URLs and only localhost for HTTP plugin URLs', async () => {
+    await env.DB.prepare('DELETE FROM plugins').run();
+
+    const localhost = await fetchWorker('/admin/plugins-manage', {
+      method: 'POST',
+      body: form({ label: 'Local', url: 'http://localhost:8787', sort_order: '0' }),
+      headers: { Cookie: await authCookie() },
+    });
+    expect(localhost.status).toBe(302);
+
+    const loopbackIp = await fetchWorker('/admin/plugins-manage', {
+      method: 'POST',
+      body: form({ label: 'Loopback', url: 'http://127.0.0.1:8787', sort_order: '0' }),
+      headers: { Cookie: await authCookie() },
+    });
+    expect(loopbackIp.status).toBe(200);
+    expect(await loopbackIp.text()).toContain('URL must be HTTPS (http is allowed only for localhost).');
+
+    const https = await fetchWorker('/admin/plugins-manage', {
+      method: 'POST',
+      body: form({ label: 'Remote', url: 'https://plugins.example.com', sort_order: '0' }),
+      headers: { Cookie: await authCookie() },
+    });
+    expect(https.status).toBe(302);
   });
 });
 

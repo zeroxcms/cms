@@ -18,16 +18,16 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 //   viewer    – no admin capabilities (also blocked from /admin by editorGuard)
 const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   admin: [
-    'content:write', 'content:publish', 'content:delete', 'content:import',
+    'content:read', 'content:write', 'content:publish', 'content:delete', 'content:import',
     'trash:restore', 'trash:purge', 'taxonomy:write', 'media:upload', 'plugin:access',
     'plugin:manage', 'pagetype:write', 'blocktype:write',
   ],
   editor: [
-    'content:write', 'content:publish', 'content:delete', 'content:import',
+    'content:read', 'content:write', 'content:publish', 'content:delete', 'content:import',
     'trash:restore', 'tag:write', 'taxonomy:write', 'media:upload',
   ],
   moderator: [
-    'content:publish', 'content:delete', 'trash:restore',
+    'content:read', 'content:publish', 'content:delete', 'trash:restore',
   ],
   viewer: [],
 };

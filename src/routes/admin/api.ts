@@ -13,7 +13,7 @@ import type { AppContext } from '../../utils/context';
 
 export const apiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-apiRoutes.get('/api/parent-pages', async (c) => {
+apiRoutes.get('/api/parent-pages', requirePermission('content:read'), async (c) => {
   const query = c.req.query('q')?.trim() ?? '';
   const excludeId = num(c.req.query('exclude'), 0);
   const params: unknown[] = [];
@@ -53,7 +53,7 @@ apiRoutes.get('/api/parent-pages', async (c) => {
 // (views/snippets/pagefield/page/basic.liquid). `q` filters by name/slug; `id`
 // resolves a single page (used to label the current selection). With neither,
 // returns the most-recently-updated pages of the type.
-apiRoutes.get('/api/pages/:type', async (c) => {
+apiRoutes.get('/api/pages/:type', requirePermission('content:read'), async (c) => {
   const pageType = c.req.param('type');
   const query = c.req.query('q')?.trim() ?? '';
   const id = num(c.req.query('id'), 0);
@@ -144,13 +144,21 @@ async function deletePageTagApi(c: AppContext) {
 
 // ── Lect CRDT sync (WebSocket) ────────────────────────────────────────────────
 
-apiRoutes.get('/api/sync/:pageId', async (c) => {
+async function draftPageExists(c: AppContext, pageId: number): Promise<boolean> {
+  const page = await c.env.DB.prepare('SELECT id FROM draft_pages WHERE id = ?')
+    .bind(pageId)
+    .first<{ id: number }>();
+  return !!page;
+}
+
+apiRoutes.get('/api/sync/:pageId', requirePermission('content:write'), async (c) => {
   if (c.req.header('Upgrade')?.toLowerCase() !== 'websocket') {
     return c.text('Expected WebSocket upgrade', 426);
   }
 
   const pageId = parseInt(c.req.param('pageId'), 10);
   if (!Number.isFinite(pageId) || pageId <= 0) return c.text('Invalid page ID', 400);
+  if (!(await draftPageExists(c, pageId))) return c.text('Page not found', 404);
 
   const user = c.get('user');
   return c.env.PAGE_SYNC.get(c.env.PAGE_SYNC.idFromName(`page-${pageId}`)).fetch(
@@ -166,9 +174,10 @@ apiRoutes.get('/api/sync/:pageId', async (c) => {
 
 // ── Presence ─────────────────────────────────────────────────────────────────
 
-apiRoutes.post('/api/presence/:pageId', async (c) => {
+apiRoutes.post('/api/presence/:pageId', requirePermission('content:write'), async (c) => {
   const pageId = parseInt(c.req.param('pageId'), 10);
   if (!Number.isFinite(pageId) || pageId <= 0) return c.json({ error: 'invalid_page_id' }, 400);
+  if (!(await draftPageExists(c, pageId))) return c.json({ error: 'page_not_found' }, 404);
 
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({})) as { lastActive?: unknown; userAvatar?: unknown };
@@ -201,18 +210,20 @@ apiRoutes.post('/api/presence/:pageId', async (c) => {
   );
 });
 
-apiRoutes.get('/api/presence/:pageId', async (c) => {
+apiRoutes.get('/api/presence/:pageId', requirePermission('content:read'), async (c) => {
   const pageId = parseInt(c.req.param('pageId'), 10);
   if (!Number.isFinite(pageId) || pageId <= 0) return c.json({ error: 'invalid_page_id' }, 400);
+  if (!(await draftPageExists(c, pageId))) return c.json({ error: 'page_not_found' }, 404);
 
   return c.env.PAGE_SYNC.get(c.env.PAGE_SYNC.idFromName(`page-${pageId}`)).fetch(
     'https://page-sync/?action=presence',
   );
 });
 
-apiRoutes.delete('/api/presence/:pageId', async (c) => {
+apiRoutes.delete('/api/presence/:pageId', requirePermission('content:write'), async (c) => {
   const pageId = parseInt(c.req.param('pageId'), 10);
   if (!Number.isFinite(pageId) || pageId <= 0) return c.json({ error: 'invalid_page_id' }, 400);
+  if (!(await draftPageExists(c, pageId))) return c.json({ error: 'page_not_found' }, 404);
 
   const user = c.get('user');
   return c.env.PAGE_SYNC.get(c.env.PAGE_SYNC.idFromName(`page-${pageId}`)).fetch(

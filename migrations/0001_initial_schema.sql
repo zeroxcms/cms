@@ -264,6 +264,7 @@ CREATE TABLE IF NOT EXISTS plugins(
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_draft_pages_page_type_name ON draft_pages(page_type, name);
 CREATE INDEX IF NOT EXISTS idx_draft_pages_page_type_slug ON draft_pages(page_type, slug);
+CREATE INDEX IF NOT EXISTS idx_draft_pages_slug ON draft_pages(slug);
 CREATE INDEX IF NOT EXISTS idx_page_versions_page_id_created_at ON page_versions(page_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_tags_taxonomy_id ON tags(taxonomy_id);
 CREATE INDEX IF NOT EXISTS idx_tags_parent_tag ON tags(parent_tag);

@@ -14,6 +14,7 @@ export const EDITOR_ROLES: UserRole[] = ['admin', 'editor', 'moderator'];
 // Roles are mapped to a least-privilege set of capabilities; routes require a
 // specific capability rather than just "is an editor". See utils/roles.ts.
 export const PERMISSIONS = [
+  'content:read',     // view draft page metadata and editor-side read APIs
   'content:write',    // create / edit pages, weight, page-tag associations
   'content:publish',  // publish / unpublish
   'content:delete',   // move a page to trash (soft delete)
@@ -35,6 +36,7 @@ export type Permission = typeof PERMISSIONS[number];
 
 /** Human-readable descriptions for the Roles admin permission picker. */
 export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
+  'content:read': 'View draft content metadata',
   'content:write': 'Create and edit pages',
   'content:publish': 'Publish and unpublish pages',
   'content:delete': 'Move pages to trash',

@@ -12,7 +12,7 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../../types';
 import { pluginById, PLUGIN_ORIGIN, PLUGIN_PREFIX } from '../../plugins/registry';
 import type { AppContext } from '../../utils/context';
-import { requirePermission } from '../../middleware/auth';
+import { requireAdmin } from '../../middleware/auth';
 import { adminLayout } from '../../templates/layout';
 import { buildBaseProps } from '../../utils/admin-render';
 import { viewsFor } from '../../plugins/views';
@@ -30,8 +30,8 @@ export const pluginAdminRoutes = new Hono<{ Bindings: Env; Variables: Variables 
 // or compromised plugin would run with the CMS's same-origin authority. Until
 // plugins are served from a dedicated origin, restrict access to admins only to
 // minimize who can be exposed to that risk.
-pluginAdminRoutes.use('/plugins/:pluginId', requirePermission('plugin:access'));
-pluginAdminRoutes.use('/plugins/:pluginId/*', requirePermission('plugin:access'));
+pluginAdminRoutes.use('/plugins/:pluginId', requireAdmin);
+pluginAdminRoutes.use('/plugins/:pluginId/*', requireAdmin);
 
 pluginAdminRoutes.all('/plugins/:pluginId', (c) => proxyToPlugin(c));
 pluginAdminRoutes.all('/plugins/:pluginId/*', (c) => proxyToPlugin(c));

@@ -135,3 +135,16 @@ export function requirePermission(permission: Permission | string) {
     return next();
   });
 }
+
+/** Admin-role gate for routes that should not be delegated to custom capabilities. */
+export const requireAdmin = createMiddleware<{
+  Bindings: Env;
+  Variables: Variables;
+}>(async (c, next) => {
+  const user = c.get('user');
+  if (splitRoles(user.role).includes('admin')) return next();
+  if (wantsJsonResponse(c.req.raw)) {
+    return jsonError({ success: false, error: 'Admin role required' }, 403, 'admin-role-required');
+  }
+  return c.text('Forbidden: admin role required', 403);
+});
