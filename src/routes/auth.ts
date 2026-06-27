@@ -9,7 +9,7 @@
 
 import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
-import { signJWT, verifyJWT } from '../security/jwt';
+import { hashToken, signJWT, verifyJWT } from '../security/jwt';
 import { generateCodeVerifier, generateCodeChallenge, generateState } from '../utils/pkce';
 import { rateLimitByIP } from '../middleware/rate-limit';
 import {
@@ -25,6 +25,7 @@ import { normalizeRoles } from '../utils/roles';
 import { viewRevision } from '../utils/view-revision';
 import { loginPage } from '../templates/login';
 import type { Env, Variables, JWTPayload } from '../types';
+import type { AppContext } from '../utils/context';
 import {
   ACCESS_TOKEN_TTL,
   REFRESH_TOKEN_TTL,
@@ -67,6 +68,8 @@ const PROVIDERS: Record<string, OAuthProvider> = {
 };
 
 interface NormalizedUser {
+  provider: string;
+  providerUserId: string;
   oauthId: string;
   email: string;
   name: string;
@@ -78,6 +81,14 @@ interface OAuthStatePayload extends JWTPayload {
   state?: string;
   code_verifier?: string;
   provider?: string;
+  link_user_id?: string;
+}
+
+interface AuthDbUser {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
 }
 
 /** True when no allowlist is configured or the email's domain is listed. */
@@ -126,6 +137,8 @@ function normalizeUser(provider: string, data: Record<string, unknown>): Normali
       ? data['roles'].filter((role): role is string => typeof role === 'string')
       : [];
     return {
+      provider,
+      providerUserId: sub,
       oauthId: `eventuai:${sub}`,
       email,
       name: String(data['preferred_username'] ?? sub),
@@ -139,6 +152,8 @@ function normalizeUser(provider: string, data: Record<string, unknown>): Normali
     if (!sub || !email) return null;
 
     return {
+      provider,
+      providerUserId: sub,
       oauthId: `google:${sub}`,
       email,
       name: String(data['name'] ?? ''),
@@ -150,11 +165,88 @@ function normalizeUser(provider: string, data: Record<string, unknown>): Normali
 
   // GitHub (default)
   return {
+    provider,
+    providerUserId: String(id),
     oauthId: `github:${id}`,
     email: String(data['email'] ?? `${data['login']}@github.noreply`),
     name: String(data['name'] ?? data['login'] ?? ''),
     avatarUrl: String(data['avatar_url'] ?? ''),
   };
+}
+
+async function currentAuthenticatedUserId(c: AppContext): Promise<number | null> {
+  const secret = c.env.JWT_SECRET;
+  const accessToken = readAuthCookie(c, accessCookieName);
+  if (accessToken) {
+    const payload = await verifyJWT(accessToken, secret);
+    const id = Number(payload?.type === 'access' ? payload.sub : NaN);
+    if (Number.isInteger(id) && id > 0) return id;
+  }
+
+  const refreshToken = readAuthCookie(c, refreshCookieName);
+  if (!refreshToken) return null;
+  const refreshPayload = await verifyJWT(refreshToken, secret);
+  if (!refreshPayload || refreshPayload.type !== 'refresh' || !refreshPayload.jti) return null;
+
+  const session = await c.env.DB.prepare(
+    'SELECT user_id FROM sessions WHERE refresh_token_hash = ? AND expires_at > CURRENT_TIMESTAMP',
+  )
+    .bind(await hashToken(refreshPayload.jti))
+    .first<{ user_id: number }>();
+  return session?.user_id ?? null;
+}
+
+async function findUserByOAuthIdentity(db: D1Database, oauthId: string): Promise<AuthDbUser | null> {
+  const linked = await db.prepare(
+    `SELECT u.id, u.email, u.name, u.role
+       FROM user_oauth_identities i
+       JOIN users u ON u.id = i.user_id
+      WHERE i.oauth_id = ?`,
+  )
+    .bind(oauthId)
+    .first<AuthDbUser>();
+  if (linked) return linked;
+
+  // Legacy fallback for databases that have not backfilled identities yet.
+  return db.prepare('SELECT id, email, name, role FROM users WHERE oauth_id = ?')
+    .bind(oauthId)
+    .first<AuthDbUser>();
+}
+
+async function insertOAuthIdentity(
+  db: D1Database,
+  userId: number,
+  identity: NormalizedUser,
+): Promise<boolean> {
+  await db.prepare(
+    `INSERT OR IGNORE INTO user_oauth_identities
+       (user_id, provider, provider_user_id, oauth_id)
+     VALUES (?, ?, ?, ?)`,
+  )
+    .bind(userId, identity.provider, identity.providerUserId, identity.oauthId)
+    .run();
+
+  const owner = await db.prepare('SELECT user_id FROM user_oauth_identities WHERE oauth_id = ?')
+    .bind(identity.oauthId)
+    .first<{ user_id: number }>();
+  return owner?.user_id === userId;
+}
+
+async function updateUserProfileFromOAuth(
+  db: D1Database,
+  userId: number,
+  user: NormalizedUser,
+): Promise<AuthDbUser | null> {
+  await db.prepare(
+    `UPDATE users
+        SET email = ?, name = ?, avatar_url = ?
+      WHERE id = ?`,
+  )
+    .bind(user.email, user.name, user.avatarUrl, userId)
+    .run();
+  return db.prepare('SELECT id, email, name, role FROM users WHERE id = ?')
+    .bind(userId)
+    .first<AuthDbUser>();
 }
 
 // ── Route handlers ─────────────────────────────────────────────────────────────
@@ -203,6 +295,7 @@ authRoutes.get('/start', async (c) => {
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = await generateCodeChallenge(codeVerifier);
   const state = generateState();
+  const linkUserId = await currentAuthenticatedUserId(c);
 
   // Store PKCE state (including the chosen provider) in a signed short-lived
   // JWT cookie so we have no server-side storage dependency.
@@ -217,6 +310,7 @@ authRoutes.get('/start', async (c) => {
     state,
     code_verifier: codeVerifier,
     provider: providerName,
+    ...(linkUserId ? { link_user_id: String(linkUserId) } : {}),
     exp: Math.floor(Date.now() / 1000) + 600, // 10 minutes
   };
   const stateCookie = await signJWT(statePayload, c.env.JWT_SECRET);
@@ -338,40 +432,71 @@ authRoutes.get('/callback', async (c) => {
     return c.redirect('/auth/login?error=invalid_userinfo');
   }
 
-  // Optional registration allowlist: when ALLOWED_EMAIL_DOMAINS is set, only
-  // matching emails may create a new account. Existing users always pass so a
-  // config change can never lock out current accounts.
-  if (!isEmailAllowed(c.env, normalized.email)) {
-    const existing = await c.env.DB.prepare('SELECT id FROM users WHERE oauth_id = ?')
-      .bind(normalized.oauthId)
-      .first<{ id: number }>();
-    if (!existing) {
+  const linkedUser = await findUserByOAuthIdentity(c.env.DB, normalized.oauthId);
+  const linkUserId = Number(statePayload.link_user_id ?? NaN);
+  let dbUser: AuthDbUser | null = null;
+
+  if (Number.isInteger(linkUserId) && linkUserId > 0) {
+    const currentUserId = await currentAuthenticatedUserId(c);
+    if (currentUserId !== linkUserId) {
+      return c.redirect('/auth/login?error=link_session_mismatch');
+    }
+    if (linkedUser && linkedUser.id !== linkUserId) {
+      return c.redirect('/auth/login?error=identity_already_linked');
+    }
+    dbUser = await c.env.DB.prepare('SELECT id, email, name, role FROM users WHERE id = ?')
+      .bind(linkUserId)
+      .first<AuthDbUser>();
+    if (!dbUser) {
+      return c.redirect('/auth/login?error=db_error');
+    }
+    const linked = await insertOAuthIdentity(c.env.DB, dbUser.id, normalized);
+    if (!linked) {
+      return c.redirect('/auth/login?error=identity_already_linked');
+    }
+  } else if (linkedUser) {
+    try {
+      dbUser = await updateUserProfileFromOAuth(c.env.DB, linkedUser.id, normalized);
+    } catch {
+      return c.redirect('/auth/login?error=email_in_use');
+    }
+  } else {
+    // Optional registration allowlist: when ALLOWED_EMAIL_DOMAINS is set, only
+    // matching emails may create a new account. Existing linked users always
+    // pass so a config change can never lock out current accounts.
+    if (!isEmailAllowed(c.env, normalized.email)) {
       return c.redirect('/auth/login?error=email_not_allowed');
     }
+
+    const existingEmail = await c.env.DB.prepare('SELECT id FROM users WHERE email = ?')
+      .bind(normalized.email)
+      .first<{ id: number }>();
+    if (existingEmail) {
+      return c.redirect('/auth/login?error=identity_not_linked');
+    }
+
+    // The IdP-supplied role provisions the account on FIRST login only. Later
+    // logins refresh profile fields but never overwrite the CMS role, so role
+    // changes made in the Users admin stick.
+    await c.env.DB.prepare(
+      `INSERT INTO users (oauth_id, email, name, avatar_url, role)
+       VALUES (?, ?, ?, ?, COALESCE(?, 'viewer'))`,
+    )
+      .bind(normalized.oauthId, normalized.email, normalized.name, normalized.avatarUrl, normalized.role ?? null)
+      .run();
+
+    dbUser = await c.env.DB.prepare(
+      'SELECT id, email, name, role FROM users WHERE oauth_id = ?',
+    )
+      .bind(normalized.oauthId)
+      .first<AuthDbUser>();
+    if (dbUser) {
+      const linked = await insertOAuthIdentity(c.env.DB, dbUser.id, normalized);
+      if (!linked) {
+        return c.redirect('/auth/login?error=identity_already_linked');
+      }
+    }
   }
-
-  // Upsert user in DB. The IdP-supplied role provisions the account on FIRST
-  // login only (the INSERT); subsequent logins refresh profile fields but never
-  // overwrite the CMS role, so role changes made in the Users admin stick and a
-  // compromised/over-permissive IdP roles claim can't silently re-escalate an
-  // existing account. Falls back to the table's 'viewer' default when the IdP
-  // supplies no role.
-  await c.env.DB.prepare(
-    `INSERT INTO users (oauth_id, email, name, avatar_url, role)
-     VALUES (?, ?, ?, ?, COALESCE(?, 'viewer'))
-     ON CONFLICT(oauth_id) DO UPDATE SET
-       email = excluded.email,
-       name = excluded.name,
-       avatar_url = excluded.avatar_url`,
-  )
-    .bind(normalized.oauthId, normalized.email, normalized.name, normalized.avatarUrl, normalized.role ?? null)
-    .run();
-
-  const dbUser = await c.env.DB.prepare(
-    'SELECT id, email, name, role FROM users WHERE oauth_id = ?',
-  )
-    .bind(normalized.oauthId)
-    .first<{ id: number; email: string; name: string; role: string }>();
 
   if (!dbUser) {
     return c.redirect('/auth/login?error=db_error');

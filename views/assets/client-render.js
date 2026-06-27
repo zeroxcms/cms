@@ -428,7 +428,7 @@
       const layoutData = { ...(payload.layoutData || {}) };
       if (payload.bodyView) {
         const body = await renderView(payload.bodyView.viewPath, payload.bodyView.data || {});
-        layoutData.body = payload.bodyView.plugin ? sanitizePluginHtml(body) : body;
+        layoutData.body = payload.bodyView.plugin ? pluginContentWrapper(sanitizePluginHtml(body)) : body;
       }
       const html = await renderLiquid(payload.layoutPath || '/layout/default.liquid', layoutData);
       replaceDocument(html);
@@ -440,4 +440,8 @@
   }
 
   main();
+
+  function pluginContentWrapper(html) {
+    return '<div class="min-w-0 max-w-full overflow-x-hidden px-4 py-5 sm:px-6 sm:py-8 lg:px-8">' + html + '</div>';
+  }
 })();

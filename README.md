@@ -143,6 +143,11 @@ ENABLED_PROVIDERS = "eventuai,github,google"
 Users will see one sign-in button per listed provider, in that order.
 Add the Client ID and secret for every provider you enable.
 
+To link an additional OAuth provider to the same CMS account, sign in first,
+then start that provider's flow (for example `/auth/start?provider=google`).
+The callback attaches the new provider identity to the current user; it will
+not silently merge logged-out accounts just because their emails match.
+
 #### Eventuai (self-hosted OAuth worker)
 
 1. Register the CMS as a client on your OAuth worker — see the OAuth worker README for the `POST /admin/setup-clients` call.
@@ -347,6 +352,7 @@ served on the CMS origin.
 | Table | Purpose |
 |-------|---------|
 | `users` | OAuth user profiles + role assignment |
+| `user_oauth_identities` | Linked OAuth provider identities for each user |
 | `sessions` | Hashed refresh-token JTIs for revocation |
 
 ### Published database (`PUBLISHED_DB`)

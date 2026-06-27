@@ -228,7 +228,90 @@ describe('auth routes', () => {
     expect(await env.DB.prepare('SELECT role FROM users WHERE oauth_id = ?')
       .bind('eventuai:eventuai-user')
       .first<{ role: string }>()).toEqual({ role: 'editor' });
+    expect(await env.DB.prepare('SELECT user_id, provider, provider_user_id FROM user_oauth_identities WHERE oauth_id = ?')
+      .bind('eventuai:eventuai-user')
+      .first()).toMatchObject({ provider: 'eventuai', provider_user_id: 'eventuai-user' });
     expect((await env.DB.prepare('SELECT id FROM sessions').all()).results).toHaveLength(1);
+  });
+
+  it('links another OAuth identity to the currently signed-in user', async () => {
+    const accessCookie = await authCookie();
+    const start = await fetchWorker('/auth/start?provider=github', {
+      headers: { Cookie: accessCookie },
+    });
+    const location = new URL(start.headers.get('Location') ?? '');
+    const state = location.searchParams.get('state');
+    const stateCookie = cookieValue(start.headers.get('Set-Cookie'), 'oauth_state');
+    expect(state).toBeTruthy();
+    expect(stateCookie).toBeTruthy();
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url === 'https://github.com/login/oauth/access_token') {
+        return Response.json({ access_token: 'github-token' });
+      }
+      if (url === 'https://api.github.com/user') {
+        return Response.json({
+          id: 12345,
+          login: 'admin-gh',
+          email: 'admin-github@example.com',
+          name: 'Admin GitHub',
+          avatar_url: 'https://example.com/admin.png',
+        });
+      }
+      return new Response('Unexpected fetch', { status: 500 });
+    }));
+
+    const callback = await fetchWorker(`/auth/callback?code=abc&state=${encodeURIComponent(state ?? '')}`, {
+      headers: { Cookie: `oauth_state=${stateCookie}; ${accessCookie}` },
+    });
+
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get('Location')).toBe('/admin');
+    expect(await env.DB.prepare('SELECT user_id, provider, provider_user_id FROM user_oauth_identities WHERE oauth_id = ?')
+      .bind('github:12345')
+      .first()).toEqual({ user_id: 1, provider: 'github', provider_user_id: '12345' });
+    expect(await env.DB.prepare('SELECT email FROM users WHERE id = 1')
+      .first()).toEqual({ email: 'admin@example.com' });
+  });
+
+  it('signs in through an already linked secondary OAuth identity', async () => {
+    await env.DB.prepare(
+      `INSERT INTO user_oauth_identities (user_id, provider, provider_user_id, oauth_id)
+       VALUES (?, ?, ?, ?)`,
+    )
+      .bind(1, 'github', '12345', 'github:12345')
+      .run();
+
+    const start = await fetchWorker('/auth/start?provider=github');
+    const location = new URL(start.headers.get('Location') ?? '');
+    const state = location.searchParams.get('state') ?? '';
+    const stateCookie = cookieValue(start.headers.get('Set-Cookie'), 'oauth_state');
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url === 'https://github.com/login/oauth/access_token') {
+        return Response.json({ access_token: 'github-token' });
+      }
+      if (url === 'https://api.github.com/user') {
+        return Response.json({
+          id: 12345,
+          login: 'admin-gh',
+          email: 'admin-github@example.com',
+          name: 'Admin GitHub',
+          avatar_url: 'https://example.com/admin.png',
+        });
+      }
+      return new Response('Unexpected fetch', { status: 500 });
+    }));
+
+    const callback = await fetchWorker(`/auth/callback?code=abc&state=${encodeURIComponent(state)}`, {
+      headers: { Cookie: `oauth_state=${stateCookie}` },
+    });
+
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get('Location')).toBe('/admin');
+    expect(await env.DB.prepare('SELECT user_id FROM sessions').first()).toEqual({ user_id: 1 });
   });
 
   it('purges expired sessions during refresh', async () => {
@@ -1642,6 +1725,7 @@ async function resetData(): Promise<void> {
     'roles',
     'role_permissions',
     'sessions',
+    'user_oauth_identities',
     'users',
     'audit_log',
   ];
