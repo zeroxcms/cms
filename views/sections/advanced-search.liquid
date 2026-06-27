@@ -6,13 +6,18 @@
     </div>
     <div class="flex flex-col gap-2 sm:flex-row">
       <a href="{{ exportHref | escape }}"
+         title="Export"
+         aria-label="Export"
          class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#download"></use></svg>
-        Export
+        <span class="hidden lg:inline">Export</span>
       </a>
       <a href="{{ listHref | escape }}"
-         class="inline-flex h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-        List
+         title="List"
+         aria-label="List"
+         class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#list"></use></svg>
+        <span class="hidden lg:inline">List</span>
       </a>
     </div>
   </div>
@@ -163,9 +168,11 @@
 
     <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-between">
       <button type="button" id="advanced-search-add-criterion"
+              title="Add Criterion"
+              aria-label="Add Criterion"
               class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#plus"></use></svg>
-        Add Criterion
+        <span class="hidden lg:inline">Add Criterion</span>
       </button>
       <div class="flex flex-col gap-2 sm:flex-row">
       <a href="{{ resetHref | escape }}"
@@ -173,9 +180,10 @@
         Reset
       </a>
       <button type="submit"
-              class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
+              title="Search"
+              aria-label="Search"
+              class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm transition-colors hover:bg-indigo-700">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#search"></use></svg>
-        Search
       </button>
       </div>
     </div>
@@ -189,7 +197,7 @@
   <script type="application/json" id="advanced-search-path-options-data">{{ pathOptionsByPageTypeJson }}</script>
 
   <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-    <table class="w-full min-w-[760px] text-left">
+    <table class="relative w-full min-w-[760px] text-left">
       <thead class="border-b border-gray-200 bg-gray-50">
         <tr>
           <th class="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Page</th>

@@ -133,8 +133,11 @@
         </a>
         <button type="submit"
                 {% unless hasPreviewRows %}disabled{% endunless %}
-                class="inline-flex h-10 items-center justify-center rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 {% unless hasPreviewRows %}cursor-not-allowed opacity-50{% endunless %}">
-          Confirm Import
+                title="Confirm Import"
+                aria-label="Confirm Import"
+                class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 {% unless hasPreviewRows %}cursor-not-allowed opacity-50{% endunless %}">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#upload"></use></svg>
+          <span class="hidden lg:inline">Confirm Import</span>
         </button>
       </div>
     </form>
@@ -161,8 +164,12 @@
                   placeholder='[{"name":"Example","slug":"example","values":{"en":{"name":"Example"}}}]'
                   class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"></textarea>
       {% endif %}
-      <button type="submit" class="w-full shrink-0 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg sm:w-auto">
-        {% if isCsvImport %}Review Import{% else %}Import{% endif %}
+      <button type="submit"
+              title="{% if isCsvImport %}Review Import{% else %}Import{% endif %}"
+              aria-label="{% if isCsvImport %}Review Import{% else %}Import{% endif %}"
+              class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#upload"></use></svg>
+        <span class="hidden lg:inline">{% if isCsvImport %}Review Import{% else %}Import{% endif %}</span>
       </button>
     </form>
   {% endif %}

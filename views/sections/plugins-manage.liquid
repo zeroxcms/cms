@@ -4,7 +4,13 @@
       <h2 class="text-2xl font-bold text-gray-900">Plugins</h2>
       <p class="mt-1 text-sm text-gray-500">Registered over HTTPS - added here without a CMS redeploy.</p>
     </div>
-    <a href="/admin/plugins-manage/new" class="w-full px-4 py-2 text-center rounded-lg bg-indigo-600 text-white text-sm font-semibold sm:w-auto">Register plugin</a>
+    <a href="/admin/plugins-manage/new"
+       title="Register plugin"
+       aria-label="Register plugin"
+       class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#plus"></use></svg>
+      <span class="hidden lg:inline">Register plugin</span>
+    </a>
   </div>
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
     <table class="w-full min-w-[560px] text-left text-sm">

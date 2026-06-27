@@ -4,7 +4,15 @@
       <h2 class="text-2xl font-bold text-gray-900">Block Types</h2>
       <p class="mt-1 text-sm text-gray-500">Reusable block definitions. Database blocks are editable here; config-file and plugin blocks are read-only.</p>
     </div>
-    {% if canWrite %}<a href="/admin/block_types/new" class="w-full px-4 py-2 text-center bg-indigo-600 text-white text-sm font-semibold rounded-lg sm:w-auto">New Block Type</a>{% endif %}
+    {% if canWrite %}
+      <a href="/admin/block_types/new"
+         title="New Block Type"
+         aria-label="New Block Type"
+         class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#plus"></use></svg>
+        <span class="hidden lg:inline">New Block Type</span>
+      </a>
+    {% endif %}
   </div>
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
     <table class="w-full min-w-[560px] text-left">
