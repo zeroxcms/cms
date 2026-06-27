@@ -470,6 +470,7 @@ describe('auth routes', () => {
 describe('admin routes', () => {
   it.each<RouteCase>([
     { name: 'GET /admin', path: '/admin', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/profile', path: '/admin/profile', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/pages/list/:pageType', path: '/admin/pages/list/default', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/pages/search/:pageType', path: '/admin/pages/search/default?search=About', authenticated: true, expectedStatus: 302, location: '/admin/advanced-search/default?operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=About&path1=' },
     { name: 'GET /admin/pages/create_by_type/:pageType', path: '/admin/pages/create_by_type/default', authenticated: true, expectedStatus: 302, location: '/admin/pages/new?page_type=default' },
@@ -539,6 +540,30 @@ describe('admin routes', () => {
     { name: 'POST /admin/roles/:name/delete (custom)', method: 'POST', path: '/admin/roles/authors/delete', authenticated: true, expectedStatus: 302, location: '/admin/roles' },
   ])('$name', async (route) => {
     await expectRoute(route);
+  });
+
+  it('renders the signed-in user profile with connected and available OAuth providers', async () => {
+    await env.DB.prepare(
+      `INSERT INTO user_oauth_identities (user_id, provider, provider_user_id, oauth_id)
+       VALUES (?, ?, ?, ?)`,
+    )
+      .bind(1, 'google', 'google-admin', 'google:google-admin')
+      .run();
+
+    const response = await fetchWorker('/admin/profile', { headers: { Cookie: await authCookie() } });
+    const data = bodyData(await response.text());
+
+    expect(data.name).toBe('Admin User');
+    expect(data.email).toBe('admin@example.com');
+    expect(data.hasIdentities).toBe(true);
+    expect(data.identities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: 'eventuai', label: 'Eventuai' }),
+      expect.objectContaining({ provider: 'google', label: 'Google' }),
+    ]));
+    expect(data.providers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: 'google', connected: true }),
+      expect.objectContaining({ provider: 'microsoft', connected: false, connectHref: '/auth/start?provider=microsoft' }),
+    ]));
   });
 
   it('POST /admin/pages/batch-weight updates multiple page weights', async () => {

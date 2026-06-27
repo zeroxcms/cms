@@ -183,6 +183,36 @@ th,
   contain: layout paint;
 }
 
+[data-admin-sidebar] {
+  height: 100dvh;
+  max-height: 100dvh;
+  min-height: 100dvh;
+}
+
+[data-admin-sidebar-footer] {
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+@supports not (height: 100dvh) {
+  [data-admin-sidebar] {
+    height: 100vh;
+    max-height: 100vh;
+    min-height: 100vh;
+  }
+}
+
+@media (min-width: 48rem) {
+  [data-admin-sidebar] {
+    height: 100vh;
+    max-height: 100vh;
+    min-height: 0;
+  }
+
+  [data-admin-sidebar-footer] {
+    padding-bottom: 1rem;
+  }
+}
+
 /* Light theme: restore conventional Tailwind-style tokens while keeping the
    same utility classes and markup. Dark remains the default for first visit. */
 html[data-theme="light"] {

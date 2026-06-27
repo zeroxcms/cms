@@ -26,6 +26,7 @@ import { pageTypesRoutes } from './page-types';
 import { blockTypesRoutes } from './block-types';
 import { usersRoutes } from './users';
 import { rolesRoutes } from './roles';
+import { profileRoutes } from './profile';
 import { apiRoutes } from './api';
 import { pluginAdminRoutes } from './plugins';
 import { pluginsManageRoutes } from './plugins-manage';
@@ -58,6 +59,7 @@ adminRoutes.get('/views/*', async (c) => {
 adminRoutes.route('/', searchRoutes);
 adminRoutes.route('/', importRoutes);
 adminRoutes.route('/', pluginAdminRoutes);
+adminRoutes.route('/', profileRoutes);
 adminRoutes.route('/', pagesRoutes);
 adminRoutes.route('/', trashRoutes);
 adminRoutes.route('/', tagsRoutes);
