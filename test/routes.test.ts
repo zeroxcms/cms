@@ -186,6 +186,9 @@ describe('auth routes', () => {
   it.each<RouteCase>([
     { name: 'GET /auth/login', path: '/auth/login', expectedStatus: 200 },
     { name: 'GET /auth/start', path: '/auth/start?provider=eventuai', expectedStatus: 302, location: /^https:\/\/id\.eventuai\.com\/oauth\/authorize/ },
+    { name: 'GET /auth/start google', path: '/auth/start?provider=google', expectedStatus: 302, location: /^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth/ },
+    { name: 'GET /auth/start microsoft', path: '/auth/start?provider=microsoft', expectedStatus: 302, location: /^https:\/\/login\.microsoftonline\.com\/common\/oauth2\/v2\.0\/authorize/ },
+    { name: 'GET /auth/start apple', path: '/auth/start?provider=apple', expectedStatus: 302, location: /^https:\/\/appleid\.apple\.com\/auth\/authorize/ },
     { name: 'GET /auth/callback missing params', path: '/auth/callback', expectedStatus: 302, location: '/auth/login?error=missing_params' },
     { name: 'POST /auth/logout', method: 'POST', path: '/auth/logout', expectedStatus: 302, location: '/auth/login' },
     { name: 'GET /auth/logout is rejected', path: '/auth/logout', expectedStatus: 405 },
@@ -312,6 +315,47 @@ describe('auth routes', () => {
     expect(callback.status).toBe(302);
     expect(callback.headers.get('Location')).toBe('/admin');
     expect(await env.DB.prepare('SELECT user_id FROM sessions').first()).toEqual({ user_id: 1 });
+  });
+
+  it('handles Apple form_post callbacks using the id_token profile', async () => {
+    const start = await fetchWorker('/auth/start?provider=apple');
+    const location = new URL(start.headers.get('Location') ?? '');
+    const state = location.searchParams.get('state') ?? '';
+    const stateCookie = cookieValue(start.headers.get('Set-Cookie'), 'oauth_state');
+
+    expect(location.searchParams.get('response_mode')).toBe('form_post');
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url === 'https://appleid.apple.com/auth/token') {
+        return Response.json({
+          id_token: fakeIdToken({
+            iss: 'https://appleid.apple.com',
+            aud: 'test.apple.client',
+            exp: Math.floor(Date.now() / 1000) + 600,
+            sub: 'apple-user',
+            email: 'apple@example.com',
+          }),
+        });
+      }
+      return new Response('Unexpected fetch', { status: 500 });
+    }));
+
+    const callback = await fetchWorker('/auth/callback', {
+      method: 'POST',
+      headers: {
+        Cookie: `oauth_state=${stateCookie}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Sec-Fetch-Site': 'cross-site',
+      },
+      body: form({ code: 'abc', state }),
+    });
+
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get('Location')).toBe('/admin');
+    expect(await env.DB.prepare('SELECT user_id, provider, provider_user_id FROM user_oauth_identities WHERE oauth_id = ?')
+      .bind('apple:apple-user')
+      .first()).toMatchObject({ provider: 'apple', provider_user_id: 'apple-user' });
   });
 
   it('purges expired sessions during refresh', async () => {
@@ -1680,6 +1724,14 @@ function pngBytes(): Uint8Array {
 function cookieValue(header: string | null, name: string): string {
   const match = header?.match(new RegExp(`${name}=([^;]+)`));
   return match?.[1] ?? '';
+}
+
+function fakeIdToken(payload: Record<string, unknown>): string {
+  const encode = (value: Record<string, unknown>) => btoa(JSON.stringify(value))
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+  return `${encode({ alg: 'RS256', typ: 'JWT' })}.${encode(payload)}.signature`;
 }
 
 /** Runs the full PKCE flow against a mocked eventuai provider and returns the callback response. */

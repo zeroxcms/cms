@@ -42,8 +42,11 @@ import {
 interface OAuthProvider {
   authUrl: string;
   tokenUrl: string;
-  userUrl: string;
+  userUrl?: string;
   scope: string;
+  responseMode?: 'query' | 'form_post';
+  userInfoSource?: 'userinfo' | 'id_token';
+  idTokenIssuer?: string;
 }
 
 const PROVIDERS: Record<string, OAuthProvider> = {
@@ -58,6 +61,20 @@ const PROVIDERS: Record<string, OAuthProvider> = {
     tokenUrl: 'https://oauth2.googleapis.com/token',
     userUrl: 'https://www.googleapis.com/oauth2/v3/userinfo',
     scope: 'openid email profile',
+  },
+  microsoft: {
+    authUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+    tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+    userUrl: 'https://graph.microsoft.com/oidc/userinfo',
+    scope: 'openid email profile',
+  },
+  apple: {
+    authUrl: 'https://appleid.apple.com/auth/authorize',
+    tokenUrl: 'https://appleid.apple.com/auth/token',
+    scope: 'name email',
+    responseMode: 'form_post',
+    userInfoSource: 'id_token',
+    idTokenIssuer: 'https://appleid.apple.com',
   },
   eventuai: {
     authUrl: 'https://id.eventuai.com/oauth/authorize',
@@ -121,10 +138,59 @@ function getProviderCredentials(
   if (provider === 'google' && env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
     return { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET };
   }
+  if (provider === 'microsoft' && env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET) {
+    return { clientId: env.MICROSOFT_CLIENT_ID, clientSecret: env.MICROSOFT_CLIENT_SECRET };
+  }
+  if (provider === 'apple' && env.APPLE_CLIENT_ID && env.APPLE_CLIENT_SECRET) {
+    return { clientId: env.APPLE_CLIENT_ID, clientSecret: env.APPLE_CLIENT_SECRET };
+  }
   if (provider === 'eventuai' && env.EVENTUAI_CLIENT_ID && env.EVENTUAI_CLIENT_SECRET) {
     return { clientId: env.EVENTUAI_CLIENT_ID, clientSecret: env.EVENTUAI_CLIENT_SECRET };
   }
   return null;
+}
+
+function getProviderConfig(env: Env, provider: string): OAuthProvider | null {
+  if (provider === 'microsoft') {
+    const tenant = encodeURIComponent((env.MICROSOFT_TENANT ?? 'common').trim() || 'common');
+    return {
+      ...PROVIDERS.microsoft,
+      authUrl: `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`,
+      tokenUrl: `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`,
+    };
+  }
+  return PROVIDERS[provider] ?? null;
+}
+
+function decodeBase64UrlJson(value: string): Record<string, unknown> | null {
+  try {
+    const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+    return JSON.parse(atob(padded)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function idTokenClaims(
+  idToken: string,
+  opts: { issuer?: string; audience: string },
+): Record<string, unknown> | null {
+  const [, payload] = idToken.split('.');
+  if (!payload) return null;
+  const claims = decodeBase64UrlJson(payload);
+  if (!claims) return null;
+
+  if (opts.issuer && claims['iss'] !== opts.issuer) return null;
+  const aud = claims['aud'];
+  if (Array.isArray(aud)) {
+    if (!aud.includes(opts.audience)) return null;
+  } else if (aud !== opts.audience) {
+    return null;
+  }
+  const exp = claims['exp'];
+  if (typeof exp === 'number' && exp < Math.floor(Date.now() / 1000)) return null;
+  return claims;
 }
 
 function normalizeUser(provider: string, data: Record<string, unknown>): NormalizedUser | null {
@@ -158,6 +224,38 @@ function normalizeUser(provider: string, data: Record<string, unknown>): Normali
       email,
       name: String(data['name'] ?? ''),
       avatarUrl: String(data['picture'] ?? ''),
+    };
+  }
+  if (provider === 'microsoft') {
+    const sub = typeof data['sub'] === 'string' ? data['sub'] : '';
+    const email = typeof data['email'] === 'string'
+      ? data['email']
+      : typeof data['preferred_username'] === 'string'
+        ? data['preferred_username']
+        : '';
+    if (!sub || !email) return null;
+
+    return {
+      provider,
+      providerUserId: sub,
+      oauthId: `microsoft:${sub}`,
+      email,
+      name: String(data['name'] ?? ''),
+      avatarUrl: '',
+    };
+  }
+  if (provider === 'apple') {
+    const sub = typeof data['sub'] === 'string' ? data['sub'] : '';
+    const email = typeof data['email'] === 'string' ? data['email'] : '';
+    if (!sub || !email) return null;
+
+    return {
+      provider,
+      providerUserId: sub,
+      oauthId: `apple:${sub}`,
+      email,
+      name: String(data['name'] ?? email),
+      avatarUrl: '',
     };
   }
   const id = data['id'];
@@ -282,7 +380,7 @@ authRoutes.get('/start', async (c) => {
     ? requested
     : enabledProviders[0] ?? 'github';
 
-  const providerConfig = PROVIDERS[providerName];
+  const providerConfig = getProviderConfig(c.env, providerName);
   if (!providerConfig) {
     return c.text(`Unsupported OAuth provider: ${providerName}`, 500);
   }
@@ -334,13 +432,17 @@ authRoutes.get('/start', async (c) => {
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
   });
+  if (providerConfig.responseMode) {
+    params.set('response_mode', providerConfig.responseMode);
+  }
 
   return c.redirect(`${providerConfig.authUrl}?${params.toString()}`);
 });
 
-// GET /auth/callback – handle the provider redirect
-authRoutes.get('/callback', async (c) => {
-  const { code, state, error } = c.req.query() as Record<string, string>;
+type OAuthCallbackParams = { code?: string; state?: string; error?: string };
+
+async function handleOAuthCallback(c: AppContext, params: OAuthCallbackParams): Promise<Response> {
+  const { code, state, error } = params;
 
   if (error) {
     return c.redirect(`/auth/login?error=${encodeURIComponent(error)}`);
@@ -377,7 +479,7 @@ authRoutes.get('/callback', async (c) => {
   }
 
   const providerName = statePayload.provider ?? '';
-  const providerConfig = PROVIDERS[providerName];
+  const providerConfig = getProviderConfig(c.env, providerName);
   if (!providerConfig) {
     return c.redirect('/auth/login?error=unsupported_provider');
   }
@@ -409,24 +511,42 @@ authRoutes.get('/callback', async (c) => {
   }
 
   const tokenData = await tokenRes.json<Record<string, string>>();
-  const providerAccessToken = tokenData['access_token'];
-  if (!providerAccessToken) {
-    return c.redirect('/auth/login?error=no_access_token');
-  }
+  let rawUser: Record<string, unknown> | null = null;
+  if (providerConfig.userInfoSource === 'id_token') {
+    const idToken = tokenData['id_token'];
+    if (!idToken) {
+      return c.redirect('/auth/login?error=no_id_token');
+    }
+    rawUser = idTokenClaims(idToken, {
+      issuer: providerConfig.idTokenIssuer,
+      audience: credentials.clientId,
+    });
+    if (!rawUser) {
+      return c.redirect('/auth/login?error=invalid_id_token');
+    }
+  } else {
+    const providerAccessToken = tokenData['access_token'];
+    if (!providerAccessToken) {
+      return c.redirect('/auth/login?error=no_access_token');
+    }
+    if (!providerConfig.userUrl) {
+      return c.redirect('/auth/login?error=userinfo_not_configured');
+    }
 
-  // Fetch user info from provider
-  const userRes = await fetch(providerConfig.userUrl, {
-    headers: {
-      Authorization: 'Bearer ' + providerAccessToken,
-      Accept: 'application/json',
-      'User-Agent': 'worker-cms/1.0',
-    },
-  });
-  if (!userRes.ok) {
-    return c.redirect('/auth/login?error=userinfo_failed');
-  }
+    // Fetch user info from provider
+    const userRes = await fetch(providerConfig.userUrl, {
+      headers: {
+        Authorization: 'Bearer ' + providerAccessToken,
+        Accept: 'application/json',
+        'User-Agent': 'worker-cms/1.0',
+      },
+    });
+    if (!userRes.ok) {
+      return c.redirect('/auth/login?error=userinfo_failed');
+    }
 
-  const rawUser = await userRes.json<Record<string, unknown>>();
+    rawUser = await userRes.json<Record<string, unknown>>();
+  }
   const normalized = normalizeUser(providerName, rawUser);
   if (!normalized) {
     return c.redirect('/auth/login?error=invalid_userinfo');
@@ -515,6 +635,19 @@ authRoutes.get('/callback', async (c) => {
   setAuthCookie(c, refreshCookieName, issued.refreshToken, REFRESH_TOKEN_TTL);
 
   return c.redirect('/admin');
+}
+
+// GET /auth/callback – handle provider redirects that return query params
+authRoutes.get('/callback', (c) => handleOAuthCallback(c, c.req.query() as OAuthCallbackParams));
+
+// POST /auth/callback – Apple commonly returns form_post responses.
+authRoutes.post('/callback', async (c) => {
+  const body = await c.req.parseBody();
+  return handleOAuthCallback(c, {
+    code: typeof body['code'] === 'string' ? body['code'] : undefined,
+    state: typeof body['state'] === 'string' ? body['state'] : undefined,
+    error: typeof body['error'] === 'string' ? body['error'] : undefined,
+  });
 });
 
 // POST /auth/logout – revoke session and clear cookies.

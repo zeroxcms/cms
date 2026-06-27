@@ -3,6 +3,8 @@ import { renderView } from './liquid';
 
 function providerLabel(provider: string): string {
   if (provider === 'google') return 'Google';
+  if (provider === 'microsoft') return 'Microsoft';
+  if (provider === 'apple') return 'Apple';
   if (provider === 'eventuai') return 'Eventuai';
   return 'GitHub';
 }
@@ -10,6 +12,12 @@ function providerLabel(provider: string): string {
 function providerIcon(provider: string): string {
   if (provider === 'google') {
     return `<svg class="w-5 h-5" viewBox="0 0 24 24"><use href="/assets/icons.svg#google"></use></svg>`;
+  }
+  if (provider === 'microsoft') {
+    return `<svg class="w-5 h-5" viewBox="0 0 24 24"><use href="/assets/icons.svg#microsoft"></use></svg>`;
+  }
+  if (provider === 'apple') {
+    return `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#apple"></use></svg>`;
   }
   if (provider === 'eventuai') {
     return `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><use href="/assets/icons.svg#key"></use></svg>`;

@@ -310,17 +310,23 @@ export interface Env {
   /** HMAC-SHA256 secret for signing JWTs – set via `wrangler secret put JWT_SECRET` */
   JWT_SECRET: string;
   /**
-   * Comma-separated list of enabled OAuth providers, e.g. "github,google,eventuai".
+   * Comma-separated list of enabled OAuth providers,
+   * e.g. "github,google,microsoft,apple,eventuai".
    * Only providers listed here will show as login options.
    */
   ENABLED_PROVIDERS: string;
   /** Per-provider OAuth client IDs (set in wrangler.toml [vars]) */
   GITHUB_CLIENT_ID?: string;
   GOOGLE_CLIENT_ID?: string;
+  MICROSOFT_CLIENT_ID?: string;
+  MICROSOFT_TENANT?: string;
+  APPLE_CLIENT_ID?: string;
   EVENTUAI_CLIENT_ID?: string;
   /** Per-provider OAuth client secrets (set via `wrangler secret put`) */
   GITHUB_CLIENT_SECRET?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  MICROSOFT_CLIENT_SECRET?: string;
+  APPLE_CLIENT_SECRET?: string;
   EVENTUAI_CLIENT_SECRET?: string;
   /** Shared OAuth redirect URI registered with all providers */
   OAUTH_REDIRECT_URI: string;

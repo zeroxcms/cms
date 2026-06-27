@@ -57,7 +57,7 @@ app.use('*', async (c, next) => {
   // the fail-closed cross-origin guard would reject — so skip the guard here.
   // (The secret, not browser provenance, is the authenticator for /__cms.)
   const path = new URL(c.req.url).pathname;
-  if (!path.startsWith('/__cms/')) {
+  if (!path.startsWith('/__cms/') && !(path === '/auth/callback' && c.req.method === 'POST')) {
     const crossOriginMutation = rejectCrossOriginMutation(c.req.raw, [canonicalOrigin]);
     if (crossOriginMutation) {
       return withSensitiveCacheHeaders(withSecurityHeaders(crossOriginMutation), c.req.raw);

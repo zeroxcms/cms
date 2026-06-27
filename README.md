@@ -137,7 +137,7 @@ Set `ENABLED_PROVIDERS` in `wrangler.toml` to a comma-separated list of the
 providers you want to offer on the login page:
 
 ```toml
-ENABLED_PROVIDERS = "eventuai,github,google"
+ENABLED_PROVIDERS = "eventuai,github,google,microsoft,apple"
 ```
 
 Users will see one sign-in button per listed provider, in that order.
@@ -185,6 +185,33 @@ not silently merge logged-out accounts just because their emails match.
 5. Store the **Client Secret**:
    ```bash
    npx wrangler secret put GOOGLE_CLIENT_SECRET
+   ```
+
+#### Microsoft
+
+1. Open **Microsoft Entra admin center → App registrations → New registration**.
+2. Add your `OAUTH_REDIRECT_URI` as a web redirect URI.
+3. Copy the **Application (client) ID** into `wrangler.toml`:
+   ```toml
+   MICROSOFT_CLIENT_ID = "<client-id>"
+   ```
+4. Optionally set `MICROSOFT_TENANT` to `common`, `organizations`, `consumers`, or a tenant ID/domain. It defaults to `common`.
+5. Store the client secret:
+   ```bash
+   npx wrangler secret put MICROSOFT_CLIENT_SECRET
+   ```
+
+#### Apple
+
+1. In Apple Developer, configure **Sign in with Apple** for your Services ID.
+2. Add your `OAUTH_REDIRECT_URI` as a return URL.
+3. Copy the Services ID into `wrangler.toml`:
+   ```toml
+   APPLE_CLIENT_ID = "<services-id>"
+   ```
+4. Generate an Apple client-secret JWT for that Services ID and store it:
+   ```bash
+   npx wrangler secret put APPLE_CLIENT_SECRET
    ```
 
 > **Note:** GitHub and Google users have their role defaulted from the database.
