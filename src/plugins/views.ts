@@ -25,16 +25,22 @@ export function viewsFor(env: Env): Fetcher {
   const fetch = async (input: RequestInfo | URL): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const primary = await env.VIEWS.fetch(url);
-    if (primary.ok) return primary;
+    if (primary.ok) return markViewSource(primary, 'core');
 
     const path = new URL(url).pathname;
     for (const plugin of await getPlugins(env)) {
       const response = await plugin.fetcher.fetch(`${PLUGIN_ORIGIN}${PLUGIN_PREFIX}/views${path}`);
-      if (response.ok) return response;
+      if (response.ok) return markViewSource(response, 'plugin');
     }
     return primary; // propagate the original 404
   };
 
   // The engine only uses `.fetch`; present a Fetcher-shaped object.
   return { fetch } as unknown as Fetcher;
+}
+
+function markViewSource(response: Response, source: 'core' | 'plugin'): Response {
+  const marked = new Response(response.body, response);
+  marked.headers.set('X-CMS-View-Source', source);
+  return marked;
 }

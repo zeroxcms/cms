@@ -25,6 +25,7 @@ import { pluginForEditView, PLUGIN_ORIGIN, PLUGIN_PREFIX } from './registry';
 import { adminLayout } from '../templates/layout';
 import { buildBaseProps } from '../utils/admin-render';
 import { viewsFor } from './views';
+import { sanitizePluginHtmlFragment } from '../security/plugin-sanitize';
 
 /** Editor context the CMS sends to a plugin's `/__plugin/edit` endpoint. */
 export interface EditViewContext {
@@ -114,7 +115,7 @@ export async function pluginEditView(
     return null;
   }
 
-  const fragment = await upstream.text();
+  const fragment = await sanitizePluginHtmlFragment(await upstream.text());
   const title = decodeTitle(upstream.headers.get('x-cms-title'))
     || (context.mode === 'edit' ? `Edit: ${context.page.name}` : `New ${pageType}`);
   const base = await buildBaseProps(c);

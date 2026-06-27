@@ -23,6 +23,7 @@ import {
   warnSharedPluginOrigin,
   wantsCmsChrome,
 } from '../../security/plugin-proxy';
+import { sanitizePluginHtmlFragment } from '../../security/plugin-sanitize';
 
 export const pluginAdminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -78,7 +79,7 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
   // the relaxed full-document policy below. Plugins that return a full document
   // (no header) keep the legacy behavior.
   if (wantsCmsChrome(upstreamResponse)) {
-    const fragment = await upstreamResponse.text();
+    const fragment = await sanitizePluginHtmlFragment(await upstreamResponse.text());
     const title = decodePluginTitle(upstreamResponse.headers.get('x-cms-title')) || plugin.manifest.name || 'Plugin';
     const base = await buildBaseProps(c);
     const wrapped = await adminLayout(viewsFor(c.env), base, { title, body: fragment });

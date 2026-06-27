@@ -1,4 +1,5 @@
 import type { JWTPayload } from '../types';
+import { sanitizePluginHtmlResponse } from './plugin-sanitize';
 
 const FORWARD_HEADERS = [
   'accept',
@@ -39,7 +40,10 @@ export function decodePluginTitle(raw: string | null): string {
 }
 
 export function pluginDocumentResponse(upstreamResponse: Response): Response {
-  const response = new Response(upstreamResponse.body, upstreamResponse);
+  const contentType = upstreamResponse.headers.get('content-type') ?? '';
+  const response = contentType.includes('text/html')
+    ? sanitizePluginHtmlResponse(upstreamResponse)
+    : new Response(upstreamResponse.body, upstreamResponse);
   const allowFraming = upstreamResponse.headers.get('x-cms-frame') === '1';
 
   response.headers.delete('x-cms-frame');
@@ -53,7 +57,7 @@ export function pluginDocumentResponse(upstreamResponse: Response): Response {
 function buildPluginDocumentCsp(allowFraming: boolean): string {
   return [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
+    "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
     "object-src 'none'",

@@ -6,6 +6,8 @@
   const payloadEl = document.getElementById('cms-render-payload');
   const payload = payloadEl ? JSON.parse(payloadEl.textContent || '{}') : {};
   const templateCache = new Map();
+  const templateSource = new Map();
+  const pluginOutputCache = new Map();
   const engine = new liquidjs.Liquid({
     cache: true,
     extname: '.liquid',
@@ -62,8 +64,10 @@
     }).then(async (response) => {
       if (!response.ok) {
         templateCache.delete(normalized);
+        templateSource.delete(normalized);
         throw new TemplateNotFoundError('View file not found: ' + normalized);
       }
+      templateSource.set(normalized, response.headers.get('x-cms-view-source') === 'plugin' ? 'plugin' : 'core');
       return response.text();
     });
     templateCache.set(normalized, promise);
@@ -94,8 +98,10 @@
   }
 
   async function renderLiquid(templatePath, data) {
-    const template = await loadTemplate(templatePath);
-    return String(await engine.parseAndRender(template, { nonce: payload.nonce, ...data }));
+    const normalized = normalizePath(templatePath);
+    const template = await loadTemplate(normalized);
+    const html = String(await engine.parseAndRender(template, { nonce: payload.nonce, ...data }));
+    return isPluginTemplate(normalized) ? sanitizePluginHtml(html) : html;
   }
 
   async function renderJsonTemplate(templatePath, data) {
@@ -134,6 +140,7 @@
     if (jsonTemplate.wrapper) {
       throw new Error('JSON template wrappers are not supported by the browser renderer: ' + templatePath);
     }
+    if (isPluginTemplate(templatePath)) result = sanitizePluginHtml(result);
     if (renderData.debug === true) {
       return '<!-- begin json template: ' + escapeComment(templatePath) + ' -->\n' +
         result +
@@ -348,14 +355,51 @@
 
   function executeScripts(parsed) {
     parsed.querySelectorAll('script').forEach((oldScript) => {
+      if (oldScript.getAttribute('nonce') !== payload.nonce) return;
       const script = document.createElement('script');
       for (const attr of Array.from(oldScript.attributes)) {
         script.setAttribute(attr.name, attr.value);
       }
-      if (!script.nonce && payload.nonce) script.setAttribute('nonce', payload.nonce);
       script.textContent = oldScript.textContent;
       document.body.appendChild(script);
     });
+  }
+
+  function isPluginTemplate(path) {
+    return templateSource.get(normalizePath(path)) === 'plugin';
+  }
+
+  function sanitizePluginHtml(html) {
+    if (!html || !/<(?:script|\w+[\s\S]*?\son\w+\s*=|\w+[\s\S]*?\s(?:href|src|action|formaction|xlink:href)\s*=)/i.test(html)) {
+      return html;
+    }
+    if (pluginOutputCache.has(html)) return pluginOutputCache.get(html);
+
+    const parsed = new DOMParser().parseFromString('<template>' + html + '</template>', 'text/html');
+    const template = parsed.querySelector('template');
+    if (!template) return html;
+
+    template.content.querySelectorAll('script').forEach((script) => script.remove());
+    template.content.querySelectorAll('*').forEach((element) => {
+      for (const attr of Array.from(element.attributes)) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith('on') || (isUrlAttribute(name) && isJavascriptUrl(attr.value))) {
+          element.removeAttribute(attr.name);
+        }
+      }
+    });
+
+    const sanitized = template.innerHTML;
+    pluginOutputCache.set(html, sanitized);
+    return sanitized;
+  }
+
+  function isUrlAttribute(name) {
+    return name === 'href' || name === 'src' || name === 'action' || name === 'formaction' || name === 'xlink:href';
+  }
+
+  function isJavascriptUrl(value) {
+    return String(value).replace(/[\u0000-\u001f\u007f\s]+/g, '').toLowerCase().startsWith('javascript:');
   }
 
   function hasLiquidSyntax(value) {

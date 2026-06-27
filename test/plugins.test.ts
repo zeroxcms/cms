@@ -167,6 +167,7 @@ describe('viewsFor', () => {
     const pluginEnv = await envWith(plugin, { VIEWS: { fetch: async () => new Response('nf', { status: 404 }) } });
     const res = await viewsFor(pluginEnv).fetch(`https://views.local${snippetPath}`);
     expect(res.status).toBe(200);
+    expect(res.headers.get('x-cms-view-source')).toBe('plugin');
     expect(await res.text()).toBe('PLUGIN_SNIPPET');
   });
 
@@ -174,6 +175,7 @@ describe('viewsFor', () => {
     const plugin = makePlugin(EVENTS_MANIFEST, { [snippetPath]: 'PLUGIN_SNIPPET' });
     const pluginEnv = await envWith(plugin, { VIEWS: { fetch: async () => new Response('CORE') } });
     const res = await viewsFor(pluginEnv).fetch('https://views.local/layout/default.liquid');
+    expect(res.headers.get('x-cms-view-source')).toBe('core');
     expect(await res.text()).toBe('CORE');
   });
 });
@@ -349,6 +351,43 @@ describe('plugin admin proxy', () => {
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
   });
 
+  it('strips scripts and scriptable attributes from chrome-wrapped plugin fragments', async () => {
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const url = 'https://plugin-fragment-sanitize.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(u).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        return new Response(
+          '<div onclick="PLUGIN_CLICK()">SAFE</div><a href="javascript:PLUGIN_LINK()">bad</a><script>PLUGIN_SCRIPT()</script>',
+          {
+            headers: {
+              'content-type': 'text/html; charset=utf-8',
+              'x-cms-chrome': '1',
+            },
+          },
+        );
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/events/dashboard', {
+      headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    const body = await response.text();
+
+    expect(body).toContain('SAFE');
+    expect(body).not.toContain('PLUGIN_SCRIPT');
+    expect(body).not.toContain('onclick');
+    expect(body).not.toContain('javascript:PLUGIN_LINK');
+  });
+
   it('lets a plugin full-document response opt into same-origin framing', async () => {
     testEnv.PLUGIN_SECRET = 'server-secret';
     const url = 'https://plugin-frame.local';
@@ -358,7 +397,7 @@ describe('plugin admin proxy', () => {
         const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         if (new URL(u).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
         // A full document (no x-cms-chrome) opting into same-origin framing.
-        return new Response('<!doctype html><title>Preview</title><body>EMAIL</body>', {
+        return new Response('<!doctype html><title>Preview</title><body><a href="javascript:BAD()">EMAIL</a><script>BAD()</script></body>', {
           headers: { 'content-type': 'text/html; charset=utf-8', 'x-cms-frame': '1' },
         });
       },
@@ -377,9 +416,17 @@ describe('plugin admin proxy', () => {
     expect(response.status).toBe(200);
     // The CMS turns the opt-in into same-origin framing instead of the global DENY.
     expect(response.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
-    expect(response.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'self'");
+    const csp = response.headers.get('Content-Security-Policy') ?? '';
+    const scriptSrc = csp.split(';').find((directive) => directive.trim().startsWith('script-src')) ?? '';
+    expect(csp).toContain("frame-ancestors 'self'");
+    expect(scriptSrc).toContain("script-src 'self'");
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
     // The internal opt-in header isn't leaked to the browser.
     expect(response.headers.get('x-cms-frame')).toBeNull();
+    const body = await response.text();
+    expect(body).toContain('EMAIL');
+    expect(body).not.toContain('BAD()');
+    expect(body).not.toContain('javascript:BAD');
   });
 
   it('renders plugin nav items in the admin sidebar', async () => {
@@ -428,7 +475,7 @@ describe('plugin admin proxy', () => {
         if (path === '/__plugin/edit') {
           captured.push({ body: init?.body ? JSON.parse(String(init.body)) : null, headers: new Headers(init?.headers) });
           if (!serveEditView) return new Response('nf', { status: 404 });
-          return new Response('<form>PLUGIN_EDIT_MARKER</form>', {
+          return new Response('<form onclick="PLUGIN_EDIT_CLICK()">PLUGIN_EDIT_MARKER<script>PLUGIN_EDIT_SCRIPT()</script></form>', {
             headers: {
               'content-type': 'text/html; charset=utf-8',
               'x-cms-chrome': '1',
@@ -462,6 +509,8 @@ describe('plugin admin proxy', () => {
       const servedBody = await served.text();
       const servedPayload = renderPayload(servedBody);
       expect(servedBody).toContain('PLUGIN_EDIT_MARKER');   // plugin-rendered form
+      expect(servedBody).not.toContain('PLUGIN_EDIT_SCRIPT');
+      expect(servedBody).not.toContain('PLUGIN_EDIT_CLICK');
       expect(servedBody).toContain('/assets/admin.css');    // wrapped in CMS chrome
       expect(servedPayload.layoutData.title).toBe('Edit event'); // decoded title
       // The CMS hands the plugin the editor context + trusted user, with the
