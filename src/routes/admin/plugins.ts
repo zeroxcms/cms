@@ -14,11 +14,13 @@ import { pluginById, PLUGIN_ORIGIN, PLUGIN_PREFIX } from '../../plugins/registry
 import type { AppContext } from '../../utils/context';
 import { requireAdmin } from '../../middleware/auth';
 import { adminLayout } from '../../templates/layout';
+import { pluginClientView } from '../../templates/liquid';
 import { buildBaseProps } from '../../utils/admin-render';
 import { viewsFor } from '../../plugins/views';
 import {
   buildPluginProxyHeaders,
   decodePluginTitle,
+  readPluginClientViewData,
   pluginDocumentResponse,
   warnSharedPluginOrigin,
   wantsCmsChrome,
@@ -79,10 +81,13 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
   // the relaxed full-document policy below. Plugins that return a full document
   // (no header) keep the legacy behavior.
   if (wantsCmsChrome(upstreamResponse)) {
-    const fragment = await sanitizePluginHtmlFragment(await upstreamResponse.text());
+    const clientView = await readPluginClientViewData(upstreamResponse.clone());
+    const body = clientView
+      ? pluginClientView(clientView.viewPath, clientView.data)
+      : await sanitizePluginHtmlFragment(await upstreamResponse.text());
     const title = decodePluginTitle(upstreamResponse.headers.get('x-cms-title')) || plugin.manifest.name || 'Plugin';
     const base = await buildBaseProps(c);
-    const wrapped = await adminLayout(viewsFor(c.env), base, { title, body: fragment });
+    const wrapped = await adminLayout(viewsFor(c.env), base, { title, body });
     // No explicit CSP here — the global security middleware applies the strict
     // nonce policy (matching the nonce adminLayout embeds), like any CMS page.
     return c.html(wrapped, upstreamResponse.status as 200);

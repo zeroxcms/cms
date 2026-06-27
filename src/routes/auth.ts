@@ -211,7 +211,9 @@ authRoutes.get('/start', async (c) => {
     email: '',
     name: '',
     role: 'viewer',
-    type: 'access' as const,
+    // Dedicated type so this cookie can never be accepted as an access token:
+    // the auth middleware only honors type === 'access'.
+    type: 'oauth_state' as const,
     state,
     code_verifier: codeVerifier,
     provider: providerName,
@@ -348,31 +350,22 @@ authRoutes.get('/callback', async (c) => {
     }
   }
 
-  // Upsert user in DB; sync role when the identity provider supplies one
-  if (normalized.role) {
-    await c.env.DB.prepare(
-      `INSERT INTO users (oauth_id, email, name, avatar_url, role)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(oauth_id) DO UPDATE SET
-         email = excluded.email,
-         name = excluded.name,
-         avatar_url = excluded.avatar_url,
-         role = excluded.role`,
-    )
-      .bind(normalized.oauthId, normalized.email, normalized.name, normalized.avatarUrl, normalized.role)
-      .run();
-  } else {
-    await c.env.DB.prepare(
-      `INSERT INTO users (oauth_id, email, name, avatar_url)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(oauth_id) DO UPDATE SET
-         email = excluded.email,
-         name = excluded.name,
-         avatar_url = excluded.avatar_url`,
-    )
-      .bind(normalized.oauthId, normalized.email, normalized.name, normalized.avatarUrl)
-      .run();
-  }
+  // Upsert user in DB. The IdP-supplied role provisions the account on FIRST
+  // login only (the INSERT); subsequent logins refresh profile fields but never
+  // overwrite the CMS role, so role changes made in the Users admin stick and a
+  // compromised/over-permissive IdP roles claim can't silently re-escalate an
+  // existing account. Falls back to the table's 'viewer' default when the IdP
+  // supplies no role.
+  await c.env.DB.prepare(
+    `INSERT INTO users (oauth_id, email, name, avatar_url, role)
+     VALUES (?, ?, ?, ?, COALESCE(?, 'viewer'))
+     ON CONFLICT(oauth_id) DO UPDATE SET
+       email = excluded.email,
+       name = excluded.name,
+       avatar_url = excluded.avatar_url`,
+  )
+    .bind(normalized.oauthId, normalized.email, normalized.name, normalized.avatarUrl, normalized.role ?? null)
+    .run();
 
   const dbUser = await c.env.DB.prepare(
     'SELECT id, email, name, role FROM users WHERE oauth_id = ?',

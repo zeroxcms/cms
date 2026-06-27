@@ -2,7 +2,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Referrer-Policy': 'same-origin',
   'X-Content-Type-Options': 'nosniff',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-  'Strict-Transport-Security': 'max-age=31536000',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
 };
 
 export function buildContentSecurityPolicy(nonce: string): string {
@@ -97,8 +97,12 @@ function checkCrossSite(request: Request, allowedOrigins: string[]): Response | 
     return null;
   }
 
+  // Only a browser-asserted same-origin fetch passes on Sec-Fetch-Site alone.
+  // 'same-site' (a sibling subdomain that could be attacker-controlled) and
+  // 'none' (a top-level navigation, which should never be a state-changing
+  // request) are not trusted here.
   const secFetchSite = request.headers.get('Sec-Fetch-Site');
-  if (secFetchSite === 'same-origin' || secFetchSite === 'same-site' || secFetchSite === 'none') {
+  if (secFetchSite === 'same-origin') {
     return null;
   }
 

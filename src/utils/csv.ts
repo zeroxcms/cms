@@ -173,9 +173,23 @@ function shouldSkipDataCsvPath(key: string, parentPath: string): boolean {
 export function csvFormatValue(value: unknown): string {
   if (value === undefined || value === null) return '';
   const text = String(value).trim();
-  const escaped = text.replace(/"/g, '""');
-  if (/[",\r\n]/.test(text)) return `"${escaped}"`;
-  if (/^[\d\s\-+()]+$/.test(text) && /\d/.test(text)) return `="${escaped}"`;
+
+  // Numeric-looking values are wrapped as ="…" so spreadsheets keep them as
+  // text (preserving leading zeros / long digit strings). This also neutralizes
+  // any leading +/-/( that a spreadsheet would otherwise read as a formula.
+  if (/^[\d\s\-+()]+$/.test(text) && /\d/.test(text)) {
+    return `="${text.replace(/"/g, '""')}"`;
+  }
+
+  // CSV-injection guard: a cell whose first character is one a spreadsheet
+  // treats as a formula trigger (= + - @) is prefixed with an apostrophe so
+  // Excel/Sheets render it as literal text instead of evaluating it. Cell
+  // values can originate from untrusted input (e.g. plugin write-back from a
+  // public RSVP form), so this must hold for every export.
+  const guarded = /^[=+\-@]/.test(text) ? `'${text}` : text;
+
+  const escaped = guarded.replace(/"/g, '""');
+  if (/[",\r\n]/.test(guarded)) return `"${escaped}"`;
   return escaped;
 }
 

@@ -127,11 +127,23 @@ describe('app shell routes', () => {
     expect(response.status).toBe(403);
   });
 
-  it('allows mutations with an explicit cross-site Sec-Fetch-Site of none (address bar)', async () => {
+  it('rejects mutations with Sec-Fetch-Site of none and no origin signal (not same-origin)', async () => {
+    // 'none' is a top-level navigation, never a legitimate state-changing
+    // request; without an Origin/Referer same-origin signal it is rejected.
     const response = await fetchWorker('/admin/pages', {
       method: 'POST',
       body: form({ name: 'Direct', slug: 'direct', page_type: 'default' }),
       headers: { Cookie: await authCookie(), 'Sec-Fetch-Site': 'none' },
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('allows mutations explicitly marked same-origin by Sec-Fetch-Site', async () => {
+    const response = await fetchWorker('/admin/pages', {
+      method: 'POST',
+      body: form({ name: 'Direct', slug: 'direct', page_type: 'default' }),
+      headers: { Cookie: await authCookie(), 'Sec-Fetch-Site': 'same-origin' },
     });
 
     expect(response.status).toBe(302);

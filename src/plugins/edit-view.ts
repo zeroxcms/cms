@@ -23,9 +23,11 @@
 import type { AppContext } from '../utils/context';
 import { pluginForEditView, PLUGIN_ORIGIN, PLUGIN_PREFIX } from './registry';
 import { adminLayout } from '../templates/layout';
+import { pluginClientView } from '../templates/liquid';
 import { buildBaseProps } from '../utils/admin-render';
 import { viewsFor } from './views';
 import { sanitizePluginHtmlFragment } from '../security/plugin-sanitize';
+import { isPluginClientViewResponse, readPluginClientViewData } from '../security/plugin-proxy';
 
 /** Editor context the CMS sends to a plugin's `/__plugin/edit` endpoint. */
 export interface EditViewContext {
@@ -110,16 +112,24 @@ export async function pluginEditView(
   }
 
   const contentType = upstream.headers.get('content-type') ?? '';
-  if (!contentType.includes('text/html')) {
+  const clientView = await readPluginClientViewData(upstream.clone());
+  if (!contentType.includes('text/html') && !clientView) {
     console.error(`Plugin ${plugin.manifest.id} edit view returned non-HTML (${contentType})`);
     return null;
   }
 
-  const fragment = await sanitizePluginHtmlFragment(await upstream.text());
+  if (upstream.headers.get('x-cms-client-view') === '1' && !isPluginClientViewResponse(upstream)) {
+    console.error(`Plugin ${plugin.manifest.id} edit view returned an invalid client view`);
+    return null;
+  }
+
+  const body = clientView
+    ? pluginClientView(clientView.viewPath, clientView.data)
+    : await sanitizePluginHtmlFragment(await upstream.text());
   const title = decodeTitle(upstream.headers.get('x-cms-title'))
     || (context.mode === 'edit' ? `Edit: ${context.page.name}` : `New ${pageType}`);
   const base = await buildBaseProps(c);
-  const wrapped = await adminLayout(viewsFor(c.env), base, { title, body: fragment });
+  const wrapped = await adminLayout(viewsFor(c.env), base, { title, body });
   // No explicit CSP: the global security middleware applies the strict nonce
   // policy (matching the nonce adminLayout embeds), like any CMS page.
   return c.html(wrapped);

@@ -33,6 +33,33 @@ export const pluginsManageRoutes = new Hono<{ Bindings: Env; Variables: Variable
 pluginsManageRoutes.use('/plugins-manage', requirePermission('plugin:manage'));
 pluginsManageRoutes.use('/plugins-manage/*', requirePermission('plugin:manage'));
 
+/**
+ * Best-effort SSRF guard: rejects hostnames that are literally a private,
+ * loopback, link-local (incl. cloud metadata 169.254.169.254), CGNAT, or
+ * .internal address. The CMS issues server-side requests to plugin URLs and
+ * forwards the signed-in user summary + the plugin secret, so a registered URL
+ * must not be able to point those at internal infrastructure. This does not
+ * defend against DNS rebinding or a public hostname that resolves to a private
+ * IP — it only blocks the obvious literals.
+ */
+function isPrivateHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal')) return true;
+  if (host === '::1' || host === '0.0.0.0') return true;
+  if (/^f[cd][0-9a-f]{2}:/.test(host) || /^fe80:/.test(host)) return true; // IPv6 ULA / link-local
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;        // link-local + cloud metadata
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  }
+  return false;
+}
+
 /** Normalizes + validates a plugin base URL. Returns [normalized, error]. */
 function normalizeUrl(raw: string): [string, string | null] {
   const trimmed = raw.trim().replace(/\/+$/, '');
@@ -42,11 +69,18 @@ function normalizeUrl(raw: string): [string, string | null] {
   } catch {
     return [trimmed, 'Enter a valid URL.'];
   }
-  if (parsed.protocol === 'https:') return [trimmed, null];
+  // localhost over http stays allowed for local development against a plugin
+  // Worker on another port; every other host must be HTTPS and non-private.
   if (parsed.protocol === 'http:' && parsed.hostname === 'localhost') {
     return [trimmed, null];
   }
-  return [trimmed, 'URL must be HTTPS (http is allowed only for localhost).'];
+  if (parsed.protocol !== 'https:') {
+    return [trimmed, 'URL must be HTTPS (http is allowed only for localhost).'];
+  }
+  if (isPrivateHost(parsed.hostname)) {
+    return [trimmed, 'URL must not point to a private, loopback, or internal host.'];
+  }
+  return [trimmed, null];
 }
 
 /** Validates optional config JSON. Returns [stored, error]. */

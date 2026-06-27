@@ -105,7 +105,7 @@ export async function verifyJWT(
 
     const payload = JSON.parse(base64urlDecode(payloadEncoded)) as JWTPayload;
     if (typeof payload.exp !== 'number' || typeof payload.iat !== 'number') return null;
-    if (payload.type !== 'access' && payload.type !== 'refresh') return null;
+    if (payload.type !== 'access' && payload.type !== 'refresh' && payload.type !== 'oauth_state') return null;
     if (payload.iss !== JWT_ISS || payload.aud !== JWT_AUD) return null;
 
     if (payload.exp < Math.floor(Date.now() / 1000)) return null;

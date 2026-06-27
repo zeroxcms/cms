@@ -25,8 +25,29 @@ export function buildPluginProxyHeaders(source: Headers, user: JWTPayload, plugi
 }
 
 export function wantsCmsChrome(response: Response): boolean {
-  return response.headers.get('x-cms-chrome') === '1'
-    && (response.headers.get('content-type') ?? '').includes('text/html');
+  if (response.headers.get('x-cms-chrome') !== '1') return false;
+  const contentType = response.headers.get('content-type') ?? '';
+  return contentType.includes('text/html') || isPluginClientViewResponse(response);
+}
+
+export function isPluginClientViewResponse(response: Response): boolean {
+  const contentType = response.headers.get('content-type') ?? '';
+  return response.headers.get('x-cms-client-view') === '1'
+    && contentType.includes('application/json')
+    && isSafePluginViewPath(response.headers.get('x-cms-view-path') ?? '');
+}
+
+export async function readPluginClientViewData(response: Response): Promise<{
+  viewPath: string;
+  data: Record<string, unknown>;
+} | null> {
+  if (!isPluginClientViewResponse(response)) return null;
+  const data = await response.json().catch(() => null);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  return {
+    viewPath: response.headers.get('x-cms-view-path') ?? '',
+    data: data as Record<string, unknown>,
+  };
 }
 
 /** Decodes the percent-encoded x-cms-title header (plugins encode it for header safety). */
@@ -64,6 +85,13 @@ function buildPluginDocumentCsp(allowFraming: boolean): string {
     "base-uri 'none'",
     allowFraming ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
   ].join('; ');
+}
+
+function isSafePluginViewPath(path: string): boolean {
+  return path.startsWith('/')
+    && !path.includes('..')
+    && (path.startsWith('/templates/') || path.startsWith('/sections/'))
+    && (path.endsWith('.json') || path.endsWith('.liquid'));
 }
 
 let sharedOriginWarned = false;

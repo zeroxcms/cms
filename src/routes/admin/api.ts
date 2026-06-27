@@ -89,7 +89,7 @@ apiRoutes.get('/api/pages/:type', requirePermission('content:read'), async (c) =
   })));
 });
 
-apiRoutes.get('/api/tags/:type', async (c) => {
+apiRoutes.get('/api/tags/:type', requirePermission('content:read'), async (c) => {
   const type = c.req.param('type');
   const taxonomy = await c.env.DB.prepare('SELECT * FROM taxonomies WHERE name = ? OR slug = ?')
     .bind(type, type)

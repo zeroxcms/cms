@@ -427,7 +427,8 @@
     try {
       const layoutData = { ...(payload.layoutData || {}) };
       if (payload.bodyView) {
-        layoutData.body = await renderView(payload.bodyView.viewPath, payload.bodyView.data || {});
+        const body = await renderView(payload.bodyView.viewPath, payload.bodyView.data || {});
+        layoutData.body = payload.bodyView.plugin ? sanitizePluginHtml(body) : body;
       }
       const html = await renderLiquid(payload.layoutPath || '/layout/default.liquid', layoutData);
       replaceDocument(html);

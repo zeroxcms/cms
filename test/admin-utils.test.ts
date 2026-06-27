@@ -161,4 +161,18 @@ describe('CSV parsing and formatting', () => {
     expect(csvFormatValue('say "hi"')).toBe('"say ""hi"""');
     expect(csvFormatValue('0123')).toBe('="0123"');
   });
+
+  it('neutralizes CSV/formula-injection payloads', () => {
+    // Leading formula triggers are prefixed with an apostrophe so a spreadsheet
+    // treats them as text rather than evaluating them.
+    expect(csvFormatValue('=1+1')).toBe("'=1+1");
+    expect(csvFormatValue('@SUM(A1:A9)')).toBe("'@SUM(A1:A9)");
+    expect(csvFormatValue('+cmd')).toBe("'+cmd");
+    expect(csvFormatValue('-cmd|calc')).toBe("'-cmd|calc");
+    // A comma in a guarded value still gets quoted (apostrophe retained inside).
+    expect(csvFormatValue('=a,b')).toBe('"\'=a,b"');
+    // Purely numeric values keep the ="…" text-wrapping (no apostrophe needed).
+    expect(csvFormatValue('-5')).toBe('="-5"');
+    expect(csvFormatValue('+1')).toBe('="+1"');
+  });
 });
