@@ -128,6 +128,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
   <script id="cms-render-payload" type="application/json" nonce="${escHtml(nonce)}">${jsonScript(payload)}</script>
   <script src="/assets/liquid.browser.min.js${escHtml(revisionQuery)}" nonce="${escHtml(nonce)}" defer></script>
   <script src="/assets/client-render.js${escHtml(revisionQuery)}" nonce="${escHtml(nonce)}" defer></script>
+  <script src="/assets/table-filter.js${escHtml(revisionQuery)}" nonce="${escHtml(nonce)}" defer></script>
 </body>
 </html>`;
 }

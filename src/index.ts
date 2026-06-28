@@ -109,6 +109,9 @@ app.get('/assets/*', async (c) => {
   const response = await c.env.VIEWS.fetch(`https://views.local${assetPath}`);
   if (!response.ok) return c.notFound();
   const headers = new Headers(response.headers);
+  if (assetPath.endsWith('.js')) {
+    headers.set('Content-Type', 'text/javascript; charset=utf-8');
+  }
   headers.set('Cache-Control', 'public, max-age=86400');
   return new Response(response.body, { status: response.status, headers });
 });

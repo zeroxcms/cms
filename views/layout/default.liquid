@@ -171,6 +171,7 @@
     })();
   </script>
   <link rel="stylesheet" href="/assets/admin.css">
+  <script src="/assets/table-filter.js{% if viewRevision != blank %}?r={{ viewRevision | escape }}{% endif %}" nonce="{{ nonce }}" defer></script>
 </head>
 <body class="h-full overflow-x-hidden">
   {% if admin %}
@@ -363,6 +364,9 @@
       if (!tr) return;
       var table = tr.closest('table[data-reorder]');
       if (!table) return;
+      if (table.getAttribute('data-table-filter-active') === '1') {
+        e.preventDefault(); return;
+      }
       if (table.hasAttribute('data-reorder-handle-only') && (!mdTarget || !mdTarget.closest('[data-reorder-handle]'))) {
         e.preventDefault(); return;
       }

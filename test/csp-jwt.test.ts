@@ -42,14 +42,19 @@ describe('content security policy', () => {
     const html = await response.text();
 
     expect(html).toContain('/assets/admin.css');
+    expect(html).toContain('/assets/table-filter.js');
     expect(html).not.toContain('cdn.tailwindcss.com');
   });
 
-  it('serves the compiled stylesheet', async () => {
-    const response = await worker.fetch(new Request('http://localhost/assets/admin.css'));
+  it.each([
+    { path: '/assets/admin.css', contentType: 'text/css' },
+    { path: '/assets/table-filter.js', contentType: 'text/javascript' },
+  ])('serves $path', async ({ path, contentType }) => {
+    const response = await worker.fetch(new Request(`http://localhost${path}`));
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Type')).toContain('text/css');
+    expect(response.headers.get('Content-Type')).toContain(contentType);
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=86400');
   });
 });
 
