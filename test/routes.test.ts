@@ -716,16 +716,31 @@ describe('admin routes', () => {
   });
 
   it('renders user delete actions for removable users only', async () => {
+    await env.DB.prepare(
+      `INSERT INTO user_oauth_identities (user_id, provider, provider_user_id, oauth_id)
+       VALUES (?, ?, ?, ?)`,
+    )
+      .bind(2, 'github', 'editor-gh', 'github:editor-gh')
+      .run();
+
     const response = await fetchWorker('/admin/users', {
       headers: { Cookie: await authCookie() },
     });
     const data = bodyData(await response.text());
 
     expect(data.users).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 1, canDelete: false }),
+      expect.objectContaining({
+        id: 1,
+        canDelete: false,
+        identityProviders: [{ provider: 'eventuai', label: 'Eventuai' }],
+      }),
       expect.objectContaining({
         id: 2,
         canDelete: true,
+        identityProviders: [
+          { provider: 'github', label: 'GitHub' },
+          { provider: 'eventuai', label: 'Eventuai' },
+        ],
         deleteAction: '/admin/users/2/delete',
       }),
     ]));

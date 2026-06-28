@@ -16,6 +16,15 @@ export const usersRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 usersRoutes.use('/users', requirePermission('users:manage'));
 usersRoutes.use('/users/*', requirePermission('users:manage'));
 
+interface UserListRow extends User {
+  oauth_id: string;
+}
+
+interface UserIdentityProviderRow {
+  user_id: number;
+  provider: string;
+}
+
 function rolesLabel(role: string, options: Array<{ name: string; label: string }>): string {
   const byName = new Map(options.map((option) => [option.name, option.label]));
   return role
@@ -30,24 +39,57 @@ function hasAdminRole(role: string): boolean {
   return role.split(',').map((r) => r.trim()).includes('admin');
 }
 
+function providerFromOAuthId(oauthId: string): string {
+  const index = oauthId.indexOf(':');
+  return index === -1 ? 'legacy' : oauthId.slice(0, index);
+}
+
+function providerLabel(provider: string): string {
+  if (provider === 'eventuai') return 'Eventuai';
+  if (provider === 'github') return 'GitHub';
+  if (provider === 'google') return 'Google';
+  if (provider === 'microsoft') return 'Microsoft';
+  if (provider === 'apple') return 'Apple';
+  if (provider === 'legacy') return 'Legacy';
+  return provider.charAt(0).toUpperCase() + provider.slice(1);
+}
+
 usersRoutes.get('/users', async (c) => {
   const currentUserId = Number(c.get('user').sub);
-  const [users, options, adminCount] = await Promise.all([
-    c.env.DB.prepare('SELECT id, name, email, role FROM users ORDER BY name ASC, email ASC').all<User>(),
+  const [users, identities, options, adminCount] = await Promise.all([
+    c.env.DB.prepare('SELECT id, oauth_id, name, email, role FROM users ORDER BY name ASC, email ASC').all<UserListRow>(),
+    c.env.DB.prepare(
+      `SELECT user_id, provider
+         FROM user_oauth_identities
+        ORDER BY created_at ASC, id ASC`,
+    ).all<UserIdentityProviderRow>(),
     allRoleOptions(c.env),
     c.env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE (',' || replace(role, ' ', '') || ',') LIKE '%,admin,%'")
       .first<{ n: number }>(),
   ]);
+  const providersByUser = new Map<number, string[]>();
+  for (const identity of identities.results) {
+    const providers = providersByUser.get(identity.user_id) ?? [];
+    if (!providers.includes(identity.provider)) providers.push(identity.provider);
+    providersByUser.set(identity.user_id, providers);
+  }
+
   return renderPage(c, usersPage, {
-    users: users.results.map((user) => ({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      rolesLabel: rolesLabel(user.role, options),
-      editHref: `/admin/users/${user.id}/edit`,
-      deleteAction: `/admin/users/${user.id}/delete`,
-      canDelete: user.id !== currentUserId && (!hasAdminRole(user.role) || (adminCount?.n ?? 0) > 1),
-    })),
+    users: users.results.map((user) => {
+      const providers = [...(providersByUser.get(user.id) ?? [])];
+      const fallbackProvider = providerFromOAuthId(user.oauth_id);
+      if (fallbackProvider && !providers.includes(fallbackProvider)) providers.push(fallbackProvider);
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        identityProviders: providers.map((provider) => ({ provider, label: providerLabel(provider) })),
+        rolesLabel: rolesLabel(user.role, options),
+        editHref: `/admin/users/${user.id}/edit`,
+        deleteAction: `/admin/users/${user.id}/delete`,
+        canDelete: user.id !== currentUserId && (!hasAdminRole(user.role) || (adminCount?.n ?? 0) > 1),
+      };
+    }),
     flash: c.req.query('flash') ?? '',
     error: c.req.query('error') ?? '',
   });

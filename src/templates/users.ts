@@ -6,6 +6,7 @@ export async function usersPage(views: Fetcher, opts: BaseTemplateProps & {
     id: number;
     name: string;
     email: string;
+    identityProviders: Array<{ provider: string; label: string }>;
     rolesLabel: string;
     editHref: string;
     deleteAction: string;
