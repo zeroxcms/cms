@@ -6,7 +6,7 @@
   {% if hasError %}
     <div class="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{{ error | escape }}</div>
   {% endif %}
-  <form method="POST" action="{{ action | escape }}" class="min-w-0 space-y-4">
+  <form id="page-type-form" method="POST" action="{{ action | escape }}" class="min-w-0 space-y-4">
     <label for="page_type_name" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Name</span>
       <input id="page_type_name" name="name" required value="{{ name | escape }}"{% if readOnly %} readonly{% endif %} class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm{% if readOnly %} bg-gray-50 text-gray-600{% endif %}">
@@ -60,14 +60,15 @@
       {% unless readOnly %}<span class="block text-xs text-gray-500 mt-1">Taxonomies shown when editing pages of this type.</span>{% endunless %}
     </fieldset>
 
-    <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-      {% unless readOnly %}<button type="submit" class="w-full shrink-0 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg sm:w-auto">Save</button>{% endunless %}
-      <a href="/admin/page_types" class="w-full shrink-0 px-4 py-2 text-center bg-white border border-gray-300 rounded-lg text-sm font-semibold sm:w-auto">{% if readOnly %}Back{% else %}Cancel{% endif %}</a>
-    </div>
   </form>
   {% if isEdit %}
-    <form method="POST" action="{{ deleteAction | escape }}" data-confirm="Delete this page type? Existing pages keep their type string.">
-      <button type="submit" class="mt-4 w-full px-4 py-2 text-sm font-semibold text-red-600 sm:w-auto">Delete</button>
-    </form>
+    <form id="page-type-delete-form" method="POST" action="{{ deleteAction | escape }}" data-confirm="Delete this page type? Existing pages keep their type string."></form>
   {% endif %}
+  <div class="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+    {% unless readOnly %}<button form="page-type-form" type="submit" class="w-full px-6 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm sm:w-auto">Save</button>{% endunless %}
+    <a href="/admin/page_types" class="w-full px-6 py-2 text-center bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors sm:w-auto">{% if readOnly %}Back{% else %}Cancel{% endif %}</a>
+    {% if isEdit %}{% unless readOnly %}
+      <button form="page-type-delete-form" type="submit" class="w-full px-6 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-colors shadow-sm sm:ml-auto sm:w-auto">Delete</button>
+    {% endunless %}{% endif %}
+  </div>
 </div>
