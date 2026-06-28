@@ -2,9 +2,12 @@ import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 
 export interface ProfileIdentity {
+  id: string;
   provider: string;
   label: string;
   providerUserId: string;
+  disconnectHref: string;
+  canDisconnect: boolean;
   connected: boolean;
 }
 
@@ -20,6 +23,8 @@ export async function profilePage(views: Fetcher, opts: BaseTemplateProps & {
   name: string;
   roleLabel: string;
   avatarUrl: string;
+  flash?: string;
+  error?: string;
   identities: ProfileIdentity[];
   providers: ProfileProvider[];
 }): Promise<string> {
@@ -28,6 +33,10 @@ export async function profilePage(views: Fetcher, opts: BaseTemplateProps & {
     email: opts.email,
     roleLabel: opts.roleLabel,
     avatarUrl: opts.avatarUrl,
+    flash: opts.flash ?? '',
+    error: opts.error ?? '',
+    hasFlash: !!opts.flash,
+    hasError: !!opts.error,
     hasAvatar: opts.avatarUrl.length > 0,
     initial: opts.name.trim().charAt(0).toUpperCase() || opts.email.trim().charAt(0).toUpperCase() || '?',
     hasIdentities: opts.identities.length > 0,

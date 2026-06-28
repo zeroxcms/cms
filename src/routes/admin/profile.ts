@@ -8,6 +8,7 @@ import { allRoleOptions } from '../../utils/role-store';
 export const profileRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 interface OAuthIdentityRow {
+  id: number;
   provider: string;
   provider_user_id: string;
   oauth_id: string;
@@ -50,12 +51,14 @@ function roleLabel(role: string, options: Array<{ name: string; label: string }>
 
 profileRoutes.get('/profile', async (c) => {
   const userId = Number(c.get('user').sub);
+  const flash = c.req.query('flash') ?? '';
+  const error = c.req.query('error') ?? '';
   const [user, identityRows, roleOptions] = await Promise.all([
     c.env.DB.prepare('SELECT id, oauth_id, email, name, avatar_url, role FROM users WHERE id = ?')
       .bind(userId)
       .first<User>(),
     c.env.DB.prepare(
-      `SELECT provider, provider_user_id, oauth_id
+      `SELECT id, provider, provider_user_id, oauth_id
          FROM user_oauth_identities
         WHERE user_id = ?
         ORDER BY created_at ASC, id ASC`,
@@ -73,16 +76,21 @@ profileRoutes.get('/profile', async (c) => {
   if (user.oauth_id && !byOAuthId.has(user.oauth_id)) {
     const fallback = splitOAuthId(user.oauth_id);
     byOAuthId.set(user.oauth_id, {
+      id: 0,
       provider: fallback.provider,
       provider_user_id: fallback.providerUserId,
       oauth_id: user.oauth_id,
     });
   }
 
+  const identityCount = byOAuthId.size;
   const identities = Array.from(byOAuthId.values()).map((identity) => ({
+    id: String(identity.id),
     provider: identity.provider,
     label: providerLabel(identity.provider),
     providerUserId: identity.provider_user_id,
+    disconnectHref: `/admin/profile/identities/${identity.id}/disconnect`,
+    canDisconnect: identity.id > 0 && identityCount > 1,
     connected: true,
   }));
   const connected = new Set(identities.map((identity) => identity.provider));
@@ -98,7 +106,62 @@ profileRoutes.get('/profile', async (c) => {
     email: user.email,
     roleLabel: roleLabel(user.role, roleOptions),
     avatarUrl: user.avatar_url ?? '',
+    flash,
+    error,
     identities,
     providers,
   });
+});
+
+profileRoutes.post('/profile/identities/:id/disconnect', async (c) => {
+  const userId = Number(c.get('user').sub);
+  const identityId = Number(c.req.param('id'));
+  if (!Number.isInteger(identityId) || identityId <= 0) {
+    return c.redirect('/admin/profile?error=Invalid+identity');
+  }
+
+  const identity = await c.env.DB.prepare(
+    'SELECT id, user_id, oauth_id FROM user_oauth_identities WHERE id = ? AND user_id = ?',
+  )
+    .bind(identityId, userId)
+    .first<{ id: number; user_id: number; oauth_id: string }>();
+  if (!identity) {
+    return c.redirect('/admin/profile?error=Identity+not+found');
+  }
+
+  const count = await c.env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM user_oauth_identities WHERE user_id = ?',
+  )
+    .bind(userId)
+    .first<{ n: number }>();
+  if ((count?.n ?? 0) <= 1) {
+    return c.redirect('/admin/profile?error=At+least+one+sign-in+method+is+required');
+  }
+
+  const user = await c.env.DB.prepare('SELECT oauth_id FROM users WHERE id = ?')
+    .bind(userId)
+    .first<{ oauth_id: string }>();
+  if (user?.oauth_id === identity.oauth_id) {
+    const replacement = await c.env.DB.prepare(
+      `SELECT oauth_id
+         FROM user_oauth_identities
+        WHERE user_id = ? AND id != ?
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1`,
+    )
+      .bind(userId, identityId)
+      .first<{ oauth_id: string }>();
+    if (!replacement) {
+      return c.redirect('/admin/profile?error=At+least+one+sign-in+method+is+required');
+    }
+    await c.env.DB.prepare('UPDATE users SET oauth_id = ? WHERE id = ?')
+      .bind(replacement.oauth_id, userId)
+      .run();
+  }
+
+  await c.env.DB.prepare('DELETE FROM user_oauth_identities WHERE id = ? AND user_id = ?')
+    .bind(identityId, userId)
+    .run();
+
+  return c.redirect('/admin/profile?flash=Sign-in+method+disconnected');
 });

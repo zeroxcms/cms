@@ -616,12 +616,103 @@ describe('admin routes', () => {
     expect(data.hasIdentities).toBe(true);
     expect(data.identities).toEqual(expect.arrayContaining([
       expect.objectContaining({ provider: 'eventuai', label: 'Eventuai' }),
-      expect.objectContaining({ provider: 'google', label: 'Google' }),
+      expect.objectContaining({
+        provider: 'google',
+        label: 'Google',
+        canDisconnect: true,
+        disconnectHref: expect.stringMatching(/^\/admin\/profile\/identities\/\d+\/disconnect$/),
+      }),
     ]));
     expect(data.providers).toEqual(expect.arrayContaining([
       expect.objectContaining({ provider: 'google', connected: true }),
       expect.objectContaining({ provider: 'microsoft', connected: false, connectHref: '/auth/start?provider=microsoft&link=1' }),
     ]));
+  });
+
+  it('disconnects a linked OAuth identity from the profile page', async () => {
+    await env.DB.prepare(
+      `INSERT INTO user_oauth_identities (user_id, provider, provider_user_id, oauth_id)
+       VALUES (?, ?, ?, ?)`,
+    )
+      .bind(1, 'eventuai', 'admin', 'eventuai:admin')
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO user_oauth_identities (user_id, provider, provider_user_id, oauth_id)
+       VALUES (?, ?, ?, ?)`,
+    )
+      .bind(1, 'google', 'google-admin', 'google:google-admin')
+      .run();
+    const identity = await env.DB.prepare('SELECT id FROM user_oauth_identities WHERE oauth_id = ?')
+      .bind('google:google-admin')
+      .first<{ id: number }>();
+
+    const response = await fetchWorker(`/admin/profile/identities/${identity?.id}/disconnect`, {
+      method: 'POST',
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/profile?flash=Sign-in+method+disconnected');
+    expect(await env.DB.prepare('SELECT id FROM user_oauth_identities WHERE oauth_id = ?')
+      .bind('google:google-admin')
+      .first()).toBeNull();
+    expect(await env.DB.prepare('SELECT oauth_id FROM users WHERE id = ?')
+      .bind(1)
+      .first()).toEqual({ oauth_id: 'eventuai:admin' });
+  });
+
+  it('does not disconnect the final OAuth identity', async () => {
+    await env.DB.prepare(
+      `INSERT INTO user_oauth_identities (user_id, provider, provider_user_id, oauth_id)
+       VALUES (?, ?, ?, ?)`,
+    )
+      .bind(1, 'eventuai', 'admin', 'eventuai:admin')
+      .run();
+    const identity = await env.DB.prepare('SELECT id FROM user_oauth_identities WHERE oauth_id = ?')
+      .bind('eventuai:admin')
+      .first<{ id: number }>();
+
+    const response = await fetchWorker(`/admin/profile/identities/${identity?.id}/disconnect`, {
+      method: 'POST',
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/profile?error=At+least+one+sign-in+method+is+required');
+    expect(await env.DB.prepare('SELECT id FROM user_oauth_identities WHERE oauth_id = ?')
+      .bind('eventuai:admin')
+      .first()).not.toBeNull();
+  });
+
+  it('rotates the legacy primary identity before disconnecting it', async () => {
+    await env.DB.prepare(
+      `INSERT INTO user_oauth_identities (user_id, provider, provider_user_id, oauth_id)
+       VALUES (?, ?, ?, ?)`,
+    )
+      .bind(1, 'eventuai', 'admin', 'eventuai:admin')
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO user_oauth_identities (user_id, provider, provider_user_id, oauth_id)
+       VALUES (?, ?, ?, ?)`,
+    )
+      .bind(1, 'github', 'admin-gh', 'github:admin-gh')
+      .run();
+    const identity = await env.DB.prepare('SELECT id FROM user_oauth_identities WHERE oauth_id = ?')
+      .bind('eventuai:admin')
+      .first<{ id: number }>();
+
+    const response = await fetchWorker(`/admin/profile/identities/${identity?.id}/disconnect`, {
+      method: 'POST',
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(await env.DB.prepare('SELECT oauth_id FROM users WHERE id = ?')
+      .bind(1)
+      .first()).toEqual({ oauth_id: 'github:admin-gh' });
+    expect(await env.DB.prepare('SELECT id FROM user_oauth_identities WHERE oauth_id = ?')
+      .bind('eventuai:admin')
+      .first()).toBeNull();
   });
 
   it('POST /admin/pages/batch-weight updates multiple page weights', async () => {

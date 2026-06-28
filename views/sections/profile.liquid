@@ -4,6 +4,13 @@
     <p class="mt-1 text-sm text-gray-500">Manage your CMS account and connected sign-in methods.</p>
   </div>
 
+  {% if hasFlash %}
+    <div data-profile-alert class="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">{{ flash | escape }}</div>
+  {% endif %}
+  {% if hasError %}
+    <div data-profile-alert class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ error | escape }}</div>
+  {% endif %}
+
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
     <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 sm:p-6">
       <div class="flex min-w-0 items-center gap-4">
@@ -33,7 +40,20 @@
                 <p class="text-sm font-medium text-gray-900">{{ identity.label | escape }}</p>
                 <p class="truncate text-xs text-gray-500">{{ identity.providerUserId | escape }}</p>
               </div>
-              <span class="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">Connected</span>
+              <div class="flex shrink-0 items-center gap-2">
+                <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800">Connected</span>
+                {% if identity.canDisconnect %}
+                  <form method="post"
+                        action="{{ identity.disconnectHref | escape }}"
+                        data-confirm="Disconnect this sign-in method?">
+                    <button type="submit"
+                            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-white text-red-600 hover:bg-red-50"
+                            aria-label="Disconnect {{ identity.label | escape }}">
+                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#trash"></use></svg>
+                    </button>
+                  </form>
+                {% endif %}
+              </div>
             </div>
           {% endfor %}
         {% else %}
@@ -70,3 +90,9 @@
     {% endif %}
   </section>
 </div>
+
+<script>
+  document.querySelectorAll('[data-profile-alert]').forEach((alert) => {
+    setTimeout(() => alert.remove(), 4000);
+  });
+</script>
