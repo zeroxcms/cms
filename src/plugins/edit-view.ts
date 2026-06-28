@@ -124,7 +124,7 @@ export async function pluginEditView(
   }
 
   const body = clientView
-    ? pluginClientView(clientView.viewPath, clientView.data)
+    ? pluginClientView(clientView.viewPath, clientView.data, `/admin/plugins/${plugin.manifest.id}/views`)
     : await sanitizePluginHtmlFragment(await upstream.text());
   const title = decodeTitle(upstream.headers.get('x-cms-title'))
     || (context.mode === 'edit' ? `Edit: ${context.page.name}` : `New ${pageType}`);

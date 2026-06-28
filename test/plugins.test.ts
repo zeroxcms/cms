@@ -29,6 +29,7 @@ interface RenderPayload {
     viewPath: string;
     data: Record<string, unknown>;
     plugin?: boolean;
+    viewBasePath?: string;
   };
 }
 
@@ -426,6 +427,7 @@ describe('plugin admin proxy', () => {
     expect(response.status).toBe(200);
     expect(payload.bodyView).toMatchObject({
       viewPath: '/templates/plugin-dashboard.json',
+      viewBasePath: '/admin/plugins/events/views',
       plugin: true,
       data: { marker: 'CLIENT_VIEW_MARKER' },
     });

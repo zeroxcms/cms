@@ -8,6 +8,7 @@
   const templateCache = new Map();
   const templateSource = new Map();
   const pluginOutputCache = new Map();
+  let activeViewBasePath = null;
   const engine = new liquidjs.Liquid({
     cache: true,
     extname: '.liquid',
@@ -53,25 +54,44 @@
     return url + (url.includes('?') ? '&' : '?') + 'r=' + encodeURIComponent(revision);
   }
 
+  function currentViewBasePath() {
+    return activeViewBasePath || payload.viewBasePath || '/admin/views';
+  }
+
+  function templateKey(basePath, normalizedPath) {
+    return basePath + ' ' + normalizedPath;
+  }
+
   async function loadTemplate(path) {
     const normalized = normalizePath(path);
-    if (templateCache.has(normalized)) return templateCache.get(normalized);
+    const basePath = currentViewBasePath();
+    const key = templateKey(basePath, normalized);
+    if (templateCache.has(key)) return templateCache.get(key);
 
-    const basePath = payload.viewBasePath || '/admin/views';
     const promise = fetch(withRevision(basePath + normalized), {
       credentials: 'same-origin',
       headers: { Accept: normalized.endsWith('.json') ? 'application/json' : 'text/plain' },
     }).then(async (response) => {
       if (!response.ok) {
-        templateCache.delete(normalized);
-        templateSource.delete(normalized);
+        templateCache.delete(key);
+        templateSource.delete(key);
         throw new TemplateNotFoundError('View file not found: ' + normalized);
       }
-      templateSource.set(normalized, response.headers.get('x-cms-view-source') === 'plugin' ? 'plugin' : 'core');
+      templateSource.set(key, response.headers.get('x-cms-view-source') === 'plugin' ? 'plugin' : 'core');
       return response.text();
     });
-    templateCache.set(normalized, promise);
+    templateCache.set(key, promise);
     return promise;
+  }
+
+  async function withViewBasePath(basePath, callback) {
+    const previous = activeViewBasePath;
+    activeViewBasePath = basePath || previous;
+    try {
+      return await callback();
+    } finally {
+      activeViewBasePath = previous;
+    }
   }
 
   async function templateExists(path) {
@@ -366,7 +386,7 @@
   }
 
   function isPluginTemplate(path) {
-    return templateSource.get(normalizePath(path)) === 'plugin';
+    return templateSource.get(templateKey(currentViewBasePath(), normalizePath(path))) === 'plugin';
   }
 
   function sanitizePluginHtml(html) {
@@ -427,7 +447,9 @@
     try {
       const layoutData = { ...(payload.layoutData || {}) };
       if (payload.bodyView) {
-        const body = await renderView(payload.bodyView.viewPath, payload.bodyView.data || {});
+        const body = await withViewBasePath(payload.bodyView.viewBasePath, () => (
+          renderView(payload.bodyView.viewPath, payload.bodyView.data || {})
+        ));
         layoutData.body = payload.bodyView.plugin ? pluginContentWrapper(sanitizePluginHtml(body)) : body;
       }
       const html = await renderLiquid(payload.layoutPath || '/layout/default.liquid', layoutData);

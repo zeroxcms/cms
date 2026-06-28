@@ -83,7 +83,7 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
   if (wantsCmsChrome(upstreamResponse)) {
     const clientView = await readPluginClientViewData(upstreamResponse.clone());
     const body = clientView
-      ? pluginClientView(clientView.viewPath, clientView.data)
+      ? pluginClientView(clientView.viewPath, clientView.data, `/admin/plugins/${pluginId}/views`)
       : await sanitizePluginHtmlFragment(await upstreamResponse.text());
     const title = decodePluginTitle(upstreamResponse.headers.get('x-cms-title')) || plugin.manifest.name || 'Plugin';
     const base = await buildBaseProps(c);
