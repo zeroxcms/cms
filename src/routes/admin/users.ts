@@ -26,10 +26,17 @@ function rolesLabel(role: string, options: Array<{ name: string; label: string }
     .join(', ');
 }
 
+function hasAdminRole(role: string): boolean {
+  return role.split(',').map((r) => r.trim()).includes('admin');
+}
+
 usersRoutes.get('/users', async (c) => {
-  const [users, options] = await Promise.all([
+  const currentUserId = Number(c.get('user').sub);
+  const [users, options, adminCount] = await Promise.all([
     c.env.DB.prepare('SELECT id, name, email, role FROM users ORDER BY name ASC, email ASC').all<User>(),
     allRoleOptions(c.env),
+    c.env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE (',' || replace(role, ' ', '') || ',') LIKE '%,admin,%'")
+      .first<{ n: number }>(),
   ]);
   return renderPage(c, usersPage, {
     users: users.results.map((user) => ({
@@ -38,7 +45,11 @@ usersRoutes.get('/users', async (c) => {
       email: user.email,
       rolesLabel: rolesLabel(user.role, options),
       editHref: `/admin/users/${user.id}/edit`,
+      deleteAction: `/admin/users/${user.id}/delete`,
+      canDelete: user.id !== currentUserId && (!hasAdminRole(user.role) || (adminCount?.n ?? 0) > 1),
     })),
+    flash: c.req.query('flash') ?? '',
+    error: c.req.query('error') ?? '',
   });
 });
 
@@ -78,6 +89,37 @@ usersRoutes.post('/users/:id', requirePermission('users:manage'), async (c) => {
   await c.env.DB.prepare('UPDATE users SET role = ? WHERE id = ?').bind(nextRole, id).run();
   logAudit(c, 'user.roles', 'user', id, { role: nextRole });
   return c.redirect('/admin/users');
+});
+
+usersRoutes.post('/users/:id/delete', requirePermission('users:manage'), async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  const currentUserId = Number(c.get('user').sub);
+  if (!Number.isInteger(id) || id <= 0) return c.notFound();
+  if (id === currentUserId) {
+    return c.redirect('/admin/users?error=You+cannot+remove+your+own+user');
+  }
+
+  const user = await c.env.DB.prepare('SELECT id, email, role FROM users WHERE id = ?')
+    .bind(id)
+    .first<Pick<User, 'id' | 'email' | 'role'>>();
+  if (!user) return c.notFound();
+
+  if (hasAdminRole(user.role)) {
+    const otherAdmins = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE id != ? AND (',' || replace(role, ' ', '') || ',') LIKE '%,admin,%'")
+      .bind(id)
+      .first<{ n: number }>();
+    if ((otherAdmins?.n ?? 0) === 0) {
+      return c.redirect('/admin/users?error=Cannot+remove+the+last+administrator');
+    }
+  }
+
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM user_oauth_identities WHERE user_id = ?').bind(id),
+    c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(id),
+  ]);
+  logAudit(c, 'user.delete', 'user', id, { email: user.email });
+  return c.redirect('/admin/users?flash=User+removed');
 });
 
 async function userForm(c: AppContext, user: User, error?: string): Promise<Response> {

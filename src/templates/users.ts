@@ -2,10 +2,24 @@ import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 
 export async function usersPage(views: Fetcher, opts: BaseTemplateProps & {
-  users: Array<{ id: number; name: string; email: string; rolesLabel: string; editHref: string }>;
+  users: Array<{
+    id: number;
+    name: string;
+    email: string;
+    rolesLabel: string;
+    editHref: string;
+    deleteAction: string;
+    canDelete: boolean;
+  }>;
+  flash?: string;
+  error?: string;
 }): Promise<string> {
   const { users } = opts;
   const body = await renderView(views, '/templates/users.json', {
+    flash: opts.flash ?? '',
+    error: opts.error ?? '',
+    hasFlash: !!opts.flash,
+    hasError: !!opts.error,
     hasUsers: users.length > 0,
     users,
   });

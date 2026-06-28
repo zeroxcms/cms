@@ -715,6 +715,79 @@ describe('admin routes', () => {
       .first()).toBeNull();
   });
 
+  it('renders user delete actions for removable users only', async () => {
+    const response = await fetchWorker('/admin/users', {
+      headers: { Cookie: await authCookie() },
+    });
+    const data = bodyData(await response.text());
+
+    expect(data.users).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 1, canDelete: false }),
+      expect.objectContaining({
+        id: 2,
+        canDelete: true,
+        deleteAction: '/admin/users/2/delete',
+      }),
+    ]));
+  });
+
+  it('removes a user with their OAuth identities and sessions', async () => {
+    await env.DB.prepare(
+      `INSERT INTO user_oauth_identities (user_id, provider, provider_user_id, oauth_id)
+       VALUES (?, ?, ?, ?)`,
+    )
+      .bind(2, 'eventuai', 'editor', 'eventuai:editor')
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO sessions (user_id, refresh_token_hash, expires_at) VALUES (?, ?, datetime('now', '+1 day'))",
+    )
+      .bind(2, 'editor-session')
+      .run();
+
+    const response = await fetchWorker('/admin/users/2/delete', {
+      method: 'POST',
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/users?flash=User+removed');
+    expect(await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(2).first()).toBeNull();
+    expect(await env.DB.prepare('SELECT id FROM user_oauth_identities WHERE user_id = ?').bind(2).first()).toBeNull();
+    expect(await env.DB.prepare('SELECT id FROM sessions WHERE user_id = ?').bind(2).first()).toBeNull();
+    expect(await env.DB.prepare('SELECT action, entity_type, entity_id FROM audit_log WHERE action = ?')
+      .bind('user.delete')
+      .first()).toEqual({ action: 'user.delete', entity_type: 'user', entity_id: '2' });
+  });
+
+  it('does not let an admin remove their own user', async () => {
+    const response = await fetchWorker('/admin/users/1/delete', {
+      method: 'POST',
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/users?error=You+cannot+remove+your+own+user');
+    expect(await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(1).first()).toEqual({ id: 1 });
+  });
+
+  it('does not let an admin remove the last administrator', async () => {
+    const otherAdminCookie = `access_token=${await signTestToken({
+      sub: '2',
+      email: 'editor@example.com',
+      name: 'Editor User',
+      role: 'admin',
+    })}`;
+
+    const response = await fetchWorker('/admin/users/1/delete', {
+      method: 'POST',
+      headers: { Cookie: otherAdminCookie },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/users?error=Cannot+remove+the+last+administrator');
+    expect(await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(1).first()).toEqual({ id: 1 });
+  });
+
   it('POST /admin/pages/batch-weight updates multiple page weights', async () => {
     const cookie = await authCookie();
     await env.DB.prepare(

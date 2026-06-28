@@ -3,6 +3,12 @@
     <h2 class="text-2xl font-bold text-gray-900">Users</h2>
     <p class="mt-1 text-sm text-gray-500">Users are created on first sign-in. Assign their roles here.</p>
   </div>
+  {% if hasFlash %}
+    <div data-users-alert class="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">{{ flash | escape }}</div>
+  {% endif %}
+  {% if hasError %}
+    <div data-users-alert class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ error | escape }}</div>
+  {% endif %}
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
     <table class="w-full min-w-[560px] text-left">
       <thead class="bg-gray-50 border-b border-gray-200">
@@ -21,7 +27,14 @@
               <td class="px-6 py-3 text-sm text-gray-500">{{ user.email | escape }}</td>
               <td class="px-6 py-3 text-sm text-gray-700">{{ user.rolesLabel | escape }}</td>
               <td class="px-6 py-3 text-right">
-                <a href="{{ user.editHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit roles</a>
+                <div class="flex items-center justify-end gap-3">
+                  <a href="{{ user.editHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit roles</a>
+                  {% if user.canDelete %}
+                    <form method="POST" action="{{ user.deleteAction | escape }}" data-confirm="Remove this user and all linked sign-in identities?">
+                      <button type="submit" class="text-sm font-medium text-red-600 hover:text-red-700">Delete</button>
+                    </form>
+                  {% endif %}
+                </div>
               </td>
             </tr>
           {% endfor %}
@@ -32,3 +45,9 @@
     </table>
   </div>
 </div>
+
+<script>
+  document.querySelectorAll('[data-users-alert]').forEach((alert) => {
+    setTimeout(() => alert.remove(), 4000);
+  });
+</script>
