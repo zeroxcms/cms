@@ -393,7 +393,11 @@ authRoutes.get('/start', async (c) => {
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = await generateCodeChallenge(codeVerifier);
   const state = generateState();
-  const linkUserId = await currentAuthenticatedUserId(c);
+  const linkRequested = c.req.query('link') === '1';
+  const linkUserId = linkRequested ? await currentAuthenticatedUserId(c) : null;
+  if (linkRequested && !linkUserId) {
+    return c.redirect('/auth/login?error=link_session_expired');
+  }
 
   // Store PKCE state (including the chosen provider) in a signed short-lived
   // JWT cookie so we have no server-side storage dependency.

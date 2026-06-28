@@ -239,7 +239,7 @@ describe('auth routes', () => {
 
   it('links another OAuth identity to the currently signed-in user', async () => {
     const accessCookie = await authCookie();
-    const start = await fetchWorker('/auth/start?provider=github', {
+    const start = await fetchWorker('/auth/start?provider=github&link=1', {
       headers: { Cookie: accessCookie },
     });
     const location = new URL(start.headers.get('Location') ?? '');
@@ -315,6 +315,64 @@ describe('auth routes', () => {
     expect(callback.status).toBe(302);
     expect(callback.headers.get('Location')).toBe('/admin');
     expect(await env.DB.prepare('SELECT user_id FROM sessions').first()).toEqual({ user_id: 1 });
+  });
+
+  it('treats login-page OAuth starts as sign-in even when old refresh cookies remain valid', async () => {
+    await env.DB.prepare(
+      `INSERT INTO user_oauth_identities (user_id, provider, provider_user_id, oauth_id)
+       VALUES (?, ?, ?, ?)`,
+    )
+      .bind(2, 'github', 'editor-gh', 'github:editor-gh')
+      .run();
+
+    const jti = 'still-valid-refresh';
+    const [expiredAccessToken, refreshToken] = await Promise.all([
+      signTestToken({ exp: Math.floor(Date.now() / 1000) - 60 }),
+      signTestToken({ type: 'refresh', jti, exp: Math.floor(Date.now() / 1000) + 3600 }),
+    ]);
+    await env.DB.prepare(
+      "INSERT INTO sessions (user_id, refresh_token_hash, expires_at) VALUES (?, ?, datetime('now', '+1 day'))",
+    )
+      .bind(1, await hashToken(jti))
+      .run();
+
+    const start = await fetchWorker('/auth/start?provider=github', {
+      headers: { Cookie: `access_token=${expiredAccessToken}; refresh_token=${refreshToken}` },
+    });
+    const location = new URL(start.headers.get('Location') ?? '');
+    const state = location.searchParams.get('state') ?? '';
+    const stateCookie = cookieValue(start.headers.get('Set-Cookie'), 'oauth_state');
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url === 'https://github.com/login/oauth/access_token') {
+        return Response.json({ access_token: 'github-token' });
+      }
+      if (url === 'https://api.github.com/user') {
+        return Response.json({
+          id: 'editor-gh',
+          login: 'editor-gh',
+          email: 'editor-github@example.com',
+          name: 'Editor GitHub',
+          avatar_url: 'https://example.com/editor.png',
+        });
+      }
+      return new Response('Unexpected fetch', { status: 500 });
+    }));
+
+    const callback = await fetchWorker(`/auth/callback?code=abc&state=${encodeURIComponent(state)}`, {
+      headers: {
+        Cookie: `oauth_state=${stateCookie}; access_token=${expiredAccessToken}; refresh_token=${refreshToken}`,
+      },
+    });
+
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get('Location')).toBe('/admin');
+    expect(await env.DB.prepare(
+      'SELECT user_id FROM sessions WHERE user_id = ? ORDER BY id DESC LIMIT 1',
+    )
+      .bind(2)
+      .first()).toEqual({ user_id: 2 });
   });
 
   it('handles Apple form_post callbacks using the id_token profile', async () => {
@@ -562,7 +620,7 @@ describe('admin routes', () => {
     ]));
     expect(data.providers).toEqual(expect.arrayContaining([
       expect.objectContaining({ provider: 'google', connected: true }),
-      expect.objectContaining({ provider: 'microsoft', connected: false, connectHref: '/auth/start?provider=microsoft' }),
+      expect.objectContaining({ provider: 'microsoft', connected: false, connectHref: '/auth/start?provider=microsoft&link=1' }),
     ]));
   });
 

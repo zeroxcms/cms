@@ -144,7 +144,8 @@ Users will see one sign-in button per listed provider, in that order.
 Add the Client ID and secret for every provider you enable.
 
 To link an additional OAuth provider to the same CMS account, sign in first,
-then start that provider's flow (for example `/auth/start?provider=google`).
+then start that provider's flow from the profile page (or use
+`/auth/start?provider=google&link=1`).
 The callback attaches the new provider identity to the current user; it will
 not silently merge logged-out accounts just because their emails match.
 

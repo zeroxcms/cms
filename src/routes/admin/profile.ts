@@ -90,7 +90,7 @@ profileRoutes.get('/profile', async (c) => {
     provider,
     label: providerLabel(provider),
     connected: connected.has(provider),
-    connectHref: `/auth/start?provider=${encodeURIComponent(provider)}`,
+    connectHref: `/auth/start?provider=${encodeURIComponent(provider)}&link=1`,
   }));
 
   return renderPage(c, profilePage, {
