@@ -56,6 +56,15 @@ describe('content security policy', () => {
     expect(response.headers.get('Content-Type')).toContain(contentType);
     expect(response.headers.get('Cache-Control')).toBe('public, max-age=86400');
   });
+
+  it('keeps mobile form controls at 16px to avoid iOS focus zoom', async () => {
+    const response = await worker.fetch(new Request('http://localhost/assets/admin.css'));
+    const css = await response.text();
+
+    expect(css).toContain('@media (max-width:767px)');
+    expect(css).toContain('input,select,textarea');
+    expect(css).toContain('font-size:16px');
+  });
 });
 
 describe('jwt iss/aud claims', () => {

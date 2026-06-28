@@ -133,6 +133,14 @@ th,
   color-scheme: dark;
 }
 
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* Surfaces: "white" cards become raised dark panels. */
 .bg-white {
   background-color: #141a26;
