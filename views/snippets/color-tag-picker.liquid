@@ -1,0 +1,70 @@
+{% assign current = value | default: "" | strip %}
+{% assign colors = "red,orange,yellow,green,blue,purple,gray" | split: "," %}
+{% assign picker_label = label | default: "Color tag" %}
+{% if action != blank %}
+  <form method="post"
+        action="{{ action | escape }}"
+        class="relative inline-flex shrink-0"
+        data-color-tag-picker
+        data-color-tag-value="{{ current | escape }}"
+        aria-label="{{ picker_label | escape }}">
+    {% if returnTo != blank %}<input type="hidden" name="return_to" value="{{ returnTo | escape }}">{% endif %}
+    <button type="button"
+            class="inline-flex h-7 w-7 items-center justify-center rounded-full border-0 bg-transparent text-gray-500 hover:bg-gray-50"
+            title="{{ picker_label | escape }}"
+            aria-label="{{ picker_label | escape }}"
+            aria-haspopup="true"
+            aria-expanded="false"
+            data-color-tag-toggle>
+      <span class="block h-3.5 w-3.5 rounded-full"
+            data-color-tag-dot
+            data-color-tag-color="{{ current | escape }}"></span>
+    </button>
+        <div class="absolute left-5 top-1/2 z-50 hidden -translate-y-1/2 items-center gap-1 rounded-lg border border-gray-200 bg-white p-2 shadow-xl"
+         role="menu"
+         data-color-tag-menu>
+      <button type="submit"
+              name="color"
+              value=""
+              class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-500 hover:bg-gray-50"
+              title="No color tag"
+              aria-label="No color tag"
+              role="menuitemradio"
+              aria-checked="{% if current == blank %}true{% else %}false{% endif %}"
+              data-color-tag-option
+              data-color-tag-color="">
+        <span class="block h-3.5 w-3.5 rounded-full border border-dashed border-gray-400"></span>
+      </button>
+      {% for color in colors %}
+        <button type="submit"
+                name="color"
+                value="{{ color | escape }}"
+                class="inline-flex h-7 w-7 items-center justify-center rounded-md hover:bg-gray-50"
+                title="{{ color | capitalize }} color tag"
+                aria-label="{{ color | capitalize }} color tag"
+                role="menuitemradio"
+                aria-checked="{% if current == color %}true{% else %}false{% endif %}"
+                data-color-tag-option
+                data-color-tag-color="{{ color | escape }}">
+          <span class="block h-3.5 w-3.5 rounded-full"
+                data-color-tag-option-dot
+                data-color-tag-color="{{ color | escape }}"></span>
+        </button>
+      {% endfor %}
+    </div>
+  </form>
+{% elsif current != blank %}
+  <span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+        title="{{ current | capitalize }} color tag"
+        aria-label="{{ current | capitalize }} color tag">
+    <span class="block h-3.5 w-3.5 rounded-full"
+          data-color-tag-dot
+          data-color-tag-color="{{ current | escape }}"></span>
+  </span>
+{% else %}
+  <span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+        title="No color tag"
+        aria-label="No color tag">
+    <span class="block h-3.5 w-3.5 rounded-full border border-dashed border-gray-400"></span>
+  </span>
+{% endif %}

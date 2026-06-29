@@ -191,6 +191,33 @@ th,
   contain: layout paint;
 }
 
+[data-color-tag-picker]:hover [data-color-tag-menu],
+[data-color-tag-picker]:focus-within [data-color-tag-menu] {
+  display: flex;
+}
+
+[data-color-tag-picker][data-color-tag-busy="1"] {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+[data-color-tag-color="red"] { --cms-color-tag-color: #f44336; }
+[data-color-tag-color="orange"] { --cms-color-tag-color: #ff9800; }
+[data-color-tag-color="yellow"] { --cms-color-tag-color: #ffeb3b; }
+[data-color-tag-color="green"] { --cms-color-tag-color: #4caf50; }
+[data-color-tag-color="blue"] { --cms-color-tag-color: #2196f3; }
+[data-color-tag-color="purple"] { --cms-color-tag-color: #9c27b0; }
+[data-color-tag-color="gray"] { --cms-color-tag-color: #9e9e9e; }
+
+[data-color-tag-dot],
+[data-color-tag-option-dot] {
+  background-color: var(--cms-color-tag-color, transparent);
+}
+
+[data-color-tag-dot][data-color-tag-color=""] {
+  border: 1px dashed var(--color-gray-400);
+}
+
 [data-admin-sidebar] {
   height: 100dvh;
   max-height: 100dvh;
