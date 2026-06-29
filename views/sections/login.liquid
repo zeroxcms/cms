@@ -22,11 +22,24 @@
       <div class="flex flex-col gap-3">
         {% for provider in providers %}
           <a href="{{ provider.href | escape }}"
+             data-auth-provider
+             data-provider-label="{{ provider.label | escape }}"
              class="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-xl border-2 {{ provider.buttonClass }} font-semibold transition-all duration-150 group">
             <span class="{{ provider.iconClass }} transition-colors">{{ provider.icon }}</span>
-            Continue with {{ provider.label | escape }}
+            <span data-auth-provider-text>Continue with {{ provider.label | escape }}</span>
           </a>
         {% endfor %}
+      </div>
+
+      <div class="mt-4 hidden items-center justify-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700"
+           role="status"
+           aria-live="polite"
+           data-auth-loading-message>
+        <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z"></path>
+        </svg>
+        <span data-auth-loading-text>Connecting...</span>
       </div>
 
       <p class="mt-6 text-center text-xs text-gray-400">
@@ -36,3 +49,47 @@
     </div>
   </div>
 </div>
+
+<script nonce="{{ nonce }}">
+  (function() {
+    function bindAuthLoading() {
+      var links = Array.from(document.querySelectorAll('[data-auth-provider]'));
+      var message = document.querySelector('[data-auth-loading-message]');
+      var messageText = document.querySelector('[data-auth-loading-text]');
+      if (!links.length || !(message instanceof HTMLElement)) return;
+      if (message.dataset.authLoadingBound === '1') return;
+      message.dataset.authLoadingBound = '1';
+
+      links.forEach(function(link) {
+        if (!(link instanceof HTMLAnchorElement)) return;
+        link.addEventListener('click', function(event) {
+          if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          if (link.getAttribute('aria-disabled') === 'true') {
+            event.preventDefault();
+            return;
+          }
+
+          var label = link.dataset.providerLabel || 'your sign-in provider';
+          var text = link.querySelector('[data-auth-provider-text]');
+          if (text) text.textContent = 'Connecting to ' + label + '...';
+          if (messageText) messageText.textContent = 'Redirecting to ' + label + ' for sign in...';
+          message.classList.remove('hidden');
+          message.classList.add('flex');
+
+          links.forEach(function(otherLink) {
+            if (!(otherLink instanceof HTMLAnchorElement)) return;
+            otherLink.setAttribute('aria-disabled', 'true');
+            otherLink.tabIndex = -1;
+            otherLink.classList.add('pointer-events-none', 'opacity-60', 'cursor-not-allowed');
+          });
+        });
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', bindAuthLoading);
+    } else {
+      bindAuthLoading();
+    }
+  })();
+</script>
