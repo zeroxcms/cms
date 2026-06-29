@@ -308,4 +308,41 @@ describe('F1 batch create', () => {
     expect(res.status).toBe(413);
     expect(await res.json()).toEqual({ error: 'batch_too_large', max: 100 });
   });
+
+  it('REPRO: creates an event with the real nested session blueprint + native start', async () => {
+    // Re-register with the real event blueprint (nested session -> inputs).
+    await env.DB.prepare('DELETE FROM plugins').run();
+    __clearInjectedFetchers();
+    clearManifestCache();
+    clearConfigCache();
+    const url = `https://plugin-${crypto.randomUUID()}.local`;
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Events', url).run();
+    const REAL_MANIFEST = {
+      id: PLUGIN_ID, name: 'Events Suite', version: '1.0.0', hooks: ['delete'],
+      contentTypes: { blueprint: { event: ['@type','@label','@rfid:switch','@show_guest_info:switch','@waiting_message','@kiosk_title','@checkin_require_login:switch','@virtual_event_link','@featured_image:picture','logo:picture','name:text/title','location:location','description:textarea',{ session: ['@checkin:switch','@type','@start:date/datetime','@duration','@capacity','name:text/title','location','description:textarea',{ inputs: ['@type','@name','@values'] }] }] } },
+    };
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(href).pathname === '/__plugin/manifest') return Response.json(REAL_MANIFEST);
+        if (new URL(href).pathname.startsWith('/__plugin/hooks/')) return new Response('ok');
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    const eventLect = {
+      _type: 'event', kiosk_title: 'Welcome', name: { en: 'Launch' }, location: { en: 'Hall A' },
+      description: { en: 'Desc' },
+      session: [
+        { _type: 'session', _weight: 0, checkin: 'yes', type: 'main', start: '2026-09-01T18:00', duration: '120', capacity: '100', name: { en: 'Main' }, location: { en: 'Hall' }, description: { en: '' }, inputs: [ { _type: 'inputs', _weight: 0, type: 'text', name: { en: 'Diet' }, values: '' } ] },
+      ],
+      _pointers: {},
+    };
+    const res = await cmsApi('POST', '/__cms/pages', {
+      page_type: 'event', name: 'Copy of Launch', start: '2026-09-01T18:00', end: null, timezone: '+0800', page_id: null,
+      lect: eventLect,
+    });
+    if (res.status !== 201) console.log('REPRO body:', res.status, await res.clone().text());
+    expect(res.status).toBe(201);
+  });
 });
