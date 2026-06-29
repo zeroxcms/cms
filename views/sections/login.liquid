@@ -80,7 +80,11 @@
             if (!(otherLink instanceof HTMLAnchorElement)) return;
             otherLink.setAttribute('aria-disabled', 'true');
             otherLink.tabIndex = -1;
-            otherLink.classList.add('pointer-events-none', 'opacity-60', 'cursor-not-allowed');
+            otherLink.classList.add('pointer-events-none');
+            if (otherLink !== link) {
+              otherLink.setAttribute('aria-hidden', 'true');
+              otherLink.classList.add('hidden');
+            }
           });
         });
       });

@@ -45,7 +45,28 @@ export const cmsApiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 /** Largest batch accepted by POST /pages/batch — bounds D1 write volume per call. */
 const MAX_BATCH = 100;
 
+/** Rows per DB.batch in POST /pages/duplicate. */
+const DUPLICATE_BATCH = 100;
+/** Max children cloned in one POST /pages/duplicate request before yielding a cursor. */
+const DUPLICATE_MAX_PER_CALL = 1000;
+
 const CMS_ID_EPOCH_OFFSET = 1563741060;
+
+/** Body accepted by POST /pages/duplicate — clone a parent's children with a transform. */
+interface DuplicateInput {
+  /** Parent page whose children are cloned. */
+  source_page_id?: unknown;
+  /** Only children of this page type are cloned (must be in the plugin's write scope). */
+  source_page_type?: unknown;
+  /** Parent assigned to the clones (null/omitted → top-level). */
+  target_page_id?: unknown;
+  /** Lect fields merged over each clone (e.g. status reset, repointed `_pointers`). */
+  lect?: unknown;
+  /** Top-level lect keys stripped from each clone before the override merge. */
+  drop_lect?: unknown;
+  /** Resume token from a prior response's `next_cursor` (last source id copied). */
+  cursor?: unknown;
+}
 
 interface ApiPage {
   id: number;
@@ -531,6 +552,102 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
   }
 
   return c.json({ created, errors, count: created.length });
+});
+
+// Server-side bulk clone of a parent's child pages.
+//
+// Built for "duplicate a guest list / event with all its guests" without the
+// plugin streaming every child page out and back: the clone reads the source
+// rows here (where D1 is local) and writes copies in the same Worker, applying
+// one uniform lect transform — drop occurrence-specific blocks, then merge
+// overrides (e.g. reset `status`, repoint `_pointers` at the new event/list).
+//
+// To bound work per request (and stay within the plugin's free-plan subrequest
+// cap) it processes at most DUPLICATE_MAX_PER_CALL children, in DB.batch chunks,
+// and returns `next_cursor` (the last source id copied) when more remain. The
+// caller re-POSTs with that cursor until `done` — so an arbitrarily large list
+// duplicates across several bounded requests instead of one that times out.
+cmsApiRoutes.post('/pages/duplicate', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const body = await c.req.json().catch(() => null) as DuplicateInput | null;
+  if (!body || typeof body !== 'object') return c.json({ error: 'invalid_body' }, 400);
+
+  const sourceParentId = asFiniteNumber(body.source_page_id);
+  const pageType = typeof body.source_page_type === 'string' ? body.source_page_type.trim() : '';
+  if (sourceParentId === null) return c.json({ error: 'source_page_id_required' }, 400);
+  if (!pageType) return c.json({ error: 'source_page_type_required' }, 400);
+  // Cloning creates pages of this type, so it needs write scope, not just read.
+  if (!auth.allowedTypes.has(pageType)) return c.json({ error: 'forbidden_page_type' }, 403);
+
+  const targetParentId = asFiniteNumber(body.target_page_id);
+  const overrideLect = coerceLect(body.lect);
+  const dropKeys = Array.isArray(body.drop_lect)
+    ? body.drop_lect.filter((key): key is string => typeof key === 'string')
+    : [];
+
+  const config = await resolveCmsConfig(c.env);
+  const seed = blueprintToLect(pageType, config.blueprint, config.defaultLanguage);
+  const usedIds = new Set<number>();
+
+  let cursor = Math.max(asFiniteNumber(body.cursor) ?? 0, 0);
+  let copied = 0;
+  let done = false;
+  // Loop internally in DB.batch chunks up to the per-request cap. Each chunk
+  // commits on its own, so a copied row is never lost if a later chunk fails.
+  while (copied < DUPLICATE_MAX_PER_CALL) {
+    const take = Math.min(DUPLICATE_BATCH, DUPLICATE_MAX_PER_CALL - copied);
+    // Fetch one row past the chunk to detect whether more children remain.
+    const sources = await c.env.DB.prepare(
+      `SELECT * FROM draft_pages WHERE page_id = ? AND page_type = ? AND id > ? ORDER BY id ASC LIMIT ?`,
+    ).bind(sourceParentId, pageType, cursor, take + 1).all<Page>();
+
+    const rows = sources.results;
+    if (!rows.length) { done = true; break; }
+    const hasMore = rows.length > take;
+    const chunk = hasMore ? rows.slice(0, take) : rows;
+
+    const usedSlugs = await existingSlugSet(c.env.DB, chunk.map((row) => slugify(row.name) || pageType));
+    const statements: D1PreparedStatement[] = [];
+    const hookPages: HookPage[] = [];
+    const createdAt = cmsTimestamp();
+
+    for (const row of chunk) {
+      // Mirror createPage's lect pipeline, sourced from the existing page:
+      // blueprint seed ← (source lect minus dropped keys) ← overrides.
+      const source = safeParseLect(row.lect);
+      for (const key of dropKeys) delete (source as Record<string, unknown>)[key];
+      const merged = withDraftMetadata(mergeLects(seed, mergeLects(source, overrideLect)), 0);
+      const lect = stringifyLect(merged);
+
+      const id = cmsId(usedIds);
+      const uuid = crypto.randomUUID();
+      const versionId = cmsId(usedIds);
+      const versionUuid = crypto.randomUUID();
+      const slug = allocateSlug(slugify(row.name) || pageType, usedSlugs);
+
+      statements.push(c.env.DB.prepare(
+        `INSERT INTO draft_pages (id, uuid, created_at, updated_at, name, slug, weight, start, end, timezone, page_type, current_page_version_id, lect, page_id, creator)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, uuid, createdAt, createdAt, row.name, slug, row.weight ?? 5, row.start, row.end, row.timezone, pageType, versionId, lect, targetParentId, null));
+      statements.push(c.env.DB.prepare(
+        `INSERT INTO page_versions (id, uuid, created_at, updated_at, page_id, lect, action)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(versionId, versionUuid, createdAt, createdAt, id, lect, 'create'));
+
+      hookPages.push({ id, uuid, page_type: pageType, name: row.name, slug });
+    }
+
+    await c.env.DB.batch(statements);
+    emitPluginHooks(c, 'create', hookPages, auth.pluginId);
+
+    copied += chunk.length;
+    cursor = chunk[chunk.length - 1].id;
+    if (!hasMore) { done = true; break; }
+  }
+
+  return c.json({ count: copied, next_cursor: done ? null : cursor, done });
 });
 
 // Update a page (PUT/PATCH are equivalent here — both partial-merge).

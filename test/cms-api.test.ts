@@ -321,4 +321,58 @@ describe('F1 batch create', () => {
     const created = (await res.json() as { page: { id: number; page_id: number | null } }).page;
     expect(created.page_id).toBeNull();
   });
+
+  it('bulk-clones a parent\'s children server-side with a lect transform', async () => {
+    const sourceList = (await (await cmsApi('POST', '/__cms/pages', {
+      page_type: 'mail_list', name: 'VIP', lect: { _pointers: { event: '7' } },
+    })).json() as { page: { id: number } }).page;
+    const targetList = (await (await cmsApi('POST', '/__cms/pages', {
+      page_type: 'mail_list', name: 'VIP copy', lect: { _pointers: { event: '99' } },
+    })).json() as { page: { id: number } }).page;
+
+    for (const name of ['Jane', 'John', 'Jo']) {
+      await cmsApi('POST', '/__cms/pages', {
+        page_type: 'guest', name, page_id: sourceList.id,
+        lect: {
+          email: `${name.toLowerCase()}@x.com`, status: 'confirmed',
+          _pointers: { event: '7', mail_list: String(sourceList.id) },
+          checkin: [{ status: 'checked-in', date: '2026-01-01' }],
+        },
+      });
+    }
+
+    const dup = await cmsApi('POST', '/__cms/pages/duplicate', {
+      source_page_id: sourceList.id, source_page_type: 'guest', target_page_id: targetList.id,
+      lect: { status: 'to be invited', _pointers: { event: '99', mail_list: String(targetList.id) } },
+      drop_lect: ['checkin'],
+    });
+    expect(dup.status).toBe(200);
+    expect(await dup.json()).toMatchObject({ count: 3, next_cursor: null, done: true });
+
+    // Clones are now children of the target list, carrying the transform.
+    const cloned = await (await cmsApi('GET', `/__cms/pages?page_type=guest&page_id=${targetList.id}`)).json() as {
+      total: number; pages: Array<{ page_id: number; lect: Record<string, any> }>;
+    };
+    expect(cloned.total).toBe(3);
+    for (const clone of cloned.pages) {
+      expect(clone.page_id).toBe(targetList.id);
+      expect(clone.lect.status).toBe('to be invited');            // override applied
+      expect(clone.lect._pointers.event).toBe('99');               // repointed
+      expect(clone.lect._pointers.mail_list).toBe(String(targetList.id));
+      expect(clone.lect.checkin).toBeUndefined();                  // dropped
+      expect(String(clone.lect.email)).toContain('@x.com');        // identity carried over
+    }
+
+    // The source guests are untouched.
+    const sources = await (await cmsApi('GET', `/__cms/pages?page_type=guest&page_id=${sourceList.id}`)).json() as { total: number };
+    expect(sources.total).toBe(3);
+  });
+
+  it('rejects a duplicate into a page type the plugin does not own', async () => {
+    const res = await cmsApi('POST', '/__cms/pages/duplicate', {
+      source_page_id: 1, source_page_type: 'contact', target_page_id: null,
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json() as { error: string }).error).toBe('forbidden_page_type');
+  });
 });
