@@ -33,20 +33,21 @@
       .toLowerCase();
   }
 
-  function isPrivateHeader(value) {
+  function privateHeaderKind(value) {
     var label = normalizedHeader(value);
-    return label === 'name'
-      || label === 'email'
-      || label === 'phone'
-      || label === 'name / email'
-      || label === 'name / contact';
+    if (label === 'email') return 'email';
+    if (label === 'phone') return 'phone';
+    if (label === 'name / contact') return 'contact';
+    if (label === 'name' || label === 'name / email') return 'name';
+    return '';
   }
 
   function privateColumnIndexes(table) {
     var headRow = table.tHead && table.tHead.rows.length ? table.tHead.rows[table.tHead.rows.length - 1] : null;
     if (!headRow) return [];
     return Array.from(headRow.cells).reduce(function(indexes, cell, index) {
-      if (isPrivateHeader(cell.textContent)) indexes.push(index);
+      var kind = privateHeaderKind(cell.textContent);
+      if (kind) indexes.push({ index: index, kind: kind });
       return indexes;
     }, []);
   }
@@ -63,7 +64,13 @@
       return Array.from(tbody.rows).flatMap(function(row) {
         if (row.hasAttribute('data-table-filter-empty')) return [];
         return indexes
-          .map(function(index) { return row.cells[index]; })
+          .map(function(column) {
+            var cell = row.cells[column.index];
+            if (cell && !cell.hasAttribute('data-private-field')) {
+              cell.setAttribute('data-private-field', column.kind);
+            }
+            return cell;
+          })
           .filter(function(cell) { return cell; });
       });
     });
@@ -74,21 +81,62 @@
   }
 
   function ensureOriginal(target) {
-    if (target.hasAttribute('data-private-original-html')) return;
-    target.setAttribute('data-private-original-html', target.innerHTML);
+    if (!target.hasAttribute('data-private-original-html')) {
+      target.setAttribute('data-private-original-html', target.innerHTML);
+      target.setAttribute('data-private-original-text', target.textContent || '');
+    }
+    if (!target.hasAttribute('data-private-mask')) {
+      target.setAttribute(
+        'data-private-mask',
+        maskValue(target.getAttribute('data-private-original-text') || '', target.getAttribute('data-private-field') || ''),
+      );
+    }
   }
 
   function setMasked(target, masked) {
     if (masked) {
       ensureOriginal(target);
-      if (target.getAttribute('data-private-masked') === '1' && target.innerHTML === MASK) return;
-      target.innerHTML = MASK;
+      var maskedValue = target.hasAttribute('data-private-mask')
+        ? target.getAttribute('data-private-mask') || ''
+        : MASK;
+      if (target.getAttribute('data-private-masked') === '1' && target.textContent === maskedValue) return;
+      target.textContent = maskedValue;
       target.setAttribute('data-private-masked', '1');
       return;
     }
     if (target.getAttribute('data-private-masked') !== '1') return;
     target.innerHTML = target.getAttribute('data-private-original-html') || '';
     target.removeAttribute('data-private-masked');
+  }
+
+  function maskValue(value, kind) {
+    var text = String(value || '').trim();
+    if (!text) return '';
+
+    if (kind === 'email' || text.includes('@')) return maskEmail(text);
+    if (kind === 'phone') return maskToken(text.replace(/\s+/g, ''));
+    return text.split(/(\s+)/).map(function(part) {
+      return /^\s+$/.test(part) ? part : maskToken(part);
+    }).join('');
+  }
+
+  function maskEmail(value) {
+    var at = value.indexOf('@');
+    if (at <= 0) return maskToken(value);
+
+    var local = value.slice(0, at);
+    var domain = value.slice(at + 1);
+    var domainParts = domain.split('.');
+    if (domainParts.length < 2) return maskToken(local) + '@' + maskToken(domain);
+
+    return maskToken(local) + '@' + maskToken(domainParts[0]) + '.' + domainParts.slice(1).join('.');
+  }
+
+  function maskToken(value) {
+    var chars = Array.from(String(value || ''));
+    if (!chars.length) return '';
+    if (chars.length <= 4) return chars[0] + MASK;
+    return chars[0] + MASK + chars[chars.length - 1];
   }
 
   function controlFor(table) {
@@ -118,7 +166,7 @@
     document.querySelectorAll('[data-privacy-toggle]').forEach(function(button) {
       button.setAttribute('aria-pressed', revealed ? 'true' : 'false');
       button.setAttribute('aria-label', revealed ? 'Hide private fields' : 'Reveal private fields');
-      button.setAttribute('title', revealed ? 'Hide private fields' : 'Reveal private fields');
+      button.setAttribute('title', (revealed ? 'Hide private fields' : 'Reveal private fields') + ' (Alt+Shift+R)');
       var label = button.querySelector('[data-privacy-toggle-label]');
       if (label) label.textContent = revealed ? 'Hide' : 'Reveal';
     });
@@ -141,12 +189,32 @@
     renderControls();
   }
 
+  function toggleRevealed() {
+    persistRevealed(!storedRevealed());
+    scan(document);
+  }
+
+  function isTypingTarget(target) {
+    if (!(target instanceof Element)) return false;
+    if (target.closest('input, textarea, select')) return true;
+    var editable = target.closest('[contenteditable]');
+    return editable instanceof HTMLElement && editable.isContentEditable;
+  }
+
   document.addEventListener('click', function(event) {
     var button = event.target instanceof Element ? event.target.closest('[data-privacy-toggle]') : null;
     if (!button) return;
     event.preventDefault();
-    persistRevealed(!storedRevealed());
-    scan(document);
+    toggleRevealed();
+  });
+
+  document.addEventListener('keydown', function(event) {
+    if (event.repeat || isTypingTarget(event.target)) return;
+    var isRevealShortcut = event.code === 'KeyR' || event.key.toLowerCase() === 'r';
+    if (event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && isRevealShortcut) {
+      event.preventDefault();
+      toggleRevealed();
+    }
   });
 
   var queued = false;
