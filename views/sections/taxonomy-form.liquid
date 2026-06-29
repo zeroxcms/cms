@@ -14,7 +14,7 @@
     </label>
   </form>
   {% if isEdit %}{% unless readOnly %}
-    <form id="taxonomy-delete-form" method="POST" action="{{ deleteAction | escape }}"></form>
+    <form id="taxonomy-delete-form" method="POST" action="{{ deleteAction | escape }}" data-confirm="Delete this taxonomy? Its tags are kept but no longer grouped under it."></form>
   {% endunless %}{% endif %}
   <div class="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
     {% unless readOnly %}<button form="taxonomy-form" type="submit" class="w-full px-6 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm sm:w-auto">Save</button>{% endunless %}

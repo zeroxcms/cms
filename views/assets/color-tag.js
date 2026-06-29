@@ -21,9 +21,17 @@
   function setOpen(form, open) {
     var menu = form.querySelector('[data-color-tag-menu]');
     var toggle = form.querySelector('[data-color-tag-toggle]');
+    if (open) form.removeAttribute('data-color-tag-suppress-open');
     if (menu) menu.classList.toggle('hidden', !open);
     if (menu) menu.classList.toggle('flex', open);
     if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  function closeAfterSelection(form) {
+    form.setAttribute('data-color-tag-suppress-open', '1');
+    var active = document.activeElement;
+    if (active instanceof HTMLElement && form.contains(active)) active.blur();
+    setOpen(form, false);
   }
 
   function closeAll(except) {
@@ -68,6 +76,27 @@
     if (!pickerFor(event.target)) closeAll(null);
   });
 
+  document.addEventListener('pointerover', function(event) {
+    var toggle = event.target instanceof Element ? event.target.closest('[data-color-tag-toggle]') : null;
+    if (!toggle) return;
+    var form = pickerFor(toggle);
+    if (form) form.removeAttribute('data-color-tag-suppress-open');
+  });
+
+  document.addEventListener('pointerout', function(event) {
+    var form = pickerFor(event.target);
+    if (!form) return;
+    var related = event.relatedTarget instanceof Element ? event.relatedTarget : null;
+    if (!related || !form.contains(related)) form.removeAttribute('data-color-tag-suppress-open');
+  });
+
+  document.addEventListener('focusin', function(event) {
+    var toggle = event.target instanceof Element ? event.target.closest('[data-color-tag-toggle]') : null;
+    if (!toggle) return;
+    var form = pickerFor(toggle);
+    if (form) form.removeAttribute('data-color-tag-suppress-open');
+  });
+
   document.addEventListener('keydown', function(event) {
     if (event.key === 'Escape') closeAll(null);
   });
@@ -82,6 +111,7 @@
     var previous = form.getAttribute('data-color-tag-value') || '';
     var body = new FormData(form);
     body.set('color', color);
+    closeAfterSelection(form);
     form.setAttribute('data-color-tag-busy', '1');
 
     try {
@@ -97,7 +127,6 @@
         ? payload.payload.color
         : color;
       setColor(form, next);
-      closeAll(null);
       if (window.WorkerCmsTableFilter) window.WorkerCmsTableFilter.scan(document);
     } catch (error) {
       setColor(form, previous);
