@@ -2,6 +2,7 @@ import { env, exports } from 'cloudflare:workers';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { clearManifestCache, __injectPluginFetcher, __clearInjectedFetchers } from '../src/plugins/registry';
 import { clearConfigCache } from '../src/plugins/config';
+import { restoreTrashedPages } from '../src/utils/admin-queries';
 
 // F1 — plugin write-back API (/__cms/*). Exercises the real Worker so the
 // global middleware (canonical host, cross-origin exemption, auth) is in play.
@@ -431,5 +432,73 @@ describe('F1 batch create', () => {
     });
     expect(res.status).toBe(400);
     expect((await res.json() as { error: string }).error).toBe('ambiguous_selector');
+  });
+});
+
+// Bulk restore-from-trash (the /admin/trash "Restore All" / "Restore Last Hour"
+// controls). Exercises the set-based restoreTrashedPages helper against D1.
+describe('bulk trash restore', () => {
+  beforeEach(async () => {
+    await env.DB.prepare("DELETE FROM draft_pages WHERE page_type IN ('event','guest','mail_list')").run();
+    await env.DB.prepare("DELETE FROM trash_pages WHERE page_type IN ('event','guest','mail_list')").run();
+  });
+
+  async function trashGuestCount(): Promise<number> {
+    const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM trash_pages WHERE page_type = 'guest'").first<{ n: number }>();
+    return row?.n ?? 0;
+  }
+  async function draftGuestCount(): Promise<number> {
+    const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM draft_pages WHERE page_type = 'guest'").first<{ n: number }>();
+    return row?.n ?? 0;
+  }
+
+  it('restores all trashed pages of a type back to draft, with version history', async () => {
+    const list = (await (await cmsApi('POST', '/__cms/pages', {
+      page_type: 'mail_list', name: 'L', lect: { _pointers: { event: '7' } },
+    })).json() as { page: { id: number } }).page;
+    const guestIds: number[] = [];
+    for (const name of ['A', 'B', 'C']) {
+      const g = (await (await cmsApi('POST', '/__cms/pages', {
+        page_type: 'guest', name, lect: { _pointers: { mail_list: String(list.id) } },
+      })).json() as { page: { id: number } }).page;
+      guestIds.push(g.id);
+    }
+    await cmsApi('DELETE', '/__cms/pages/children', { pointer_key: 'mail_list', pointer_value: String(list.id), page_type: 'guest' });
+    expect(await trashGuestCount()).toBe(3);
+    expect(await draftGuestCount()).toBe(0);
+
+    const restored = await restoreTrashedPages(env.DB, { pageType: 'guest' });
+    expect(restored).toBe(3);
+
+    // Back in drafts (same ids), gone from trash.
+    expect(await draftGuestCount()).toBe(3);
+    expect(await trashGuestCount()).toBe(0);
+    const back = await (await cmsApi('GET', `/__cms/pages?page_type=guest&pointer_key=mail_list&pointer_value=${list.id}`)).json() as { total: number };
+    expect(back.total).toBe(3);
+    // The create version came back too (id preserved), so the editor can load it.
+    const versions = await env.DB.prepare(`SELECT COUNT(*) AS n FROM page_versions WHERE page_id IN (${guestIds.map(() => '?').join(',')})`)
+      .bind(...guestIds).first<{ n: number }>();
+    expect(versions?.n).toBeGreaterThanOrEqual(3);
+  });
+
+  it('restores only the last hour when scoped, leaving older trash', async () => {
+    // Two trash rows: one just now, one trashed two hours ago.
+    await env.DB.prepare("INSERT INTO trash_pages (id, name, slug, page_type, lect, created_at) VALUES (?, 'Recent', 'recent', 'guest', '{}', datetime('now'))")
+      .bind(900001).run();
+    await env.DB.prepare("INSERT INTO trash_pages (id, name, slug, page_type, lect, created_at) VALUES (?, 'Old', 'old', 'guest', '{}', datetime('now', '-2 hours'))")
+      .bind(900002).run();
+
+    const restored = await restoreTrashedPages(env.DB, { pageType: 'guest', withinLastHour: true });
+    expect(restored).toBe(1);
+
+    // The recent row is restored; the old one stays in trash.
+    expect(await draftGuestCount()).toBe(1);
+    expect(await trashGuestCount()).toBe(1);
+    const oldStill = await env.DB.prepare("SELECT name FROM trash_pages WHERE id = ?").bind(900002).first<{ name: string }>();
+    expect(oldStill?.name).toBe('Old');
+  });
+
+  it('restores nothing (count 0) when the trash is empty', async () => {
+    expect(await restoreTrashedPages(env.DB, {})).toBe(0);
   });
 });

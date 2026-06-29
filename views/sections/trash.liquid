@@ -5,21 +5,31 @@
       <p class="text-sm text-gray-500 mt-1">{{ pageCountLabel | escape }}</p>
     </div>
     <div class="flex flex-col gap-2 items-start sm:items-end">
-      {% if hasPages %}
-        <form id="empty-trash-form" method="POST" action="{{ emptyTrashAction | escape }}" class="flex flex-wrap items-center gap-2">
-          {% if hasTypeFilter %}
-            <select name="type" id="empty-type-select" class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm">
-              <option value="">All types</option>
-              {% for t in typeCounts %}
-                <option value="{{ t.pageType | escape }}">{{ t.pageType | escape }} ({{ t.count }})</option>
-              {% endfor %}
-            </select>
-          {% endif %}
-          <button type="submit" name="action" value="now" class="inline-flex h-9 items-center rounded-lg border border-transparent bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Empty All</button>
-          {% if hasRecent %}
-            <button type="submit" name="action" value="1h" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">Last Hour ({{ recentCount }})</button>
-          {% endif %}
-        </form>
+      {% if anyTrash %}
+        {% if hasTypeFilter %}
+          <select id="trash-type-filter" aria-label="Show only this type" class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm">
+            <option value=""{% unless filterType %} selected{% endunless %}>All types ({{ grandTotal }})</option>
+            {% for t in typeCounts %}
+              <option value="{{ t.pageType | escape }}"{% if t.pageType == filterType %} selected{% endif %}>{{ t.pageType | escape }} ({{ t.count }})</option>
+            {% endfor %}
+          </select>
+        {% endif %}
+        {% if hasPages %}
+          <form id="restore-trash-form" method="POST" action="{{ restoreAllAction | escape }}" class="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="type" value="{{ filterType | escape }}">
+            <button type="submit" name="action" value="now" class="inline-flex h-9 items-center rounded-lg border border-transparent bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Restore All</button>
+            {% if hasRecent %}
+              <button type="submit" name="action" value="1h" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">Restore Last Hour ({{ recentCount }})</button>
+            {% endif %}
+          </form>
+          <form id="empty-trash-form" method="POST" action="{{ emptyTrashAction | escape }}" class="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="type" value="{{ filterType | escape }}">
+            <button type="submit" name="action" value="now" class="inline-flex h-9 items-center rounded-lg border border-transparent bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Empty All</button>
+            {% if hasRecent %}
+              <button type="submit" name="action" value="1h" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">Last Hour ({{ recentCount }})</button>
+            {% endif %}
+          </form>
+        {% endif %}
       {% endif %}
       <a href="/admin" class="text-sm text-indigo-600 hover:underline">Back to Pages</a>
     </div>
@@ -90,24 +100,51 @@
   const flash = document.getElementById('flash');
   if (flash) setTimeout(() => flash.remove(), 4000);
 
-  const emptyTrashForm = document.getElementById('empty-trash-form');
-  if (emptyTrashForm) {
-    emptyTrashForm.addEventListener('submit', (e) => {
-      const submitter = e.submitter;
-      const typeSelect = document.getElementById('empty-type-select');
-      const typeLabel = typeSelect && typeSelect.value
-        ? typeSelect.options[typeSelect.selectedIndex].text
-        : '{{ total }} page{% if total != 1 %}s{% endif %}';
+  // Type filter: reload showing only the chosen type. Server-side so it stays
+  // correct across pagination (not just the rows on the current page).
+  const typeFilter = document.getElementById('trash-type-filter');
+  if (typeFilter) {
+    typeFilter.addEventListener('change', () => {
+      const v = typeFilter.value;
+      window.location.href = v ? '/admin/trash?type=' + encodeURIComponent(v) : '/admin/trash';
+    });
+  }
 
+  // The active type's name for confirm copy — read from the select (its value
+  // is a real page type, never raw URL input) so nothing user-controlled is
+  // interpolated into this script.
+  const scope = typeFilter && typeFilter.value ? typeFilter.value + ' ' : '';
+  const recentCount = (s) => s.textContent.match(/\d+/)?.[0] ?? '?';
+
+  const restoreTrashForm = document.getElementById('restore-trash-form');
+  if (restoreTrashForm) {
+    restoreTrashForm.addEventListener('submit', (e) => {
+      const submitter = e.submitter;
       if (submitter && submitter.value === '1h') {
-        const n = submitter.textContent.match(/\d+/)?.[0] ?? '?';
-        if (!confirm('Permanently delete ' + n + ' page' + (n === '1' ? '' : 's') + ' trashed in the last hour?\n\nThis cannot be undone.')) {
+        const n = recentCount(submitter);
+        if (!confirm('Restore ' + n + ' ' + scope + 'page' + (n === '1' ? '' : 's') + ' trashed in the last hour to drafts?')) {
           e.preventDefault();
         }
         return;
       }
+      if (!confirm('Restore all {{ total }} ' + scope + 'page{% if total != 1 %}s{% endif %} from trash to drafts?')) {
+        e.preventDefault();
+      }
+    });
+  }
 
-      if (!confirm('Empty trash permanently?\n\nThis will delete ' + typeLabel + ' forever. This cannot be undone.')) {
+  const emptyTrashForm = document.getElementById('empty-trash-form');
+  if (emptyTrashForm) {
+    emptyTrashForm.addEventListener('submit', (e) => {
+      const submitter = e.submitter;
+      if (submitter && submitter.value === '1h') {
+        const n = recentCount(submitter);
+        if (!confirm('Permanently delete ' + n + ' ' + scope + 'page' + (n === '1' ? '' : 's') + ' trashed in the last hour?\n\nThis cannot be undone.')) {
+          e.preventDefault();
+        }
+        return;
+      }
+      if (!confirm('Empty {{ total }} ' + scope + 'page{% if total != 1 %}s{% endif %} from trash permanently?\n\nThis cannot be undone.')) {
         e.preventDefault();
       }
     });

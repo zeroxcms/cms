@@ -3,7 +3,7 @@
 import { Hono } from 'hono';
 import { trashPage } from '../../templates/trash';
 import type { Env, Variables, Page, PageTag, PageVersion } from '../../types';
-import { savePageVersion } from '../../utils/admin-queries';
+import { restoreTrashedPages, savePageVersion } from '../../utils/admin-queries';
 import { dashboardPagination, renderPage } from '../../utils/admin-render';
 import { dashboardPageNumber, dashboardPageSize } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
@@ -17,15 +17,21 @@ trashRoutes.get('/trash', async (c) => {
   const flash = c.req.query('flash') ?? '';
   const pageSize = dashboardPageSize(c.req.query('pagesize'));
   const requestedPage = dashboardPageNumber(c.req.query('page'));
+  // Active type filter (the dropdown). Empty = all types.
+  const filterType = c.req.query('type')?.trim() || '';
+  const typeWhere = filterType ? 'WHERE page_type = ?' : '';
+  const typeParams = filterType ? [filterType] : [];
 
   const [countRow, typeRows, recentRow] = await Promise.all([
-    c.env.DB.prepare('SELECT COUNT(*) AS total FROM trash_pages').first<{ total: number }>(),
+    // Listing total/recent are scoped to the filter; the type breakdown is not,
+    // so the dropdown always lists every type with its full count.
+    c.env.DB.prepare(`SELECT COUNT(*) AS total FROM trash_pages ${typeWhere}`).bind(...typeParams).first<{ total: number }>(),
     c.env.DB.prepare(
       'SELECT page_type, COUNT(*) AS cnt FROM trash_pages GROUP BY page_type ORDER BY cnt DESC',
     ).all<{ page_type: string | null; cnt: number }>(),
     c.env.DB.prepare(
-      `SELECT COUNT(*) AS cnt FROM trash_pages WHERE created_at >= datetime('now', '-1 hour')`,
-    ).first<{ cnt: number }>(),
+      `SELECT COUNT(*) AS cnt FROM trash_pages WHERE created_at >= datetime('now', '-1 hour') ${filterType ? 'AND page_type = ?' : ''}`,
+    ).bind(...typeParams).first<{ cnt: number }>(),
   ]);
 
   const total = countRow?.total ?? 0;
@@ -34,21 +40,32 @@ trashRoutes.get('/trash', async (c) => {
   const offset = (currentPage - 1) * pageSize;
 
   const trashedPages = await c.env.DB.prepare(
-    'SELECT * FROM trash_pages ORDER BY updated_at DESC LIMIT ? OFFSET ?',
-  ).bind(pageSize, offset).all<Page>();
+    `SELECT * FROM trash_pages ${typeWhere} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+  ).bind(...typeParams, pageSize, offset).all<Page>();
 
   const paginationResult = {
     results: trashedPages.results,
     pagination: { total, totalPages, currentPage, limit: pageSize },
   };
+  const pagination = dashboardPagination('/admin/trash', paginationResult);
+  // Carry the active type filter across page links.
+  if (filterType) {
+    const suffix = `&type=${encodeURIComponent(filterType)}`;
+    for (const key of ['firstHref', 'previousHref', 'nextHref', 'lastHref'] as const) {
+      if (pagination[key]) pagination[key] += suffix;
+    }
+  }
 
   const typeCounts = typeRows.results.map((r) => ({ pageType: r.page_type ?? 'unknown', count: r.cnt }));
+  const grandTotal = typeCounts.reduce((sum, t) => sum + t.count, 0);
 
   return renderPage(c, trashPage, {
     pages: trashedPages.results,
     flash: flash || undefined,
-    pagination: dashboardPagination('/admin/trash', paginationResult),
+    pagination,
     total,
+    grandTotal,
+    filterType,
     typeCounts,
     recentCount: recentRow?.cnt ?? 0,
   });
@@ -161,6 +178,27 @@ trashRoutes.post('/trash/:id/restore', requirePermission('trash:restore'), async
     slug: trashedPage.slug,
   });
   return c.redirect('/admin/trash?flash=Page+restored+to+draft');
+});
+
+// ── Bulk restore (all, by type, or last-hour only) ───────────────────────────
+// Accepts optional form fields:
+//   type   — page type to restore (empty = all types)
+//   action — "now" (default) restore all matching; "1h" restore only those
+//            trashed within the last hour
+// Set-based so a large trash (e.g. an event's worth of guests) restores without
+// the per-page route's per-row work timing out.
+
+trashRoutes.post('/trash/restore', requirePermission('trash:restore'), async (c) => {
+  const form = await c.req.formData();
+  const pageType = (form.get('type') as string | null)?.trim() || null;
+  const withinLastHour = (form.get('action') as string | null)?.trim() === '1h';
+
+  const count = await restoreTrashedPages(c.env.DB, { pageType, withinLastHour });
+  logAudit(c, 'page.restore_all', 'page', undefined, { count, type: pageType ?? 'all', scope: withinLastHour ? '1h' : 'all' });
+
+  const noun = count === 1 ? 'page' : 'pages';
+  const scope = withinLastHour ? ' from the last hour' : '';
+  return c.redirect(`/admin/trash?flash=${encodeURIComponent(`Restored ${count} ${noun}${scope} to drafts`)}`);
 });
 
 // ── Permanently delete from trash ─────────────────────────────────────────────

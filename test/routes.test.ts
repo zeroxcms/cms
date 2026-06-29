@@ -545,6 +545,7 @@ describe('admin routes', () => {
     { name: 'POST /admin/pages/:id/unpublish', method: 'POST', path: '/admin/pages/101/unpublish', authenticated: true, expectedStatus: 302, location: '/admin?flash=Page+unpublished' },
     { name: 'POST /admin/pages/:id/delete', method: 'POST', path: '/admin/pages/101/delete', authenticated: true, expectedStatus: 302, location: '/admin?flash=Page+moved+to+trash' },
     { name: 'GET /admin/trash', path: '/admin/trash', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/trash?type= (filtered view)', path: '/admin/trash?type=default', authenticated: true, expectedStatus: 200 },
     { name: 'POST /admin/trash/:id/restore', method: 'POST', path: '/admin/trash/201/restore', authenticated: true, expectedStatus: 302, location: '/admin/trash?flash=Page+restored+to+draft' },
     { name: 'POST /admin/trash/:id/delete', method: 'POST', path: '/admin/trash/201/delete', authenticated: true, expectedStatus: 302, location: '/admin/trash?flash=Page+permanently+deleted' },
     { name: 'GET /admin/api/pages/:type', path: '/admin/api/pages/default', authenticated: true, expectedStatus: 200, json: [{ id: 101, page: 101, name: 'About', slug: 'about', label: '/about' }] },

@@ -240,6 +240,75 @@ export async function trashDraftPages(db: D1Database, ids: number[]): Promise<Pa
   return pages;
 }
 
+/**
+ * Bulk-restores trashed pages back to draft, set-based so the work is a fixed
+ * handful of statements regardless of how many pages are restored (the per-page
+ * restore route does ~5 D1 ops EACH, which would time out on a big trash — e.g.
+ * after deleting an event with thousands of guests). Mirrors trashDraftPages in
+ * reverse: ids are preserved, so version history and tags re-link by the same
+ * id, and the original parent is re-linked only when it is live again.
+ *
+ * Returns the number of pages restored. `pageType`/`withinLastHour` scope it to
+ * match the trash list's "Empty" controls.
+ *
+ * Caveat vs. the single-page route: it does not mint a fresh restore snapshot
+ * for legacy rows that predate version history, and a parent restored in the
+ * SAME call is not yet visible to the child's parent check — fine here because
+ * guests/lists link by their lect pointer, not by parent page.
+ */
+export async function restoreTrashedPages(
+  db: D1Database,
+  opts: { pageType?: string | null; withinLastHour?: boolean } = {},
+): Promise<number> {
+  const conds: string[] = [];
+  const params: unknown[] = [];
+  if (opts.pageType) { conds.push('page_type = ?'); params.push(opts.pageType); }
+  if (opts.withinLastHour) conds.push("created_at >= datetime('now', '-1 hour')");
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+
+  const countRow = await db.prepare(`SELECT COUNT(*) AS n FROM trash_pages ${where}`)
+    .bind(...params).first<{ n: number }>();
+  const count = countRow?.n ?? 0;
+  if (!count) return 0;
+
+  const idSubquery = `SELECT id FROM trash_pages ${where}`;
+  await db.batch([
+    // 1. Pages back to draft (preserve id; re-link the parent only if it is live).
+    db.prepare(
+      `INSERT INTO draft_pages (id, uuid, name, slug, weight, start, end, timezone, page_type, current_page_version_id, lect, page_id, creator, editors)
+       SELECT tp.id, tp.uuid, tp.name, tp.slug, tp.weight, tp.start, tp.end, tp.timezone, tp.page_type, tp.current_page_version_id, tp.lect,
+         CASE WHEN COALESCE(tp.source_page_id, tp.page_id) IS NOT NULL
+           AND EXISTS (SELECT 1 FROM draft_pages dp WHERE dp.id = COALESCE(tp.source_page_id, tp.page_id))
+           THEN COALESCE(tp.source_page_id, tp.page_id) ELSE NULL END,
+         tp.creator, tp.editors
+       FROM trash_pages tp ${where}
+       ON CONFLICT(uuid) DO UPDATE SET
+         name = excluded.name, slug = excluded.slug, weight = excluded.weight,
+         start = excluded.start, end = excluded.end, timezone = excluded.timezone,
+         page_type = excluded.page_type, current_page_version_id = excluded.current_page_version_id,
+         lect = excluded.lect, page_id = excluded.page_id, creator = excluded.creator, editors = excluded.editors`,
+    ).bind(...params),
+    // 2. Version history (trash_page_versions.page_id is the preserved page id).
+    db.prepare(
+      `INSERT OR IGNORE INTO page_versions (id, uuid, created_at, page_id, lect, action)
+       SELECT id, uuid, created_at, page_id, lect, action FROM trash_page_versions
+       WHERE page_id IN (${idSubquery})`,
+    ).bind(...params),
+    // 3. Tags.
+    db.prepare(
+      `INSERT OR IGNORE INTO draft_page_tags (uuid, page_id, tag_id, weight)
+       SELECT uuid, page_id, tag_id, weight FROM trash_page_tags
+       WHERE page_id IN (${idSubquery})`,
+    ).bind(...params),
+    // 4. Remove the restored rows from trash (children first; trash_pages cascades too).
+    db.prepare(`DELETE FROM trash_page_versions WHERE page_id IN (${idSubquery})`).bind(...params),
+    db.prepare(`DELETE FROM trash_page_tags WHERE page_id IN (${idSubquery})`).bind(...params),
+    db.prepare(`DELETE FROM trash_pages ${where}`).bind(...params),
+  ]);
+
+  return count;
+}
+
 export async function listDashboardDraftPages(
   db: D1Database,
   options: { pageType?: string; page: number; limit: number },

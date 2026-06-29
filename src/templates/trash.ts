@@ -22,19 +22,27 @@ export async function trashPage(views: Fetcher, opts: BaseTemplateProps & {
   flash?: string;
   pagination?: TrashPagination;
   total?: number;
+  grandTotal?: number;
+  filterType?: string;
   typeCounts?: TypeCount[];
   recentCount?: number;
 }): Promise<string> {
-  const { pages, flash, pagination, total = pages.length, typeCounts = [], recentCount = 0 } = opts;
+  const { pages, flash, pagination, total = pages.length, typeCounts = [], recentCount = 0, filterType = '' } = opts;
+  const grandTotal = opts.grandTotal ?? total;
   const showPagination = (pagination?.totalPages ?? 1) > 1;
+  const typeSuffix = filterType ? `${filterType} ` : '';
   const body = await renderView(views, '/templates/trash.json', {
     flash,
     hasFlash: !!flash,
-    pageCountLabel: `${total} page${total === 1 ? '' : 's'} in trash`,
+    pageCountLabel: `${total} ${typeSuffix}page${total === 1 ? '' : 's'} in trash`,
     hasPages: total > 0,
+    anyTrash: grandTotal > 0,
     emptyTrashAction: '/admin/trash/empty',
+    restoreAllAction: '/admin/trash/restore',
     typeCounts,
     hasTypeFilter: typeCounts.length > 0,
+    filterType,
+    grandTotal,
     recentCount,
     hasRecent: recentCount > 0,
     total,
