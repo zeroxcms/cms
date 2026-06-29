@@ -66,9 +66,10 @@ npm run db:migrate
 For production, add `--remote` to each `wrangler d1 migrations apply` command.
 
 The `cms` migrations create auth tables plus draft, trash, taxonomy,
-versioning, and media tables. The `cms-published` migrations create only the
-published `live_*` content tables. They do not automatically import rows from
-other D1 databases.
+versioning, media tables, and the CMS-owned `admin_jobs` table for durable
+background admin actions such as long plugin duplicate/delete requests. The
+`cms-published` migrations create only the published `live_*` content tables.
+They do not automatically import rows from other D1 databases.
 
 ### 4. Create and bind the private R2 media bucket
 

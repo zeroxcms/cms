@@ -44,6 +44,14 @@ class_name = "PageSyncDO"
 tag = "v1"
 new_sqlite_classes = ["PageSyncDO"]
 
+# CMS-owned admin background jobs. Used for long plugin admin actions such as
+# event duplicate/delete; job rows live in DB.admin_jobs.
+# [[queues.producers]]
+# binding = "ADMIN_JOBS_QUEUE"
+# queue = "cms-admin-jobs"
+# [[queues.consumers]]
+# queue = "cms-admin-jobs"
+
 # ── Rate limiting (per-colo, IP-keyed) ────────────────────────────────────────
 [[unsafe.bindings]]
 name = "AUTH_RATE_LIMITER"

@@ -3,6 +3,7 @@
 // ============================================================
 
 import type { BlueprintEntry } from './cms-config';
+import type { CmsAdminJobMessage } from './utils/admin-jobs';
 
 export const USER_ROLES = ['admin', 'editor', 'moderator', 'viewer'] as const;
 
@@ -307,6 +308,8 @@ export interface Env {
   PLUGINS?: string;
   /** Shared secret forwarded to plugin Workers so they can trust CMS-originated calls. */
   PLUGIN_SECRET?: string;
+  /** Queue for CMS-owned admin background jobs, such as long plugin actions. */
+  ADMIN_JOBS_QUEUE?: Queue<CmsAdminJobMessage>;
   /** HMAC-SHA256 secret for signing JWTs – set via `wrangler secret put JWT_SECRET` */
   JWT_SECRET: string;
   /**

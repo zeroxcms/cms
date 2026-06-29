@@ -21,6 +21,8 @@ import {
 } from './security/http';
 import { generateCspNonce, requestContext } from './utils/request-context';
 import type { Env, Variables } from './types';
+import { isCmsAdminJobMessage } from './utils/admin-jobs';
+import { runCmsAdminJob } from './utils/admin-job-runner';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -156,5 +158,15 @@ app.onError(async (err, c) => {
   );
 });
 
-export default app;
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    return app.fetch(request, env, ctx);
+  },
+
+  async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
+    for (const message of batch.messages) {
+      if (isCmsAdminJobMessage(message.body)) await runCmsAdminJob(env, message.body.jobId);
+    }
+  },
+};
 export { PageSyncDO } from './durable-objects/page-sync';

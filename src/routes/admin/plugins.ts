@@ -26,6 +26,7 @@ import {
   wantsCmsChrome,
 } from '../../security/plugin-proxy';
 import { sanitizePluginHtmlFragment } from '../../security/plugin-sanitize';
+import { cmsAdminJobMessage, createPluginAdminActionJob } from '../../utils/admin-jobs';
 
 export const pluginAdminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -59,17 +60,33 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
   const url = new URL(c.req.url);
   const prefix = `/admin/plugins/${pluginId}`;
   const rest = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) : '';
-  const upstream = `${PLUGIN_ORIGIN}${PLUGIN_PREFIX}/admin${rest}${url.search}`;
+  const pluginAdminPath = `${PLUGIN_PREFIX}/admin${rest}${url.search}`;
+  const upstream = `${PLUGIN_ORIGIN}${pluginAdminPath}`;
 
   const headers = buildPluginProxyHeaders(c.req.raw.headers, c.get('user'), plugin.secret);
 
   warnSharedPluginOrigin();
 
   const hasBody = c.req.method !== 'GET' && c.req.method !== 'HEAD';
+  const body = hasBody ? await c.req.raw.arrayBuffer() : undefined;
+  if (shouldQueuePluginAdminAction(c, pluginId, rest) && c.env.ADMIN_JOBS_QUEUE) {
+    const bodyText = body ? new TextDecoder().decode(body) : '';
+    const job = await createPluginAdminActionJob(c.env.DB, {
+      pluginId,
+      method: c.req.method,
+      path: pluginAdminPath,
+      contentType: c.req.raw.headers.get('content-type'),
+      body: bodyText,
+      user: c.get('user'),
+    });
+    await c.env.ADMIN_JOBS_QUEUE.send(cmsAdminJobMessage(job.id));
+    return c.redirect(queueRedirect(pluginId, rest));
+  }
+
   const upstreamResponse = await plugin.fetcher.fetch(upstream, {
     method: c.req.method,
     headers,
-    body: hasBody ? await c.req.raw.arrayBuffer() : undefined,
+    body,
     redirect: 'manual',
   });
 
@@ -99,4 +116,20 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
   // origin isolation - see warnSharedPluginOrigin() - it only limits injection
   // into an otherwise-benign plugin.
   return pluginDocumentResponse(upstreamResponse);
+}
+
+function shouldQueuePluginAdminAction(c: AppContext, pluginId: string, rest: string): boolean {
+  if (c.req.method !== 'POST') return false;
+  if (pluginId !== 'events') return false;
+  return /^\/events\/\d+\/(?:duplicate|delete)$/.test(rest);
+}
+
+function queueRedirect(pluginId: string, rest: string): string {
+  const action = rest.endsWith('/duplicate') ? 'duplication' : 'deletion';
+  return withFlash(`/admin/plugins/${pluginId}/events`, `Event ${action} queued. It may take a moment to finish.`);
+}
+
+function withFlash(path: string, message: string): string {
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}flash=${encodeURIComponent(message)}`;
 }

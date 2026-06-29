@@ -6,6 +6,7 @@ import { deliverHook } from '../src/plugins/hooks';
 import { viewsFor } from '../src/plugins/views';
 import { cmsConfig } from '../src/cms-config';
 import { signJWT } from '../src/utils/jwt';
+import { CMS_ADMIN_JOB_KIND, type CmsAdminJobMessage } from '../src/utils/admin-jobs';
 import type { Env, JWTPayload } from '../src/types';
 
 const EVENTS_MANIFEST = {
@@ -84,6 +85,7 @@ beforeEach(async () => {
   clearManifestCache();
   __clearInjectedFetchers();
   await env.DB.prepare('DELETE FROM plugins').run();
+  await env.DB.prepare('DELETE FROM admin_jobs').run();
 });
 
 describe('resolveCmsConfig', () => {
@@ -183,7 +185,9 @@ describe('viewsFor', () => {
 });
 
 describe('plugin admin proxy', () => {
-  const worker = (exports as unknown as { default: Fetcher }).default;
+  const worker = (exports as unknown as {
+    default: Fetcher & { queue(batch: MessageBatch<unknown>, env: Env): Promise<void> };
+  }).default;
   const testEnv = env as unknown as Record<string, unknown>;
   let savedBindings: Record<string, unknown>;
 
@@ -192,6 +196,7 @@ describe('plugin admin proxy', () => {
       PLUGINS: testEnv.PLUGINS,
       PLUGIN_TEST: testEnv.PLUGIN_TEST,
       PLUGIN_SECRET: testEnv.PLUGIN_SECRET,
+      ADMIN_JOBS_QUEUE: testEnv.ADMIN_JOBS_QUEUE,
     };
   });
 
@@ -201,6 +206,26 @@ describe('plugin admin proxy', () => {
       else testEnv[key] = value;
     }
   });
+
+  function queueStub<T>(): { queue: Queue<T>; sent: T[] } {
+    const sent: T[] = [];
+    const queue = {
+      send: async (body: T) => { sent.push(body); },
+      sendBatch: async (messages: Array<{ body: T }>) => {
+        for (const message of messages) sent.push(message.body);
+      },
+    } as unknown as Queue<T>;
+    return { queue, sent };
+  }
+
+  function queueBatch<T>(bodies: T[]): MessageBatch<T> {
+    return {
+      queue: 'test',
+      messages: bodies.map((body) => ({ body, ack: () => undefined, retry: () => undefined })),
+      ackAll: () => undefined,
+      retryAll: () => undefined,
+    } as unknown as MessageBatch<T>;
+  }
 
   it('never forwards client cookies or smuggled trust headers to the plugin', async () => {
     const captured: Array<{ url: string; headers: Headers }> = [];
@@ -277,6 +302,112 @@ describe('plugin admin proxy', () => {
     expect(capturedInit?.redirect).toBe('manual');
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe('/admin/plugins/events/events/21862006647168');
+  });
+
+  it('queues long events plugin duplicate posts in the CMS admin_jobs table', async () => {
+    const { queue, sent } = queueStub<CmsAdminJobMessage>();
+    testEnv.ADMIN_JOBS_QUEUE = queue;
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const pluginUrl = 'https://plugin-events-queue.local';
+    let pluginActionCalls = 0;
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Events', pluginUrl).run();
+    __injectPluginFetcher(pluginUrl, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(url).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        pluginActionCalls += 1;
+        return new Response('should not run inline', { status: 500 });
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/events/events/21864157243758/duplicate', {
+      method: 'POST',
+      headers: {
+        Cookie: `access_token=${token}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Sec-Fetch-Site': 'same-origin',
+      },
+      body: 'scope=guests',
+      redirect: 'manual',
+    }));
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('/admin/plugins/events/events?flash=Event%20duplication%20queued.%20It%20may%20take%20a%20moment%20to%20finish.');
+    expect(pluginActionCalls).toBe(0);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: CMS_ADMIN_JOB_KIND });
+    const job = await env.DB.prepare('SELECT * FROM admin_jobs WHERE id = ?').bind(sent[0].jobId).first<{
+      type: string; status: string; plugin_id: string; method: string; path: string; body: string; content_type: string; user_json: string;
+    }>();
+    expect(job).toMatchObject({
+      type: 'plugin_admin_action',
+      status: 'queued',
+      plugin_id: 'events',
+      method: 'POST',
+      path: '/__plugin/admin/events/21864157243758/duplicate',
+      body: 'scope=guests',
+    });
+    expect(job?.content_type).toContain('application/x-www-form-urlencoded');
+    expect(JSON.parse(job?.user_json ?? '{}')).toMatchObject({ sub: '1', email: 'admin@example.com' });
+  });
+
+  it('runs queued plugin admin jobs with the background-job header', async () => {
+    const { queue, sent } = queueStub<CmsAdminJobMessage>();
+    testEnv.ADMIN_JOBS_QUEUE = queue;
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const pluginUrl = 'https://plugin-events-job.local';
+    const captured: Array<{ url: string; method?: string; body?: BodyInit | null; headers: Headers }> = [];
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Events', pluginUrl).run();
+    __injectPluginFetcher(pluginUrl, {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(url).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        captured.push({ url, method: init?.method, body: init?.body, headers: new Headers(init?.headers) });
+        return new Response(null, { status: 302, headers: { Location: '/admin/plugins/events/events/999' } });
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+
+    await worker.fetch(new Request('http://localhost/admin/plugins/events/events/21864157243758/duplicate', {
+      method: 'POST',
+      headers: {
+        Cookie: `access_token=${token}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Sec-Fetch-Site': 'same-origin',
+      },
+      body: 'scope=lists',
+      redirect: 'manual',
+    }));
+
+    await worker.queue(queueBatch(sent), env as unknown as Env);
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].url).toBe('https://plugin.local/__plugin/admin/events/21864157243758/duplicate');
+    expect(captured[0].method).toBe('POST');
+    expect(captured[0].body).toBe('scope=lists');
+    expect(captured[0].headers.get('x-plugin-secret')).toBe('server-secret');
+    expect(captured[0].headers.get('x-cms-background-job')).toBe('1');
+    expect(JSON.parse(captured[0].headers.get('x-cms-user') ?? '{}')).toMatchObject({ id: '1', email: 'admin@example.com' });
+    const job = await env.DB.prepare('SELECT status, attempts, result_status, result_location FROM admin_jobs WHERE id = ?')
+      .bind(sent[0].jobId)
+      .first<{ status: string; attempts: number; result_status: number; result_location: string }>();
+    expect(job).toEqual({
+      status: 'done',
+      attempts: 1,
+      result_status: 302,
+      result_location: '/admin/plugins/events/events/999',
+    });
   });
 
   it('fails closed when a plugin has no secret and no PLUGIN_SECRET fallback', async () => {
