@@ -115,8 +115,8 @@
 
     if (kind === 'email' || text.includes('@')) return maskEmail(text);
     if (kind === 'phone') return maskToken(text.replace(/\s+/g, ''));
-    return text.split(/(\s+)/).map(function(part) {
-      return /^\s+$/.test(part) ? part : maskToken(part);
+    return text.split(/([\s·]+)/).map(function(part) {
+      return /^[\s·]+$/.test(part) ? part : maskToken(part);
     }).join('');
   }
 
@@ -136,6 +136,7 @@
     var chars = Array.from(String(value || ''));
     if (!chars.length) return '';
     if (chars.length <= 4) return chars[0] + MASK;
+    if (/[A-Za-z]/.test(value)) return chars.slice(0, 2).join('') + MASK + chars[chars.length - 1];
     return chars[0] + MASK + chars[chars.length - 1];
   }
 
