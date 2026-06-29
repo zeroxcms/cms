@@ -9,6 +9,7 @@ import { viewsFor } from '../../plugins/views';
 import { pluginEditView } from '../../plugins/edit-view';
 import { blueprintToLect, safeParseLect, stringifyLect } from '../../utils/lect';
 import type { Env, Variables, Page, PageVersion } from '../../types';
+import type { BlueprintEntry } from '../../cms-config';
 import {
   dashboardPageHref,
   dashboardPageNumber,
@@ -73,6 +74,16 @@ function withNativeFlag(c: AppContext, url: string): string {
   return `${url}${url.includes('?') ? '&' : '?'}native=1`;
 }
 
+function pageTypeHasPrivacyFields(entries: BlueprintEntry[] | undefined): boolean {
+  return (entries ?? []).some((entry) => {
+    if (typeof entry === 'string') {
+      const name = entry.replace(/^[*@]/, '').split(':')[0].toLowerCase();
+      return name.includes('email') || name.includes('phone') || name === 'mobile' || name === 'fax';
+    }
+    return Object.values(entry).some(pageTypeHasPrivacyFields);
+  });
+}
+
 // Flash message for a publish fan-out: plain success, or success qualified
 // with the targets that failed (failures are already logged by the registry).
 function publishFlash(outcome: PublishOutcome): string {
@@ -131,6 +142,7 @@ pagesRoutes.get('/pages/list/:pageType', async (c) => {
   });
   const liveMap = await liveMapForDraftPages(c.env, draftPages.results);
   const routeBase = `/admin/pages/list/${encodeURIComponent(pageType)}`;
+  const config = await resolveCmsConfig(c.env);
 
   return renderPage(c, dashboardPage, {
       siteTitle: `${c.env.SITE_TITLE ?? '0xCMS'} · ${pageType}`,
@@ -143,6 +155,7 @@ pagesRoutes.get('/pages/list/:pageType', async (c) => {
       importHref: `/admin/pages/import-v2/${encodeURIComponent(pageType)}`,
       exportHref: `/admin/pages/export/${encodeURIComponent(pageType)}`,
       pagination: dashboardPagination(routeBase, draftPages),
+      privacyTable: pageTypeHasPrivacyFields(config.blueprint[pageType]),
   });
 });
 

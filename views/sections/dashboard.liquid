@@ -55,7 +55,7 @@
   {% endif %}
 
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
-    <table class="relative w-full text-left{% if hasPages %} min-w-[760px]{% endif %}">
+    <table class="relative w-full text-left{% if hasPages %} min-w-[760px]{% endif %}"{% if privacyTable %} data-privacy-table{% endif %}>
       {% if hasPages %}
       <thead class="bg-gray-50 border-b border-gray-200">
         <tr>
@@ -75,7 +75,7 @@
             <tr class="hover:bg-gray-50 transition-colors">
               <td class="px-6 py-4">
                 <a href="{{ page.editHref | escape }}" class="flex flex-col gap-1">
-                  <div class="font-medium text-gray-900">{{ page.name | escape }}</div>
+                  <div class="font-medium text-gray-900"{% if privacyTable %} data-private-field="name"{% endif %}>{{ page.name | escape }}</div>
                   <div class="text-xs text-gray-500 font-mono">/{{ page.slug | escape }}</div>
                 </a>
               </td>

@@ -26,6 +26,7 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
   flash?: string;
   returnPath?: string;
   pageTypeFilter?: string;
+  privacyTable?: boolean;
   searchValue?: string;
   searchAction?: string;
   advancedSearchHref?: string;
@@ -59,6 +60,7 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
     returnPath,
     pageTitle: pageTypeFilter ? `Pages: ${pageTypeFilter}` : 'Pages',
     showPageTypeColumn,
+    privacyTable: !!opts.privacyTable,
     emptyColspan: showPageTypeColumn ? 5 : 4,
     searchValue,
     searchAction,
