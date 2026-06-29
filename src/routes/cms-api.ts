@@ -50,14 +50,24 @@ const DUPLICATE_BATCH = 100;
 /** Max children cloned in one POST /pages/duplicate request before yielding a cursor. */
 const DUPLICATE_MAX_PER_CALL = 1000;
 
+/** Rows trashed per DB.batch in DELETE /pages/children. */
+const DELETE_CHILDREN_BATCH = 100;
+/** Max children trashed in one DELETE /pages/children request before yielding (done:false). */
+const DELETE_CHILDREN_MAX_PER_CALL = 1000;
+
 const CMS_ID_EPOCH_OFFSET = 1563741060;
 
-/** Body accepted by POST /pages/duplicate — clone a parent's children with a transform. */
+/** Body accepted by POST /pages/duplicate — clone a related collection with a transform. */
 interface DuplicateInput {
-  /** Parent page whose children are cloned. */
-  source_page_id?: unknown;
-  /** Only children of this page type are cloned (must be in the plugin's write scope). */
+  /** Only pages of this type are cloned (must be in the plugin's write scope). */
   source_page_type?: unknown;
+  // Source selector (exactly one): by lect pointer (preferred) or parent page id.
+  /** Pointer key the source pages group by, e.g. 'mail_list'. */
+  source_pointer_key?: unknown;
+  /** Pointer value the source pages group by, e.g. the list id. */
+  source_pointer_value?: unknown;
+  /** Parent page whose children are cloned (fallback when no pointer is given). */
+  source_page_id?: unknown;
   /** Parent assigned to the clones (null/omitted → top-level). */
   target_page_id?: unknown;
   /** Lect fields merged over each clone (e.g. status reset, repointed `_pointers`). */
@@ -188,6 +198,31 @@ function asFiniteNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const n = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * WHERE fragment selecting a related collection of pages for the bulk
+ * clone/delete endpoints — by a lect pointer (the way plugins actually group
+ * sub-collections, e.g. guests by `_pointers.mail_list`) or, failing that, by
+ * parent page id. The pointer is preferred because parent (`page_id`) is not
+ * guaranteed to track the reference. Exactly one selector must be supplied.
+ */
+function collectionWhere(
+  parentId: number | null,
+  pointerKey: string,
+  pointerValue: string,
+): { ok: true; sql: string; params: unknown[] } | { ok: false; error: string } {
+  const hasParent = parentId !== null;
+  const hasPointer = pointerKey !== '' || pointerValue !== '';
+  if (hasParent && hasPointer) return { ok: false, error: 'ambiguous_selector' };
+  if (!hasParent && !hasPointer) return { ok: false, error: 'selector_required' };
+  if (hasPointer) {
+    if (!pointerKey || !pointerValue) return { ok: false, error: 'pointer_key_and_value_required_together' };
+    if (!/^[a-z0-9_-]+$/i.test(pointerKey)) return { ok: false, error: 'invalid_pointer_key' };
+    // json_extract path is parameterised below; the key is validated above.
+    return { ok: true, sql: 'json_extract(lect, ?) = ?', params: [`$._pointers.${pointerKey}`, pointerValue] };
+  }
+  return { ok: true, sql: 'page_id = ?', params: [parentId] };
 }
 
 // ── Lifecycle hook + audit (plugin actor, no signed-in user) ──────────────────
@@ -574,12 +609,18 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
   const body = await c.req.json().catch(() => null) as DuplicateInput | null;
   if (!body || typeof body !== 'object') return c.json({ error: 'invalid_body' }, 400);
 
-  const sourceParentId = asFiniteNumber(body.source_page_id);
   const pageType = typeof body.source_page_type === 'string' ? body.source_page_type.trim() : '';
-  if (sourceParentId === null) return c.json({ error: 'source_page_id_required' }, 400);
   if (!pageType) return c.json({ error: 'source_page_type_required' }, 400);
   // Cloning creates pages of this type, so it needs write scope, not just read.
   if (!auth.allowedTypes.has(pageType)) return c.json({ error: 'forbidden_page_type' }, 403);
+
+  // Select the source pages by lect pointer (how guests etc. group) or parent id.
+  const selector = collectionWhere(
+    asFiniteNumber(body.source_page_id),
+    typeof body.source_pointer_key === 'string' ? body.source_pointer_key.trim() : '',
+    typeof body.source_pointer_value === 'string' ? body.source_pointer_value : '',
+  );
+  if (!selector.ok) return c.json({ error: selector.error }, 400);
 
   const targetParentId = asFiniteNumber(body.target_page_id);
   const overrideLect = coerceLect(body.lect);
@@ -598,10 +639,10 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
   // commits on its own, so a copied row is never lost if a later chunk fails.
   while (copied < DUPLICATE_MAX_PER_CALL) {
     const take = Math.min(DUPLICATE_BATCH, DUPLICATE_MAX_PER_CALL - copied);
-    // Fetch one row past the chunk to detect whether more children remain.
+    // Fetch one row past the chunk to detect whether more sources remain.
     const sources = await c.env.DB.prepare(
-      `SELECT * FROM draft_pages WHERE page_id = ? AND page_type = ? AND id > ? ORDER BY id ASC LIMIT ?`,
-    ).bind(sourceParentId, pageType, cursor, take + 1).all<Page>();
+      `SELECT * FROM draft_pages WHERE ${selector.sql} AND page_type = ? AND id > ? ORDER BY id ASC LIMIT ?`,
+    ).bind(...selector.params, pageType, cursor, take + 1).all<Page>();
 
     const rows = sources.results;
     if (!rows.length) { done = true; break; }
@@ -746,6 +787,68 @@ cmsApiRoutes.delete('/pages/batch', async (c) => {
   }
 
   return c.json({ ok: true, trashed: pages.length });
+});
+
+// Server-side bulk soft-delete of a related collection of pages.
+//
+// Counterpart to POST /pages/duplicate, for "delete an event with all its
+// guests" without the plugin first reading every child id and then deleting it
+// in ≤MAX_BATCH chunks. The host finds the pages itself — by lect pointer (how
+// guests group: `_pointers.mail_list`) or by parent page id — and trashes them
+// in DB.batch chunks; trashDraftPages copies any number of rows to trash in a
+// single batch, so each chunk is a couple of subrequests regardless of size.
+//
+// Bounded to DELETE_CHILDREN_MAX_PER_CALL per request: since trashed rows leave
+// draft_pages, a follow-up call simply picks up whatever remains, so the caller
+// repeats while `done` is false. Registered BEFORE DELETE /pages/:id so
+// "children" is not matched as an id.
+//
+// Unlike DELETE /pages/:id and /pages/batch this does NOT unpublish each child
+// from publish targets — that per-page work is what makes a bulk delete slow,
+// and child collections this targets (e.g. event guests) are not published.
+cmsApiRoutes.delete('/pages/children', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const body = await c.req.json().catch(() => null) as {
+    parent_page_id?: unknown; pointer_key?: unknown; pointer_value?: unknown; page_type?: unknown;
+  } | null;
+  if (!body || typeof body !== 'object') return c.json({ error: 'invalid_body' }, 400);
+
+  const pageType = typeof body.page_type === 'string' ? body.page_type.trim() : '';
+  if (!pageType) return c.json({ error: 'page_type_required' }, 400);
+  if (!auth.allowedTypes.has(pageType)) return c.json({ error: 'forbidden_page_type' }, 403);
+
+  // Select the pages by lect pointer (how guests group) or parent page id.
+  const selector = collectionWhere(
+    asFiniteNumber(body.parent_page_id),
+    typeof body.pointer_key === 'string' ? body.pointer_key.trim() : '',
+    typeof body.pointer_value === 'string' ? body.pointer_value : '',
+  );
+  if (!selector.ok) return c.json({ error: selector.error }, 400);
+
+  let trashed = 0;
+  let done = false;
+  const hookPages: HookPage[] = [];
+  while (trashed < DELETE_CHILDREN_MAX_PER_CALL) {
+    const { results } = await c.env.DB.prepare(
+      `SELECT id FROM draft_pages WHERE ${selector.sql} AND page_type = ? ORDER BY id ASC LIMIT ?`,
+    ).bind(...selector.params, pageType, DELETE_CHILDREN_BATCH).all<{ id: number }>();
+
+    if (!results.length) { done = true; break; }
+    const pages = await trashDraftPages(c.env.DB, results.map((row) => row.id));
+    for (const page of pages) {
+      hookPages.push({ id: page.id, uuid: page.uuid, page_type: page.page_type, name: page.name, slug: page.slug });
+    }
+    trashed += results.length;
+    if (results.length < DELETE_CHILDREN_BATCH) { done = true; break; }
+  }
+
+  // Audit + delete hooks run detached (waitUntil), so they never block the
+  // response — the same best-effort path the per-id batch delete uses.
+  emitPluginHooks(c, 'delete', hookPages, auth.pluginId);
+
+  return c.json({ trashed, done });
 });
 
 // Soft-delete a page to trash.

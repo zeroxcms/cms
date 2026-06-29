@@ -322,7 +322,7 @@ describe('F1 batch create', () => {
     expect(created.page_id).toBeNull();
   });
 
-  it('bulk-clones a parent\'s children server-side with a lect transform', async () => {
+  it('bulk-clones a collection selected by lect pointer (not parent) with a transform', async () => {
     const sourceList = (await (await cmsApi('POST', '/__cms/pages', {
       page_type: 'mail_list', name: 'VIP', lect: { _pointers: { event: '7' } },
     })).json() as { page: { id: number } }).page;
@@ -330,9 +330,11 @@ describe('F1 batch create', () => {
       page_type: 'mail_list', name: 'VIP copy', lect: { _pointers: { event: '99' } },
     })).json() as { page: { id: number } }).page;
 
+    // Guests reference the list ONLY by the mail_list pointer — page_id is left
+    // null on purpose, so a parent-based selector would miss them entirely.
     for (const name of ['Jane', 'John', 'Jo']) {
       await cmsApi('POST', '/__cms/pages', {
-        page_type: 'guest', name, page_id: sourceList.id,
+        page_type: 'guest', name,
         lect: {
           email: `${name.toLowerCase()}@x.com`, status: 'confirmed',
           _pointers: { event: '7', mail_list: String(sourceList.id) },
@@ -342,20 +344,21 @@ describe('F1 batch create', () => {
     }
 
     const dup = await cmsApi('POST', '/__cms/pages/duplicate', {
-      source_page_id: sourceList.id, source_page_type: 'guest', target_page_id: targetList.id,
+      source_pointer_key: 'mail_list', source_pointer_value: String(sourceList.id),
+      source_page_type: 'guest', target_page_id: targetList.id,
       lect: { status: 'to be invited', _pointers: { event: '99', mail_list: String(targetList.id) } },
       drop_lect: ['checkin'],
     });
     expect(dup.status).toBe(200);
     expect(await dup.json()).toMatchObject({ count: 3, next_cursor: null, done: true });
 
-    // Clones are now children of the target list, carrying the transform.
-    const cloned = await (await cmsApi('GET', `/__cms/pages?page_type=guest&page_id=${targetList.id}`)).json() as {
+    // Clones carry the transform and group under the target list by pointer.
+    const cloned = await (await cmsApi('GET', `/__cms/pages?page_type=guest&pointer_key=mail_list&pointer_value=${targetList.id}`)).json() as {
       total: number; pages: Array<{ page_id: number; lect: Record<string, any> }>;
     };
     expect(cloned.total).toBe(3);
     for (const clone of cloned.pages) {
-      expect(clone.page_id).toBe(targetList.id);
+      expect(clone.page_id).toBe(targetList.id);                   // target parent set too
       expect(clone.lect.status).toBe('to be invited');            // override applied
       expect(clone.lect._pointers.event).toBe('99');               // repointed
       expect(clone.lect._pointers.mail_list).toBe(String(targetList.id));
@@ -364,15 +367,69 @@ describe('F1 batch create', () => {
     }
 
     // The source guests are untouched.
-    const sources = await (await cmsApi('GET', `/__cms/pages?page_type=guest&page_id=${sourceList.id}`)).json() as { total: number };
+    const sources = await (await cmsApi('GET', `/__cms/pages?page_type=guest&pointer_key=mail_list&pointer_value=${sourceList.id}`)).json() as { total: number };
     expect(sources.total).toBe(3);
   });
 
   it('rejects a duplicate into a page type the plugin does not own', async () => {
     const res = await cmsApi('POST', '/__cms/pages/duplicate', {
-      source_page_id: 1, source_page_type: 'contact', target_page_id: null,
+      source_pointer_key: 'mail_list', source_pointer_value: '1', source_page_type: 'contact', target_page_id: null,
     });
     expect(res.status).toBe(403);
     expect((await res.json() as { error: string }).error).toBe('forbidden_page_type');
+  });
+
+  it('rejects a duplicate with no source selector', async () => {
+    const res = await cmsApi('POST', '/__cms/pages/duplicate', { source_page_type: 'guest' });
+    expect(res.status).toBe(400);
+    expect((await res.json() as { error: string }).error).toBe('selector_required');
+  });
+
+  it('bulk-trashes a collection selected by lect pointer (delete-children)', async () => {
+    const list = (await (await cmsApi('POST', '/__cms/pages', {
+      page_type: 'mail_list', name: 'VIP', lect: { _pointers: { event: '7' } },
+    })).json() as { page: { id: number } }).page;
+    const other = (await (await cmsApi('POST', '/__cms/pages', {
+      page_type: 'mail_list', name: 'Other', lect: { _pointers: { event: '7' } },
+    })).json() as { page: { id: number } }).page;
+
+    // Guests reference the list ONLY by the mail_list pointer (page_id null), so
+    // a parent-based delete would miss them — the pointer selector must find them.
+    for (const name of ['Jane', 'John', 'Jo']) {
+      await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name, lect: { _pointers: { mail_list: String(list.id) } } });
+    }
+    // A guest under a different list must NOT be touched.
+    await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Keep', lect: { _pointers: { mail_list: String(other.id) } } });
+
+    const del = await cmsApi('DELETE', '/__cms/pages/children', {
+      pointer_key: 'mail_list', pointer_value: String(list.id), page_type: 'guest',
+    });
+    expect(del.status).toBe(200);
+    expect(await del.json()).toMatchObject({ trashed: 3, done: true });
+
+    // The list's guests are gone from drafts and now in trash.
+    const remaining = await (await cmsApi('GET', `/__cms/pages?page_type=guest&pointer_key=mail_list&pointer_value=${list.id}`)).json() as { total: number };
+    expect(remaining.total).toBe(0);
+    const trashRow = await env.DB.prepare("SELECT COUNT(*) AS n FROM trash_pages WHERE page_type = 'guest'")
+      .first<{ n: number }>();
+    expect(trashRow?.n).toBe(3);
+
+    // The other list's guest survives.
+    const kept = await (await cmsApi('GET', `/__cms/pages?page_type=guest&pointer_key=mail_list&pointer_value=${other.id}`)).json() as { total: number };
+    expect(kept.total).toBe(1);
+  });
+
+  it('rejects delete-children for a page type the plugin does not own', async () => {
+    const res = await cmsApi('DELETE', '/__cms/pages/children', { pointer_key: 'mail_list', pointer_value: '1', page_type: 'contact' });
+    expect(res.status).toBe(403);
+    expect((await res.json() as { error: string }).error).toBe('forbidden_page_type');
+  });
+
+  it('rejects delete-children with both selectors (ambiguous)', async () => {
+    const res = await cmsApi('DELETE', '/__cms/pages/children', {
+      parent_page_id: 1, pointer_key: 'mail_list', pointer_value: '1', page_type: 'guest',
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json() as { error: string }).error).toBe('ambiguous_selector');
   });
 });
