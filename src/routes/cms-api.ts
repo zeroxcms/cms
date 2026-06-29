@@ -162,6 +162,9 @@ function coerceLect(value: unknown): Lect {
 }
 
 function asFiniteNumber(value: unknown): number | null {
+  // Treat null/undefined/'' as "no value" — Number() maps all three to 0/NaN,
+  // and a stray 0 here would bind page_id=0 and break the draft_pages self-FK.
+  if (value === null || value === undefined || value === '') return null;
   const n = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(n) ? n : null;
 }
