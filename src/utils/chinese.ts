@@ -1,27 +1,34 @@
 // Simplified/Traditional Chinese conversion, used to widen advanced-search
-// queries: a search for 苏玮 should also match 蘇瑋 and vice versa.
-// Conversion data is maintained by the opencc-js package (MIT/Apache-2.0).
+// queries: a search for 苏玮 should also match 蘇瑋 and vice versa. The maps are
+// character-level 1:1 conversions generated from the OpenCC dictionaries (see
+// scripts/gen-chinese-chars.mjs); that is enough for substring LIKE matching.
 
-import { ConverterFactory } from 'opencc-js/core';
-import STCharacters from 'opencc-js/dict/STCharacters';
-import TSCharacters from 'opencc-js/dict/TSCharacters';
+import { S2T_KEYS, S2T_VALS, T2S_KEYS, T2S_VALS } from './chinese-chars';
 
-// CJK Unified Ideographs, Extension A, Compatibility Ideographs.
-const CJK = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/;
+function buildMap(keys: string, vals: string): Map<string, string> {
+  const map = new Map<string, string>();
+  const k = [...keys];
+  const v = [...vals];
+  for (let i = 0; i < k.length; i++) map.set(k[i], v[i]);
+  return map;
+}
 
-const convertToTraditional = ConverterFactory([[STCharacters]]);
-const convertToSimplified = ConverterFactory([[TSCharacters]]);
+const S2T = buildMap(S2T_KEYS, S2T_VALS);
+const T2S = buildMap(T2S_KEYS, T2S_VALS);
 
-export function hasChinese(value: string): boolean {
-  return CJK.test(value);
+/** Convert each character through `map`, leaving unmapped characters as-is. */
+function convert(value: string, map: Map<string, string>): string {
+  let out = '';
+  for (const char of value) out += map.get(char) ?? char;
+  return out;
 }
 
 export function toTraditional(value: string): string {
-  return convertToTraditional(value);
+  return convert(value, S2T);
 }
 
 export function toSimplified(value: string): string {
-  return convertToSimplified(value);
+  return convert(value, T2S);
 }
 
 /**
@@ -31,9 +38,9 @@ export function toSimplified(value: string): string {
  * either script matches content stored in the other.
  */
 export function chineseSearchVariants(term: string): string[] {
-  if (!term || !hasChinese(term)) return [term];
-  const variants = new Set<string>([term]);
-  variants.add(toSimplified(term));
-  variants.add(toTraditional(term));
+  if (!term) return [term];
+  const simplified = toSimplified(term);
+  const traditional = toTraditional(term);
+  const variants = new Set<string>([term, simplified, traditional]);
   return [...variants];
 }

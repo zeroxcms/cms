@@ -14,8 +14,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "hono": "^4.12.27",
-    "opencc-js": "^1.3.2"
+    "hono": "^4.12.27"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.17.0",
