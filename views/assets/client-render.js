@@ -54,7 +54,9 @@
     return url + (url.includes('?') ? '&' : '?') + 'r=' + encodeURIComponent(revision);
   }
 
-  function currentViewBasePath() {
+  function currentViewBasePath(path) {
+    const normalized = path ? normalizePath(path) : '';
+    if (normalized.startsWith('/snippets/pagefield/')) return payload.viewBasePath || '/admin/views';
     return activeViewBasePath || payload.viewBasePath || '/admin/views';
   }
 
@@ -64,7 +66,7 @@
 
   async function loadTemplate(path) {
     const normalized = normalizePath(path);
-    const basePath = currentViewBasePath();
+    const basePath = currentViewBasePath(normalized);
     const key = templateKey(basePath, normalized);
     if (templateCache.has(key)) return templateCache.get(key);
 
@@ -386,7 +388,8 @@
   }
 
   function isPluginTemplate(path) {
-    return templateSource.get(templateKey(currentViewBasePath(), normalizePath(path))) === 'plugin';
+    const normalized = normalizePath(path);
+    return templateSource.get(templateKey(currentViewBasePath(normalized), normalized)) === 'plugin';
   }
 
   function sanitizePluginHtml(html) {
