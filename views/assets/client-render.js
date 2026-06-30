@@ -54,9 +54,19 @@
     return url + (url.includes('?') ? '&' : '?') + 'r=' + encodeURIComponent(revision);
   }
 
-  function currentViewBasePath(path) {
+  function sharedCmsTemplatePath(path) {
     const normalized = path ? normalizePath(path) : '';
-    if (normalized.startsWith('/snippets/pagefield/')) return payload.viewBasePath || '/admin/views';
+    if (normalized.startsWith('/snippets/pagefield/')) return normalized;
+    if (normalized === '/snippets/color-tag-picker.liquid'
+      || normalized === '/sections/color-tag-picker.liquid'
+      || normalized === '/color-tag-picker.liquid') {
+      return '/snippets/color-tag-picker.liquid';
+    }
+    return '';
+  }
+
+  function currentViewBasePath(path) {
+    if (sharedCmsTemplatePath(path)) return payload.viewBasePath || '/admin/views';
     return activeViewBasePath || payload.viewBasePath || '/admin/views';
   }
 
@@ -65,7 +75,7 @@
   }
 
   async function loadTemplate(path) {
-    const normalized = normalizePath(path);
+    const normalized = sharedCmsTemplatePath(path) || normalizePath(path);
     const basePath = currentViewBasePath(normalized);
     const key = templateKey(basePath, normalized);
     if (templateCache.has(key)) return templateCache.get(key);
@@ -388,7 +398,7 @@
   }
 
   function isPluginTemplate(path) {
-    const normalized = normalizePath(path);
+    const normalized = sharedCmsTemplatePath(path) || normalizePath(path);
     return templateSource.get(templateKey(currentViewBasePath(normalized), normalized)) === 'plugin';
   }
 
