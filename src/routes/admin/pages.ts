@@ -42,6 +42,7 @@ import {
   fetchUserName,
   listAllDashboardDraftPages,
   listDashboardDraftPages,
+  listDashboardDraftPagesByUuids,
   parentPageOption,
   trashDraftPage,
 } from '../../utils/admin-queries';
@@ -61,6 +62,7 @@ import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from 
 export const pagesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 type DashboardStatusFilter = ReturnType<typeof dashboardStatusFilter>;
+type DashboardLiveRow = { uuid: string; lect: string | null; weight: number };
 
 function statusFilterLinks(routeBase: string, active: DashboardStatusFilter) {
   return [
@@ -86,6 +88,49 @@ function paginateDashboardPages<T extends Page>(pages: T[], requestedPage: numbe
   };
 }
 
+async function liveDashboardPagesForRequest(
+  c: AppContext,
+  options: { pageType?: string; requestedPage: number; pageSize: number },
+) {
+  const { pageType, requestedPage, pageSize } = options;
+  const whereSql = pageType ? 'WHERE page_type = ?' : '';
+  const baseParams = pageType ? [pageType] : [];
+  const countRow = await c.env.PUBLISHED_DB.prepare(`SELECT COUNT(*) AS total FROM live_pages ${whereSql}`)
+    .bind(...baseParams)
+    .first<{ total: number }>();
+  const total = countRow?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(requestedPage, totalPages);
+  const currentOffset = (currentPage - 1) * pageSize;
+  const liveRows = await c.env.PUBLISHED_DB.prepare(
+    `SELECT uuid, lect, weight FROM live_pages ${whereSql}
+     ORDER BY weight ASC, name ASC, id ASC
+     LIMIT ? OFFSET ?`,
+  )
+    .bind(...baseParams, pageSize, currentOffset)
+    .all<DashboardLiveRow>();
+  const liveMap = new Map(liveRows.results.map((page) => [page.uuid, page]));
+  const draftRows = await listDashboardDraftPagesByUuids(
+    c.env.DB,
+    liveRows.results.map((page) => page.uuid),
+    { pageType },
+  );
+  const draftMap = new Map(draftRows.map((page) => [page.uuid, page]));
+  const results = liveRows.results
+    .map((page) => draftMap.get(page.uuid))
+    .filter((page): page is Page => !!page);
+
+  return {
+    results: withLiveStatus(results, liveMap),
+    pagination: {
+      total,
+      totalPages,
+      currentPage,
+      limit: pageSize,
+    },
+  };
+}
+
 async function dashboardPagesForRequest(
   c: AppContext,
   options: { pageType?: string; statusFilter: DashboardStatusFilter; requestedPage: number; pageSize: number },
@@ -103,11 +148,14 @@ async function dashboardPagesForRequest(
       results: withLiveStatus(draftPages.results, liveMap),
     };
   }
+  if (statusFilter === 'live') {
+    return liveDashboardPagesForRequest(c, { pageType, requestedPage, pageSize });
+  }
 
   const allDraftPages = await listAllDashboardDraftPages(c.env.DB, { pageType });
   const liveMap = await liveMapForDraftPages(c.env, allDraftPages);
   const pages = withLiveStatus(allDraftPages, liveMap)
-    .filter((page) => statusFilter === 'live' ? page.isPublished : !page.isPublished);
+    .filter((page) => !page.isPublished);
   return paginateDashboardPages(pages, requestedPage, pageSize);
 }
 
