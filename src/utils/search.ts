@@ -5,6 +5,7 @@ import { cmsConfig } from '../cms-config';
 import type { BlueprintEntry, CmsConfig } from '../cms-config';
 import type { Page, Tag, Taxonomy } from '../types';
 import { num, strParam } from './forms';
+import { chineseSearchVariants } from './chinese';
 
 export type AdvancedSearchOperator = 'AND' | 'OR' | 'NOT';
 
@@ -215,22 +216,32 @@ export function advancedSearchCondition(
   const params: unknown[] = [];
 
   if (criterion.term) {
-    const searchTerm = `%${criterion.term.replaceAll(' ', '%')}%`;
+    // A Chinese term also matches its Simplified/Traditional variants, so we OR
+    // a LIKE per variant. Non-Chinese terms yield a single variant — identical
+    // to the previous single-LIKE behaviour.
+    const searchTerms = chineseSearchVariants(criterion.term)
+      .map((variant) => `%${variant.replaceAll(' ', '%')}%`);
+    const orGroup = (clause: string) =>
+      searchTerms.length > 1 ? `(${searchTerms.map(() => clause).join(' OR ')})` : clause;
+
     if (criterion.path) {
       const wildcardParts = wildcardJsonPathParts(criterion.path);
       if (wildcardParts) {
-        conditions.push(`EXISTS (
+        const beforePath = sqliteJsonPath(wildcardParts.beforePath);
+        const afterPath = sqliteJsonPath(wildcardParts.afterPath);
+        conditions.push(orGroup(`EXISTS (
           SELECT 1 FROM json_each(json_extract(${pageAlias}.lect, ?))
           WHERE json_extract(value, ?) LIKE ?
-        )`);
-        params.push(sqliteJsonPath(wildcardParts.beforePath), sqliteJsonPath(wildcardParts.afterPath), searchTerm);
+        )`));
+        for (const term of searchTerms) params.push(beforePath, afterPath, term);
       } else {
-        conditions.push(`json_extract(${pageAlias}.lect, ?) LIKE ?`);
-        params.push(sqliteJsonPath(criterion.path), searchTerm);
+        const path = sqliteJsonPath(criterion.path);
+        conditions.push(orGroup(`json_extract(${pageAlias}.lect, ?) LIKE ?`));
+        for (const term of searchTerms) params.push(path, term);
       }
     } else {
-      conditions.push(`${pageAlias}.lect LIKE ?`);
-      params.push(searchTerm);
+      conditions.push(orGroup(`${pageAlias}.lect LIKE ?`));
+      for (const term of searchTerms) params.push(term);
     }
   }
 

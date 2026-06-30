@@ -341,3 +341,18 @@ export async function listDashboardDraftPages(
     },
   };
 }
+
+export async function listAllDashboardDraftPages(
+  db: D1Database,
+  options: { pageType?: string } = {},
+): Promise<Page[]> {
+  const whereSql = options.pageType ? 'WHERE page_type = ?' : '';
+  const params = options.pageType ? [options.pageType] : [];
+  const pages = await db.prepare(
+    `SELECT * FROM draft_pages ${whereSql}
+     ORDER BY weight ASC, name ASC, id ASC`,
+  )
+    .bind(...params)
+    .all<Page>();
+  return pages.results;
+}

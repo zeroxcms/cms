@@ -96,7 +96,11 @@ export async function renderPage<P extends BaseTemplateProps>(
   return c.html(await page(views, { ...base, ...extra } as unknown as P));
 }
 
-export function dashboardPagination(routeBase: string, result: DashboardListResult) {
+export function dashboardPagination(
+  routeBase: string,
+  result: DashboardListResult,
+  params: Record<string, string | number | null | undefined> = {},
+) {
   const { currentPage, totalPages, limit } = result.pagination;
 
   return {
@@ -104,10 +108,10 @@ export function dashboardPagination(routeBase: string, result: DashboardListResu
     totalPages,
     currentPage,
     pageSize: limit,
-    firstHref: currentPage > 1 ? dashboardPageHref(routeBase, 1, limit) : '',
-    previousHref: currentPage > 1 ? dashboardPageHref(routeBase, currentPage - 1, limit) : '',
-    nextHref: currentPage < totalPages ? dashboardPageHref(routeBase, currentPage + 1, limit) : '',
-    lastHref: currentPage < totalPages ? dashboardPageHref(routeBase, totalPages, limit) : '',
+    firstHref: currentPage > 1 ? dashboardPageHref(routeBase, 1, limit, params) : '',
+    previousHref: currentPage > 1 ? dashboardPageHref(routeBase, currentPage - 1, limit, params) : '',
+    nextHref: currentPage < totalPages ? dashboardPageHref(routeBase, currentPage + 1, limit, params) : '',
+    lastHref: currentPage < totalPages ? dashboardPageHref(routeBase, totalPages, limit, params) : '',
   };
 }
 

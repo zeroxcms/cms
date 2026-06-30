@@ -4,6 +4,7 @@ import {
   dashboardPageHref,
   dashboardPageNumber,
   dashboardPageSize,
+  dashboardStatusFilter,
   editorsFromForm,
   nullableStr,
   num,
@@ -14,6 +15,7 @@ import {
 } from '../src/utils/forms';
 import { validatePageBasics } from '../src/utils/validation';
 import {
+  advancedSearchCondition,
   advancedSearchOperator,
   advancedSearchOrder,
   advancedSearchSort,
@@ -21,6 +23,7 @@ import {
   parseAdvancedSearchCriteria,
   sqliteJsonPath,
 } from '../src/utils/search';
+import { chineseSearchVariants, toSimplified, toTraditional } from '../src/utils/chinese';
 import { csvFormatValue, csvRowsToObjects, parseCsv } from '../src/utils/csv';
 
 describe('forms helpers', () => {
@@ -68,6 +71,14 @@ describe('forms helpers', () => {
 
   it('builds dashboard page hrefs', () => {
     expect(dashboardPageHref('/admin', 2, 50)).toBe('/admin?page=2&pagesize=50');
+    expect(dashboardPageHref('/admin', 2, 50, { status: 'live' })).toBe('/admin?page=2&pagesize=50&status=live');
+  });
+
+  it('normalizes dashboard status filters', () => {
+    expect(dashboardStatusFilter('draft')).toBe('draft');
+    expect(dashboardStatusFilter('live')).toBe('live');
+    expect(dashboardStatusFilter('published')).toBe('');
+    expect(dashboardStatusFilter(undefined)).toBe('');
   });
 
   it('resolves the CSV import mode, defaulting safely', () => {
@@ -135,6 +146,54 @@ describe('advanced search parsing', () => {
     expect(sqliteJsonPath('')).toBe('$');
     expect(getPathValue({ link: { url: '/x' } }, 'link.url')).toBe('/x');
     expect(getPathValue({ a: 1 }, 'a.b')).toBeUndefined();
+  });
+});
+
+describe('Chinese Simplified/Traditional search variants', () => {
+  it('converts between scripts character by character', () => {
+    expect(toTraditional('苏玮')).toBe('蘇瑋');
+    expect(toSimplified('蘇瑋')).toBe('苏玮');
+    // Unmapped (shared) characters are left untouched.
+    expect(toTraditional('中文')).toBe('中文');
+  });
+
+  it('adds the opposite-script variant for a Chinese term', () => {
+    expect(chineseSearchVariants('苏玮').sort()).toEqual(['苏玮', '蘇瑋'].sort());
+    expect(chineseSearchVariants('蘇瑋').sort()).toEqual(['苏玮', '蘇瑋'].sort());
+  });
+
+  it('returns a single variant for non-Chinese or shared-character terms', () => {
+    expect(chineseSearchVariants('hello')).toEqual(['hello']);
+    expect(chineseSearchVariants('')).toEqual(['']);
+    // 中文 is identical in both scripts, so no extra variant is produced.
+    expect(chineseSearchVariants('中文')).toEqual(['中文']);
+  });
+
+  it('ORs a LIKE per variant in the SQL condition for a Chinese term', () => {
+    const { conditions, params } = advancedSearchCondition(
+      { index: 1, term: '苏玮', path: '', tags: [] },
+      'p',
+    );
+    expect(conditions).toEqual(['(p.lect LIKE ? OR p.lect LIKE ?)']);
+    expect(params).toEqual(['%苏玮%', '%蘇瑋%']);
+  });
+
+  it('keeps a single LIKE (no OR) for a non-Chinese term', () => {
+    const { conditions, params } = advancedSearchCondition(
+      { index: 1, term: 'hello world', path: '', tags: [] },
+      'p',
+    );
+    expect(conditions).toEqual(['p.lect LIKE ?']);
+    expect(params).toEqual(['%hello%world%']);
+  });
+
+  it('ORs variants within a json path condition', () => {
+    const { conditions, params } = advancedSearchCondition(
+      { index: 1, term: '苏玮', path: 'name', tags: [] },
+      'p',
+    );
+    expect(conditions).toEqual(['(json_extract(p.lect, ?) LIKE ? OR json_extract(p.lect, ?) LIKE ?)']);
+    expect(params).toEqual(['$.name', '%苏玮%', '$.name', '%蘇瑋%']);
   });
 });
 

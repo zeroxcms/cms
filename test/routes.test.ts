@@ -1160,6 +1160,33 @@ describe('admin routes', () => {
     expect(pageTypeListData.exportHref).toBe('/admin/pages/export/default');
   });
 
+  it('GET /admin filters pages by draft or live status', async () => {
+    await env.DB.prepare(
+      `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(901, 'draft-only-uuid', 'Draft Only', 'draft-only', 6, 'default', basePageLect, 1, '1')
+      .run();
+
+    const [draftResponse, liveResponse] = await Promise.all([
+      fetchWorker('/admin?status=draft', { headers: { Cookie: await authCookie() } }),
+      fetchWorker('/admin?status=live', { headers: { Cookie: await authCookie() } }),
+    ]);
+    const draftData = bodyData(await draftResponse.text());
+    const liveData = bodyData(await liveResponse.text());
+
+    expect(draftResponse.status).toBe(200);
+    expect(liveResponse.status).toBe(200);
+    expect(draftData.pageCountLabel).toBe('Showing 1-1 of 1 draft page');
+    expect(JSON.stringify(draftData.pages)).toContain('Draft Only');
+    expect(JSON.stringify(draftData.pages)).not.toContain('About');
+    expect(liveData.pageCountLabel).toBe('Showing 1-1 of 1 live page');
+    expect(JSON.stringify(liveData.pages)).toContain('About');
+    expect(JSON.stringify(liveData.pages)).not.toContain('Draft Only');
+    expect(draftData.statusFilters).toContainEqual({ label: 'Draft', href: '/admin?status=draft', isActive: true });
+    expect(liveData.statusFilters).toContainEqual({ label: 'Live', href: '/admin?status=live', isActive: true });
+  });
+
   it('GET /admin paginates draft pages', async () => {
     await seedDraftPages('default', 105, 1000, 'Bulk Default');
 

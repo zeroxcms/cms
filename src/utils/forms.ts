@@ -56,6 +56,7 @@ export const CSV_IMPORT_MODE_OPTIONS: CsvImportModeOption[] = [
 
 export const DASHBOARD_DEFAULT_PAGE_SIZE = 100;
 export const DASHBOARD_MAX_PAGE_SIZE = 100;
+export type DashboardStatusFilter = '' | 'draft' | 'live';
 
 export function str(v: FormValue): string {
   return typeof v === 'string' ? v.trim() : '';
@@ -97,10 +98,22 @@ export function dashboardPageNumber(value: string | null | undefined): number {
   return Math.max(num(value, 1), 1);
 }
 
-export function dashboardPageHref(routeBase: string, page: number, pageSize: number): string {
+export function dashboardStatusFilter(value: string | null | undefined): DashboardStatusFilter {
+  return value === 'draft' || value === 'live' ? value : '';
+}
+
+export function dashboardPageHref(
+  routeBase: string,
+  page: number,
+  pageSize: number,
+  extraParams: Record<string, string | number | null | undefined> = {},
+): string {
   const params = new URLSearchParams();
   params.set('page', String(page));
   params.set('pagesize', String(pageSize));
+  for (const [key, value] of Object.entries(extraParams)) {
+    if (value != null && value !== '') params.set(key, String(value));
+  }
   return `${routeBase}?${params.toString()}`;
 }
 

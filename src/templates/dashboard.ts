@@ -21,11 +21,19 @@ interface DashboardPagination {
   lastHref: string;
 }
 
+interface DashboardStatusFilterLink {
+  label: string;
+  href: string;
+  isActive: boolean;
+}
+
 export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
   pages: DashboardPage[];
   flash?: string;
   returnPath?: string;
   pageTypeFilter?: string;
+  statusFilter?: '' | 'draft' | 'live';
+  statusFilters?: DashboardStatusFilterLink[];
   privacyTable?: boolean;
   searchValue?: string;
   searchAction?: string;
@@ -39,6 +47,8 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
     flash,
     returnPath = '/admin',
     pageTypeFilter,
+    statusFilter = '',
+    statusFilters = [],
     searchValue = '',
     searchAction = '/admin',
     advancedSearchHref = pageTypeFilter ? `/admin/advanced-search/${encodeURIComponent(pageTypeFilter)}` : '/admin/advanced-search',
@@ -54,6 +64,15 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
     ? Math.min(pageCount, paginationStart + pages.length - 1)
     : pages.length;
   const showPageTypeColumn = !pageTypeFilter;
+  const countSubject = statusFilter === 'live'
+    ? 'live page'
+    : statusFilter === 'draft'
+      ? 'draft page'
+      : 'page';
+  const countSuffix = pageCount === 1 ? '' : 's';
+  const pageCountLabel = pagination && pageCount > 0
+    ? `Showing ${paginationStart}-${paginationEnd} of ${pageCount} ${countSubject}${countSuffix}${statusFilter ? '' : ' in draft'}`
+    : `${pageCount} ${countSubject}${countSuffix}${statusFilter ? '' : ' in draft'}`;
   const body = await renderView(views, '/templates/dashboard.json', {
     flash,
     hasFlash: !!flash,
@@ -65,15 +84,16 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
     searchValue,
     searchAction,
     searchPlaceholder: pageTypeFilter ? `Search ${pageTypeFilter} pages` : 'Search pages',
+    statusFilter,
+    hasStatusFilters: statusFilters.length > 0,
+    statusFilters,
     advancedSearchHref,
     importHref,
     hasImportHref: !!importHref,
     exportHref,
     hasExportHref: !!exportHref,
     pageCount,
-    pageCountLabel: pagination && pageCount > 0
-      ? `Showing ${paginationStart}-${paginationEnd} of ${pageCount} page${pageCount === 1 ? '' : 's'} in draft`
-      : `${pageCount} page${pageCount === 1 ? '' : 's'} in draft`,
+    pageCountLabel,
     hasPages: pages.length > 0,
     showPagination: !!pagination && pagination.totalPages > 1,
     currentPage: pagination?.currentPage ?? 1,

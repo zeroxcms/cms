@@ -134,7 +134,13 @@ export async function liveMapForDraftPages(env: Env, draftPages: Page[]): Promis
   if (!reader) return new Map();
   const uuids = Array.from(new Set(draftPages.map((page) => page.uuid)));
   if (!uuids.length) return new Map();
-  return reader.liveMap!(uuids);
+  const combined = new Map<string, LivePageSnapshot>();
+  for (let index = 0; index < uuids.length; index += 90) {
+    const chunk = uuids.slice(index, index + 90);
+    const liveMap = await reader.liveMap!(chunk);
+    liveMap.forEach((page, uuid) => combined.set(uuid, page));
+  }
+  return combined;
 }
 
 export async function listLiveByTypes(env: Env, pageTypes: string[]): Promise<LivePageSnapshot[]> {

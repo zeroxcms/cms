@@ -14,6 +14,7 @@ import {
   dashboardPageHref,
   dashboardPageNumber,
   dashboardPageSize,
+  dashboardStatusFilter,
   editorsFromForm,
   languageFromRequest,
   nullableStr,
@@ -39,6 +40,7 @@ import {
   editorTaxonomy,
   ensureUniqueDraftSlug,
   fetchUserName,
+  listAllDashboardDraftPages,
   listDashboardDraftPages,
   parentPageOption,
   trashDraftPage,
@@ -57,6 +59,57 @@ import type { AppContext } from '../../utils/context';
 import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../../utils/page-store';
 
 export const pagesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+type DashboardStatusFilter = ReturnType<typeof dashboardStatusFilter>;
+
+function statusFilterLinks(routeBase: string, active: DashboardStatusFilter) {
+  return [
+    { label: 'All', href: routeBase, isActive: active === '' },
+    { label: 'Draft', href: `${routeBase}?status=draft`, isActive: active === 'draft' },
+    { label: 'Live', href: `${routeBase}?status=live`, isActive: active === 'live' },
+  ];
+}
+
+function paginateDashboardPages<T extends Page>(pages: T[], requestedPage: number, limit: number) {
+  const total = pages.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const currentPage = Math.min(requestedPage, totalPages);
+  const offset = (currentPage - 1) * limit;
+  return {
+    results: pages.slice(offset, offset + limit),
+    pagination: {
+      total,
+      totalPages,
+      currentPage,
+      limit,
+    },
+  };
+}
+
+async function dashboardPagesForRequest(
+  c: AppContext,
+  options: { pageType?: string; statusFilter: DashboardStatusFilter; requestedPage: number; pageSize: number },
+) {
+  const { pageType, statusFilter, requestedPage, pageSize } = options;
+  if (!statusFilter) {
+    const draftPages = await listDashboardDraftPages(c.env.DB, {
+      pageType,
+      page: requestedPage,
+      limit: pageSize,
+    });
+    const liveMap = await liveMapForDraftPages(c.env, draftPages.results);
+    return {
+      ...draftPages,
+      results: withLiveStatus(draftPages.results, liveMap),
+    };
+  }
+
+  const allDraftPages = await listAllDashboardDraftPages(c.env.DB, { pageType });
+  const liveMap = await liveMapForDraftPages(c.env, allDraftPages);
+  const pages = withLiveStatus(allDraftPages, liveMap)
+    .filter((page) => statusFilter === 'live' ? page.isPublished : !page.isPublished);
+  return paginateDashboardPages(pages, requestedPage, pageSize);
+}
 
 // Escape hatch: `?native=1` (or `?editor=cms`) forces the built-in CMS editor
 // even for a page type a plugin would otherwise render (see plugins/edit-view.ts).
@@ -99,28 +152,31 @@ pagesRoutes.get('/', async (c) => {
   const search = c.req.query('search')?.trim() ?? '';
   const pageSize = dashboardPageSize(c.req.query('pagesize'));
   const requestedPage = dashboardPageNumber(c.req.query('page'));
+  const statusFilter = dashboardStatusFilter(c.req.query('status'));
 
   if (search) {
     return c.redirect(`/admin/advanced-search?operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=${encodeURIComponent(search)}&path1=`);
   }
 
-  const draftPages = await listDashboardDraftPages(c.env.DB, {
-    page: requestedPage,
-    limit: pageSize,
+  const draftPages = await dashboardPagesForRequest(c, {
+    statusFilter,
+    requestedPage,
+    pageSize,
   });
-  const liveMap = await liveMapForDraftPages(c.env, draftPages.results);
-
-  const pages = withLiveStatus(draftPages.results, liveMap);
+  const routeBase = '/admin';
+  const statusParams = statusFilter ? { status: statusFilter } : {};
 
   return renderPage(c, dashboardPage, {
-    pages,
+    pages: draftPages.results,
     flash: flash || undefined,
-    returnPath: dashboardPageHref('/admin', draftPages.pagination.currentPage, pageSize),
+    returnPath: dashboardPageHref(routeBase, draftPages.pagination.currentPage, pageSize, statusParams),
+    statusFilter,
+    statusFilters: statusFilterLinks(routeBase, statusFilter),
     searchAction: '/admin/advanced-search',
     advancedSearchHref: '/admin/advanced-search',
     importHref: '/admin/pages/import-v2/default',
     exportHref: '/admin/pages/export',
-    pagination: dashboardPagination('/admin', draftPages),
+    pagination: dashboardPagination(routeBase, draftPages, statusParams),
   });
 });
 
@@ -130,31 +186,35 @@ pagesRoutes.get('/pages/list/:pageType', async (c) => {
   const search = c.req.query('search')?.trim() ?? '';
   const pageSize = dashboardPageSize(c.req.query('pagesize'));
   const requestedPage = dashboardPageNumber(c.req.query('page'));
+  const statusFilter = dashboardStatusFilter(c.req.query('status'));
 
   if (search) {
     return c.redirect(`/admin/advanced-search/${encodeURIComponent(pageType)}?operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=${encodeURIComponent(search)}&path1=`);
   }
 
-  const draftPages = await listDashboardDraftPages(c.env.DB, {
+  const draftPages = await dashboardPagesForRequest(c, {
     pageType,
-    page: requestedPage,
-    limit: pageSize,
+    statusFilter,
+    requestedPage,
+    pageSize,
   });
-  const liveMap = await liveMapForDraftPages(c.env, draftPages.results);
   const routeBase = `/admin/pages/list/${encodeURIComponent(pageType)}`;
+  const statusParams = statusFilter ? { status: statusFilter } : {};
   const config = await resolveCmsConfig(c.env);
 
   return renderPage(c, dashboardPage, {
       siteTitle: `${c.env.SITE_TITLE ?? '0xCMS'} · ${pageType}`,
-      pages: withLiveStatus(draftPages.results, liveMap),
+      pages: draftPages.results,
       flash: flash || undefined,
-      returnPath: dashboardPageHref(routeBase, draftPages.pagination.currentPage, pageSize),
+      returnPath: dashboardPageHref(routeBase, draftPages.pagination.currentPage, pageSize, statusParams),
       pageTypeFilter: pageType,
+      statusFilter,
+      statusFilters: statusFilterLinks(routeBase, statusFilter),
       searchAction: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
       advancedSearchHref: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
       importHref: `/admin/pages/import-v2/${encodeURIComponent(pageType)}`,
       exportHref: `/admin/pages/export/${encodeURIComponent(pageType)}`,
-      pagination: dashboardPagination(routeBase, draftPages),
+      pagination: dashboardPagination(routeBase, draftPages, statusParams),
       privacyTable: pageTypeHasPrivacyFields(config.blueprint[pageType]),
   });
 });
