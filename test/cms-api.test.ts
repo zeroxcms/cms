@@ -171,6 +171,27 @@ describe('F1 create / read / list / update / delete', () => {
     expect(filtered.total).toBe(1);
   });
 
+  it('uses Chinese variants and lect fields when plugins list pages with q', async () => {
+    await cmsApi('POST', '/__cms/pages', {
+      page_type: 'guest',
+      name: 'Su Sheng',
+      lect: { name: { en: 'Su Sheng' }, zh_hans_name: '苏生', email: 'su@example.com' },
+    });
+    await cmsApi('POST', '/__cms/pages', {
+      page_type: 'guest',
+      name: 'Chan Tai Man',
+      lect: { name: { en: 'Chan Tai Man' }, zh_hant_name: '陳大文', email: 'chan@example.com' },
+    });
+
+    const traditional = await (await cmsApi('GET', '/__cms/pages?page_type=guest&q=%E8%98%87')).json() as { total: number; pages: Array<{ name: string }> };
+    expect(traditional.total).toBe(1);
+    expect(traditional.pages[0].name).toBe('Su Sheng');
+
+    const simplified = await (await cmsApi('GET', '/__cms/pages?page_type=guest&q=%E8%8B%8F')).json() as { total: number; pages: Array<{ name: string }> };
+    expect(simplified.total).toBe(1);
+    expect(simplified.pages[0].name).toBe('Su Sheng');
+  });
+
   it('rejects listing a type the plugin neither owns nor may read', async () => {
     const res = await cmsApi('GET', '/__cms/pages?page_type=article');
     expect(res.status).toBe(403);

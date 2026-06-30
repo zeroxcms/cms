@@ -37,6 +37,7 @@ import type { Lect } from '../utils/lect';
 import { withDraftMetadata } from '../utils/page-logic';
 import { ensureUniqueDraftSlug, trashDraftPage, trashDraftPages } from '../utils/admin-queries';
 import { slugify } from '../utils/forms';
+import { chineseSearchVariants } from '../utils/chinese';
 import { unpublishPageFromTargets } from '../publish';
 import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../utils/page-store';
 
@@ -444,9 +445,9 @@ cmsApiRoutes.get('/pages', async (c) => {
     params.push(`$._pointers.${pointerKey}`, pointerValue);
   }
   if (q) {
-    where += ' AND (name LIKE ? OR slug LIKE ?)';
-    const term = `%${q.replaceAll(' ', '%')}%`;
-    params.push(term, term);
+    const terms = chineseSearchVariants(q).map((variant) => `%${variant.replaceAll(' ', '%')}%`);
+    where += ` AND (${terms.map(() => '(name LIKE ? OR slug LIKE ? OR lect LIKE ?)').join(' OR ')})`;
+    for (const term of terms) params.push(term, term, term);
   }
 
   const [rows, totalRow] = await Promise.all([
