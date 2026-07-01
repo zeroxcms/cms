@@ -4,6 +4,7 @@ import type { Page } from '../types';
 
 export interface DashboardPage extends Page {
   isPublished: boolean;
+  isDraftMissing?: boolean;
   contentPreview?: string;
   liveWeight?: number;
   hasLiveWeightDrift?: boolean;
@@ -116,12 +117,14 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
       liveWeight: page.liveWeight,
       hasLiveWeightDrift: !!page.hasLiveWeightDrift,
       hasLiveLectDrift: !!page.hasLiveLectDrift,
+      isDraftMissing: !!page.isDraftMissing,
       isPublished: page.isPublished,
-      weightAction: `/admin/pages/${page.id}/weight`,
-      editHref: `/admin/pages/${page.id}/edit`,
-      publishAction: `/admin/pages/${page.id}/publish`,
-      unpublishAction: `/admin/pages/${page.id}/unpublish`,
-      deleteAction: `/admin/pages/${page.id}/delete`,
+      weightAction: page.isDraftMissing ? '' : `/admin/pages/${page.id}/weight`,
+      editHref: page.isDraftMissing ? '' : `/admin/pages/${page.id}/edit`,
+      publishAction: page.isDraftMissing ? '' : `/admin/pages/${page.id}/publish`,
+      unpublishAction: page.isDraftMissing ? '' : `/admin/pages/${page.id}/unpublish`,
+      deleteAction: page.isDraftMissing ? '' : `/admin/pages/${page.id}/delete`,
+      pullAction: `/admin/pages/pull/${encodeURIComponent(page.uuid)}`,
     })),
   });
 

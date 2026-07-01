@@ -542,6 +542,7 @@ describe('admin routes', () => {
     { name: 'POST /admin/pages/:id/weight', method: 'POST', path: '/admin/pages/101/weight', body: form({ weight: '9', return_to: '/admin/pages/list/default' }), authenticated: true, expectedStatus: 302, location: '/admin/pages/list/default?flash=Draft+weight+updated' },
     { name: 'POST /admin/pages/:id', method: 'POST', path: '/admin/pages/101', body: form({ name: 'About Updated', slug: 'about-updated', page_type: 'default', weight: '3' }), authenticated: true, expectedStatus: 302, location: '/admin/pages/101/edit?language=mis&flash=Page+updated+successfully' },
     { name: 'POST /admin/pages/:id/publish', method: 'POST', path: '/admin/pages/101/publish', authenticated: true, expectedStatus: 302, location: '/admin?flash=Page+published+successfully' },
+    { name: 'POST /admin/pages/pull/:uuid', method: 'POST', path: '/admin/pages/pull/page-uuid-101', authenticated: true, expectedStatus: 302, location: '/admin/pages/101/edit?flash=Draft+already+exists' },
     { name: 'POST /admin/pages/:id/unpublish', method: 'POST', path: '/admin/pages/101/unpublish', authenticated: true, expectedStatus: 302, location: '/admin?flash=Page+unpublished' },
     { name: 'POST /admin/pages/:id/delete', method: 'POST', path: '/admin/pages/101/delete', authenticated: true, expectedStatus: 302, location: '/admin?flash=Page+moved+to+trash' },
     { name: 'GET /admin/trash', path: '/admin/trash', authenticated: true, expectedStatus: 200 },
@@ -910,6 +911,46 @@ describe('admin routes', () => {
       .first<{ id: number }>()).toBeNull();
   });
 
+  it('POST /admin/pages/pull/:uuid recreates a missing draft from published content', async () => {
+    await env.PUBLISHED_DB.prepare(
+      `INSERT INTO live_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(920, 'live-only-uuid', 'Live Only', 'live-only', 12, 'default', basePageLect, 1, '1')
+      .run();
+    await env.PUBLISHED_DB.prepare('INSERT INTO live_page_tags (id, page_id, tag_id, weight) VALUES (?, ?, ?, ?)')
+      .bind(921, 920, 301, 4)
+      .run();
+
+    const response = await fetchWorker('/admin/pages/pull/live-only-uuid', {
+      method: 'POST',
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toMatch(/^\/admin\/pages\/\d+\/edit\?flash=Published\+page\+pulled\+to\+draft$/);
+    const draft = await env.DB.prepare(
+      'SELECT id, uuid, name, slug, weight, page_type, current_page_version_id FROM draft_pages WHERE uuid = ?',
+    )
+      .bind('live-only-uuid')
+      .first<{ id: number; uuid: string; name: string; slug: string; weight: number; page_type: string; current_page_version_id: number }>();
+    if (!draft) throw new Error('Expected pulled draft page');
+    expect(draft).toMatchObject({
+      uuid: 'live-only-uuid',
+      name: 'Live Only',
+      slug: 'live-only',
+      weight: 12,
+      page_type: 'default',
+    });
+    expect(draft.current_page_version_id).toBeTypeOf('number');
+    expect(await env.DB.prepare('SELECT tag_id, weight FROM draft_page_tags WHERE page_id = ?')
+      .bind(draft.id)
+      .first<{ tag_id: number; weight: number }>()).toEqual({ tag_id: 301, weight: 4 });
+    expect(await env.DB.prepare('SELECT lect, action FROM page_versions WHERE id = ?')
+      .bind(draft.current_page_version_id)
+      .first<{ lect: string; action: string }>()).toEqual({ lect: basePageLect, action: 'pull-published' });
+  });
+
   it('renders a solid sidebar initial when the user has no avatar image', async () => {
     const response = await fetchWorker('/admin', {
       headers: { Cookie: await authCookie() },
@@ -1185,6 +1226,29 @@ describe('admin routes', () => {
     expect(JSON.stringify(liveData.pages)).not.toContain('Draft Only');
     expect(draftData.statusFilters).toContainEqual({ label: 'Draft', href: '/admin?status=draft', isActive: true });
     expect(liveData.statusFilters).toContainEqual({ label: 'Live', href: '/admin?status=live', isActive: true });
+  });
+
+  it('GET /admin?status=live shows published pages missing from drafts with a pull action', async () => {
+    await env.PUBLISHED_DB.prepare(
+      `INSERT INTO live_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(930, 'dashboard-live-only-uuid', 'Dashboard Live Only', 'dashboard-live-only', 8, 'default', basePageLect, 1, '1')
+      .run();
+
+    const response = await fetchWorker('/admin?status=live', { headers: { Cookie: await authCookie() } });
+    const data = bodyData(await response.text());
+    const pages = data.pages as Array<Record<string, unknown>>;
+    const liveOnly = pages.find((page) => page.name === 'Dashboard Live Only');
+
+    expect(response.status).toBe(200);
+    expect(data.pageCountLabel).toBe('Showing 1-2 of 2 live pages');
+    expect(liveOnly).toMatchObject({
+      isDraftMissing: true,
+      isPublished: true,
+      editHref: '',
+      pullAction: '/admin/pages/pull/dashboard-live-only-uuid',
+    });
   });
 
   it('GET /admin paginates draft pages', async () => {

@@ -40,8 +40,8 @@ import {
   editorTaxonomy,
   ensureUniqueDraftSlug,
   fetchUserName,
-  listAllDashboardDraftPages,
   listDashboardDraftPages,
+  listDashboardDraftPageUuids,
   listDashboardDraftPagesByUuids,
   parentPageOption,
   trashDraftPage,
@@ -57,12 +57,18 @@ import type { PublishOutcome } from '../../publish';
 import { buildBaseProps, dashboardPagination, exportPageList, renderPage } from '../../utils/admin-render';
 import { requirePermission } from '../../middleware/auth';
 import type { AppContext } from '../../utils/context';
-import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../../utils/page-store';
+import {
+  notifyPageSaved,
+  pullPublishedPageToDraft,
+  savePageVersionAndSetCurrent,
+  setDraftPageTags,
+} from '../../utils/page-store';
 
 export const pagesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 type DashboardStatusFilter = ReturnType<typeof dashboardStatusFilter>;
-type DashboardLiveRow = { uuid: string; lect: string | null; weight: number };
+type DashboardLiveUuidRow = { uuid: string };
+type DashboardPageRow = Page & { isDraftMissing?: boolean };
 
 function statusFilterLinks(routeBase: string, active: DashboardStatusFilter) {
   return [
@@ -72,13 +78,13 @@ function statusFilterLinks(routeBase: string, active: DashboardStatusFilter) {
   ];
 }
 
-function paginateDashboardPages<T extends Page>(pages: T[], requestedPage: number, limit: number) {
-  const total = pages.length;
+function dashboardPaginationResult<T>(items: T[], requestedPage: number, limit: number) {
+  const total = items.length;
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const currentPage = Math.min(requestedPage, totalPages);
   const offset = (currentPage - 1) * limit;
   return {
-    results: pages.slice(offset, offset + limit),
+    results: items.slice(offset, offset + limit),
     pagination: {
       total,
       totalPages,
@@ -86,6 +92,12 @@ function paginateDashboardPages<T extends Page>(pages: T[], requestedPage: numbe
       limit,
     },
   };
+}
+
+async function liveDashboardUuids(c: AppContext): Promise<Set<string>> {
+  const liveRows = await c.env.PUBLISHED_DB.prepare('SELECT uuid FROM live_pages')
+    .all<DashboardLiveUuidRow>();
+  return new Set(liveRows.results.map((page) => page.uuid));
 }
 
 async function liveDashboardPagesForRequest(
@@ -103,12 +115,12 @@ async function liveDashboardPagesForRequest(
   const currentPage = Math.min(requestedPage, totalPages);
   const currentOffset = (currentPage - 1) * pageSize;
   const liveRows = await c.env.PUBLISHED_DB.prepare(
-    `SELECT uuid, lect, weight FROM live_pages ${whereSql}
+    `SELECT * FROM live_pages ${whereSql}
      ORDER BY weight ASC, name ASC, id ASC
      LIMIT ? OFFSET ?`,
   )
     .bind(...baseParams, pageSize, currentOffset)
-    .all<DashboardLiveRow>();
+    .all<Page>();
   const liveMap = new Map(liveRows.results.map((page) => [page.uuid, page]));
   const draftRows = await listDashboardDraftPagesByUuids(
     c.env.DB,
@@ -116,9 +128,10 @@ async function liveDashboardPagesForRequest(
     { pageType },
   );
   const draftMap = new Map(draftRows.map((page) => [page.uuid, page]));
-  const results = liveRows.results
-    .map((page) => draftMap.get(page.uuid))
-    .filter((page): page is Page => !!page);
+  const results: DashboardPageRow[] = liveRows.results.map((page) => {
+    const draft = draftMap.get(page.uuid);
+    return draft ?? { ...page, current_page_version_id: null, isDraftMissing: true };
+  });
 
   return {
     results: withLiveStatus(results, liveMap),
@@ -128,6 +141,29 @@ async function liveDashboardPagesForRequest(
       currentPage,
       limit: pageSize,
     },
+  };
+}
+
+async function draftDashboardPagesForRequest(
+  c: AppContext,
+  options: { pageType?: string; requestedPage: number; pageSize: number },
+) {
+  const { pageType, requestedPage, pageSize } = options;
+  const [draftUuids, liveUuids] = await Promise.all([
+    listDashboardDraftPageUuids(c.env.DB, { pageType }),
+    liveDashboardUuids(c),
+  ]);
+  const draftOnlyUuids = draftUuids.filter((uuid) => !liveUuids.has(uuid));
+  const paginated = dashboardPaginationResult(draftOnlyUuids, requestedPage, pageSize);
+  const draftRows = await listDashboardDraftPagesByUuids(c.env.DB, paginated.results);
+  const draftMap = new Map(draftRows.map((page) => [page.uuid, page]));
+  const results = paginated.results
+    .map((uuid) => draftMap.get(uuid))
+    .filter((page): page is Page => !!page);
+
+  return {
+    results: withLiveStatus(results, new Map()),
+    pagination: paginated.pagination,
   };
 }
 
@@ -152,11 +188,7 @@ async function dashboardPagesForRequest(
     return liveDashboardPagesForRequest(c, { pageType, requestedPage, pageSize });
   }
 
-  const allDraftPages = await listAllDashboardDraftPages(c.env.DB, { pageType });
-  const liveMap = await liveMapForDraftPages(c.env, allDraftPages);
-  const pages = withLiveStatus(allDraftPages, liveMap)
-    .filter((page) => !page.isPublished);
-  return paginateDashboardPages(pages, requestedPage, pageSize);
+  return draftDashboardPagesForRequest(c, { pageType, requestedPage, pageSize });
 }
 
 // Escape hatch: `?native=1` (or `?editor=cms`) forces the built-in CMS editor
@@ -848,6 +880,26 @@ pagesRoutes.post('/pages/:id/publish', requirePermission('content:publish'), asy
   });
 
   return c.redirect(`/admin?flash=${publishFlash(outcome)}`);
+});
+
+// ── Pull published page (PUBLISHED → DRAFT) ───────────────────────────────────
+
+pagesRoutes.post('/pages/pull/:uuid', requirePermission('content:write'), async (c) => {
+  const result = await pullPublishedPageToDraft(c.env.DB, c.env.PUBLISHED_DB, c.req.param('uuid'));
+  if (!result) return c.notFound();
+
+  if (result.created) {
+    dispatchHook(c, 'create', {
+      id: result.page.id,
+      uuid: result.page.uuid,
+      page_type: result.page.page_type,
+      name: result.page.name,
+      slug: result.page.slug,
+    });
+  }
+
+  const flash = result.created ? 'Published+page+pulled+to+draft' : 'Draft+already+exists';
+  return c.redirect(`/admin/pages/${result.page.id}/edit?flash=${flash}`);
 });
 
 // ── Unpublish (remove from published DB) ──────────────────────────────────────

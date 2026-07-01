@@ -357,6 +357,21 @@ export async function listAllDashboardDraftPages(
   return pages.results;
 }
 
+export async function listDashboardDraftPageUuids(
+  db: D1Database,
+  options: { pageType?: string } = {},
+): Promise<string[]> {
+  const whereSql = options.pageType ? 'WHERE page_type = ?' : '';
+  const params = options.pageType ? [options.pageType] : [];
+  const pages = await db.prepare(
+    `SELECT uuid FROM draft_pages ${whereSql}
+     ORDER BY weight ASC, name ASC, id ASC`,
+  )
+    .bind(...params)
+    .all<{ uuid: string }>();
+  return pages.results.map((page) => page.uuid);
+}
+
 export async function listDashboardDraftPagesByUuids(
   db: D1Database,
   uuids: string[],
