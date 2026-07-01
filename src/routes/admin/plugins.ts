@@ -9,10 +9,10 @@
 // ============================================================
 
 import { Hono } from 'hono';
-import type { Env, Variables } from '../../types';
+import type { Env, Permission, Variables } from '../../types';
 import { pluginById, PLUGIN_ORIGIN, PLUGIN_PREFIX } from '../../plugins/registry';
 import type { AppContext } from '../../utils/context';
-import { requireAdmin } from '../../middleware/auth';
+import { effectivePermissions, resolveRolePermissions, splitRoles } from '../../utils/roles';
 import { adminLayout } from '../../templates/layout';
 import { pluginClientView } from '../../templates/liquid';
 import { buildBaseProps } from '../../utils/admin-render';
@@ -30,15 +30,30 @@ import { cmsAdminJobMessage, createPluginAdminActionJob } from '../../utils/admi
 
 export const pluginAdminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-// Plugin admin pages render in the CMS origin (see proxyToPlugin), so a hostile
-// or compromised plugin would run with the CMS's same-origin authority. Until
-// plugins are served from a dedicated origin, restrict access to admins only to
-// minimize who can be exposed to that risk.
-pluginAdminRoutes.use('/plugins/:pluginId', requireAdmin);
-pluginAdminRoutes.use('/plugins/:pluginId/*', requireAdmin);
-
+// No blanket role gate here — see userCanAccessPlugin() below, applied inside
+// proxyToPlugin once the plugin's manifest (and its declared permissions) is
+// resolved.
 pluginAdminRoutes.all('/plugins/:pluginId', (c) => proxyToPlugin(c));
 pluginAdminRoutes.all('/plugins/:pluginId/*', (c) => proxyToPlugin(c));
+
+/**
+ * Plugin admin pages render in the CMS origin (see proxyToPlugin), so a hostile
+ * or compromised plugin would run with the CMS's same-origin authority. Until
+ * plugins are served from a dedicated origin, only 'admin' passes by default —
+ * unless the plugin manifest opts in by declaring its own permissions (see
+ * PluginManifest.permissions), in which case a user holding any one of those
+ * granted permissions is trusted to reach that plugin's admin routes too.
+ * Plugins that declare no permissions stay admin-only (fail closed).
+ */
+async function userCanAccessPlugin(c: AppContext, manifestPermissions: Array<{ value: string }> | undefined): Promise<boolean> {
+  const user = c.get('user');
+  if (splitRoles(user.role).includes('admin')) return true;
+  const declared = manifestPermissions ?? [];
+  if (declared.length === 0) return false;
+  const map = await resolveRolePermissions(c.env);
+  const granted = effectivePermissions(map, user.role);
+  return declared.some(({ value }) => granted.has(value as Permission));
+}
 
 async function proxyToPlugin(c: AppContext): Promise<Response> {
   const pluginId = c.req.param('pluginId');
@@ -46,6 +61,14 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
 
   const plugin = await pluginById(c.env, pluginId);
   if (!plugin) return c.notFound();
+
+  if (!(await userCanAccessPlugin(c, plugin.manifest.permissions))) {
+    const wantsJson = (c.req.raw.headers.get('Accept') ?? '').includes('application/json');
+    if (wantsJson) {
+      return Response.json({ success: false, error: 'Insufficient plugin permissions' }, { status: 403, headers: { 'X-CMS-Error': 'plugin-permission-required' } });
+    }
+    return c.text('Forbidden: insufficient plugin permissions', 403);
+  }
 
   // Each plugin authenticates with its own secret (or the env fallback). Fail
   // closed when neither is configured rather than proxying unauthenticated.
