@@ -28,6 +28,7 @@ import { buildBaseProps } from '../utils/admin-render';
 import { viewsFor } from './views';
 import { sanitizePluginHtmlFragment } from '../security/plugin-sanitize';
 import { isPluginClientViewResponse, readPluginClientViewData } from '../security/plugin-proxy';
+import { pluginViewRevision } from '../utils/view-revision';
 
 /** Editor context the CMS sends to a plugin's `/__plugin/edit` endpoint. */
 export interface EditViewContext {
@@ -124,7 +125,7 @@ export async function pluginEditView(
   }
 
   const body = clientView
-    ? pluginClientView(clientView.viewPath, clientView.data, `/admin/plugins/${plugin.manifest.id}/views`)
+    ? pluginClientView(clientView.viewPath, clientView.data, `/admin/plugins/${plugin.manifest.id}/views`, pluginViewRevision(plugin.manifest))
     : await sanitizePluginHtmlFragment(await upstream.text());
   const title = decodeTitle(upstream.headers.get('x-cms-title'))
     || (context.mode === 'edit' ? `Edit: ${context.page.name}` : `New ${pageType}`);

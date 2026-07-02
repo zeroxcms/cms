@@ -61,8 +61,16 @@
     return path + '?' + params.toString() + hash;
   }
 
-  function renderGlobals() {
-    const revision = payload.viewRevision || '';
+  function revisionForBasePath(basePath) {
+    const bodyView = payload.bodyView || {};
+    if (bodyView.plugin && bodyView.viewBasePath === basePath && bodyView.viewRevision) {
+      return bodyView.viewRevision;
+    }
+    return payload.viewRevision;
+  }
+
+  function renderGlobals(basePath) {
+    const revision = revisionForBasePath(basePath) || '';
     const assetRevisionQuery = revision ? '?r=' + encodeURIComponent(revision) : '';
     return {
       nonce: payload.nonce,
@@ -98,7 +106,7 @@
     const key = templateKey(basePath, normalized);
     if (templateCache.has(key)) return templateCache.get(key);
 
-    const promise = fetch(withRevision(basePath + normalized), {
+    const promise = fetch(withRevision(basePath + normalized, revisionForBasePath(basePath)), {
       credentials: 'same-origin',
       headers: { Accept: normalized.endsWith('.json') ? 'application/json' : 'text/plain' },
     }).then(async (response) => {
@@ -149,8 +157,9 @@
 
   async function renderLiquid(templatePath, data) {
     const normalized = normalizePath(templatePath);
+    const basePath = currentViewBasePath(normalized);
     const template = await loadTemplate(normalized);
-    const html = String(await engine.parseAndRender(template, { ...data, ...renderGlobals() }));
+    const html = String(await engine.parseAndRender(template, { ...data, ...renderGlobals(basePath) }));
     return isPluginTemplate(normalized) ? sanitizePluginHtml(html) : html;
   }
 
@@ -159,7 +168,8 @@
     const jsonTemplate = JSON.parse(rawTemplate);
     if (!jsonTemplate.order || !jsonTemplate.order.length) return '';
 
-    const renderData = await prepareRenderData(templatePath, { meta: {}, ...data, ...renderGlobals() });
+    const basePath = currentViewBasePath(normalizePath(templatePath));
+    const renderData = await prepareRenderData(templatePath, { meta: {}, ...data, ...renderGlobals(basePath) });
     const renders = {};
 
     for (const key of jsonTemplate.order) {
@@ -325,7 +335,7 @@
       ? '<button type="submit" name="action" value="' + escapeHtml(row.deleteAction) + '"\n' +
         '                   title="Delete ' + escapeHtml(row.label.toLowerCase()) + '" aria-label="Delete ' + escapeHtml(row.label.toLowerCase()) + '"\n' +
         '                   class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50 hover:text-red-700">\n' +
-        '             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="' + escapeHtml(renderGlobals().iconHrefPrefix) + '#trash-can"></use></svg>\n' +
+        '             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="' + escapeHtml(renderGlobals(activeViewBasePath).iconHrefPrefix) + '#trash-can"></use></svg>\n' +
         '             <span class="sr-only">Delete</span>\n' +
         '           </button>'
       : '';

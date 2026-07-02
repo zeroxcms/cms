@@ -33,6 +33,7 @@ interface RenderPayload {
     data: Record<string, unknown>;
     plugin?: boolean;
     viewBasePath?: string;
+    viewRevision?: string;
   };
 }
 
@@ -861,6 +862,29 @@ describe('plugin asset proxy', () => {
     });
   }
 
+  function registerViewPlugin(viewBody: string, manifest: unknown = ASSET_MANIFEST) {
+    const url = `https://plugin-view-${crypto.randomUUID()}.local`;
+    return env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Check-in', url).run().then(() => {
+      __injectPluginFetcher(url, {
+        fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+          const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+          const requestUrl = new URL(href);
+          if (requestUrl.pathname === '/__plugin/manifest') return Response.json(manifest);
+          if (requestUrl.pathname === '/__plugin/admin/views/templates/kiosk-search.json') {
+            expect(new Headers(init?.headers).get('x-plugin-secret')).toBe('server-secret');
+            return new Response(viewBody, { headers: { 'content-type': 'application/json' } });
+          }
+          if (requestUrl.pathname === '/__plugin/admin/views/sections/kiosk-search.liquid') {
+            expect(new Headers(init?.headers).get('x-plugin-secret')).toBe('server-secret');
+            return new Response('<div>Search</div>', { headers: { 'content-type': 'text/plain; charset=utf-8' } });
+          }
+          return new Response('nf', { status: 404 });
+        },
+      } as unknown as Fetcher);
+      return url;
+    });
+  }
+
   async function adminCookie(): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
     const token = await signJWT({
@@ -905,6 +929,34 @@ describe('plugin asset proxy', () => {
     expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
   });
 
+  it('keeps unrevisioned plugin view files uncached', async () => {
+    await registerViewPlugin('{"sections":{"main":{"type":"kiosk-search"}}}');
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/checkin/views/templates/kiosk-search.json', {
+      headers: { Cookie: await adminCookie(), 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('content-type')).toContain('application/json');
+  });
+
+  it('caches revisioned plugin view files immutably', async () => {
+    await registerViewPlugin('{"sections":{"main":{"type":"kiosk-search"}}}');
+
+    const json = await worker.fetch(new Request('http://localhost/admin/plugins/checkin/views/templates/kiosk-search.json?r=deploy-123', {
+      headers: { Cookie: await adminCookie(), 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    expect(json.status).toBe(200);
+    expect(json.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+
+    const liquid = await worker.fetch(new Request('http://localhost/admin/plugins/checkin/views/sections/kiosk-search.liquid?r=deploy-123', {
+      headers: { Cookie: await adminCookie(), 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    expect(liquid.status).toBe(200);
+    expect(liquid.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    expect(liquid.headers.get('content-type')).toContain('text/plain');
+  });
+
   it('passes the plugin Worker version as the approved asset revision for chrome-wrapped pages', async () => {
     const manifest = {
       ...ASSET_MANIFEST,
@@ -947,6 +999,7 @@ describe('plugin asset proxy', () => {
       integrity,
       revision: 'plugin-worker-version-123',
     });
+    expect(payload.bodyView?.viewRevision).toBe('plugin-worker-version-123');
   });
 
   it('fails closed when the plugin file changed since approval', async () => {

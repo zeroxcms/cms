@@ -33,6 +33,7 @@ import { cmsAdminJobMessage, createPluginAdminActionJob } from '../../utils/admi
 import { computeIntegrity, getAssetApproval, listApprovals } from '../../utils/plugin-assets';
 import type { ApprovedPluginAssets } from '../../templates/layout';
 import type { PluginManifest } from '../../types';
+import { pluginViewRevision, pluginWorkerRevision } from '../../utils/view-revision';
 
 export const pluginAdminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -42,6 +43,7 @@ export const pluginAdminRoutes = new Hono<{ Bindings: Env; Variables: Variables 
 // Registered before the generic catch-all so approved-asset requests don't
 // fall through to the plugin admin proxy.
 pluginAdminRoutes.get('/plugins/:pluginId/assets/*', (c) => servePluginAsset(c));
+pluginAdminRoutes.get('/plugins/:pluginId/views/*', (c) => servePluginView(c));
 pluginAdminRoutes.all('/plugins/:pluginId', (c) => proxyToPlugin(c));
 pluginAdminRoutes.all('/plugins/:pluginId/*', (c) => proxyToPlugin(c));
 
@@ -130,6 +132,49 @@ async function servePluginAsset(c: AppContext): Promise<Response> {
   });
 }
 
+/**
+ * Serves browser-fetched plugin client-view files (Liquid/JSON) from the CMS
+ * origin. They are not admin-approved executable assets, but revisioned view
+ * URLs are still deploy-addressed and can be cached immutably.
+ */
+async function servePluginView(c: AppContext): Promise<Response> {
+  const pluginId = c.req.param('pluginId');
+  if (!pluginId) return c.notFound();
+
+  const isAdmin = splitRoles(c.get('user').role).includes('admin');
+  const plugin = await pluginById(c.env, pluginId);
+  if (!isAdmin && !(plugin && await hasDeclaredPluginPermission(c, plugin.manifest.permissions ?? []))) {
+    return adminOnlyForbidden(c);
+  }
+  if (!plugin) return c.notFound();
+
+  if (!plugin.secret) {
+    console.error(`Plugin ${pluginId} has no secret configured (and no PLUGIN_SECRET fallback)`);
+    return new Response('Server misconfigured', {
+      status: 500,
+      headers: { 'X-CMS-Error': 'plugin-secret-required' },
+    });
+  }
+
+  const url = new URL(c.req.url);
+  const prefix = `/admin/plugins/${pluginId}/views`;
+  const viewPath = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) : '';
+  if (!viewPath.startsWith('/') || viewPath.includes('..')) return c.notFound();
+
+  const headers = buildPluginProxyHeaders(c.req.raw.headers, c.get('user'), plugin.secret);
+  const upstreamResponse = await plugin.fetcher.fetch(`${PLUGIN_ORIGIN}${PLUGIN_PREFIX}/admin/views${viewPath}${url.search}`, {
+    method: c.req.method,
+    headers,
+    redirect: 'manual',
+  });
+  const response = new Response(upstreamResponse.body, upstreamResponse);
+  if (upstreamResponse.status === 200) {
+    const revisioned = url.searchParams.has('r');
+    response.headers.set('cache-control', revisioned ? 'public, max-age=31536000, immutable' : 'no-store');
+  }
+  return response;
+}
+
 /** Admin-approved assets for a plugin, restricted to paths it currently
  *  declares in its manifest (an approval for a path the plugin no longer
  *  lists is dormant, not revived, until re-declared and re-approved). */
@@ -145,21 +190,6 @@ async function approvedAssetsFor(c: AppContext, manifest: PluginManifest, declar
       revision: pluginRevision || approval.integrity,
     }));
   return entries.length ? { [manifest.id]: entries } : {};
-}
-
-function pluginWorkerRevision(manifest: PluginManifest): string {
-  const workerVersion = manifest.workerVersion;
-  const metadata = typeof workerVersion === 'object' && workerVersion !== null
-    ? workerVersion
-    : manifest.cfVersionMetadata || manifest.CF_VERSION_METADATA;
-  const value = manifest.workerVersionId
-    || manifest.worker_version_id
-    || (typeof workerVersion === 'string' ? workerVersion : '')
-    || metadata?.id
-    || metadata?.tag
-    || metadata?.timestamp
-    || '';
-  return String(value).replace(/[^A-Za-z0-9._:-]/g, '-');
 }
 
 async function proxyToPlugin(c: AppContext): Promise<Response> {
@@ -231,7 +261,7 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
   if (wantsCmsChrome(upstreamResponse)) {
     const clientView = await readPluginClientViewData(upstreamResponse.clone());
     const body = clientView
-      ? pluginClientView(clientView.viewPath, clientView.data, `/admin/plugins/${pluginId}/views`)
+      ? pluginClientView(clientView.viewPath, clientView.data, `/admin/plugins/${pluginId}/views`, pluginViewRevision(plugin.manifest))
       : await sanitizePluginHtmlFragment(await upstreamResponse.text());
     const title = decodePluginTitle(upstreamResponse.headers.get('x-cms-title')) || plugin.manifest.name || 'Plugin';
     const base = await buildBaseProps(c);

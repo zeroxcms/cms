@@ -6,6 +6,7 @@ export interface ClientView {
   data: Record<string, unknown>;
   plugin?: boolean;
   viewBasePath?: string;
+  viewRevision?: string;
 }
 
 export type RenderedView = string | ClientView;
@@ -26,13 +27,19 @@ export async function renderView(
   };
 }
 
-export function pluginClientView(viewPath: string, data: Record<string, unknown>, viewBasePath?: string): ClientView {
+export function pluginClientView(
+  viewPath: string,
+  data: Record<string, unknown>,
+  viewBasePath?: string,
+  viewRevision?: string,
+): ClientView {
   return {
     __cmsClientView: true,
     viewPath,
     data: withRequestGlobals(data),
     plugin: true,
     viewBasePath,
+    viewRevision,
   };
 }
 
