@@ -251,6 +251,15 @@ export interface PluginManifest {
   id: string;
   name: string;
   version: string;
+  /** Plugin Worker deploy revision. Plugins should expose CF_VERSION_METADATA.id here when available. */
+  workerVersionId?: string;
+  /** Snake-case alias for plugin manifests that expose worker_version_id. */
+  worker_version_id?: string;
+  /** Optional structured Worker version metadata, if the plugin chooses to expose it. */
+  workerVersion?: string | Pick<WorkerVersionMetadata, 'id' | 'tag' | 'timestamp'>;
+  /** Back-compat alias for plugins that expose Cloudflare metadata verbatim. */
+  cfVersionMetadata?: Pick<WorkerVersionMetadata, 'id' | 'tag' | 'timestamp'>;
+  CF_VERSION_METADATA?: Pick<WorkerVersionMetadata, 'id' | 'tag' | 'timestamp'>;
   /** Lifecycle events the plugin wants to receive (e.g. "publish", "delete"). */
   hooks?: string[];
   /** When true, the plugin is a publish target: it receives full page

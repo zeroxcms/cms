@@ -32,6 +32,7 @@ import { currentCspNonce } from '../../utils/request-context';
 import { cmsAdminJobMessage, createPluginAdminActionJob } from '../../utils/admin-jobs';
 import { computeIntegrity, getAssetApproval, listApprovals } from '../../utils/plugin-assets';
 import type { ApprovedPluginAssets } from '../../templates/layout';
+import type { PluginManifest } from '../../types';
 
 export const pluginAdminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -132,13 +133,33 @@ async function servePluginAsset(c: AppContext): Promise<Response> {
 /** Admin-approved assets for a plugin, restricted to paths it currently
  *  declares in its manifest (an approval for a path the plugin no longer
  *  lists is dormant, not revived, until re-declared and re-approved). */
-async function approvedAssetsFor(c: AppContext, pluginId: string, declaredPaths: Set<string>): Promise<ApprovedPluginAssets> {
+async function approvedAssetsFor(c: AppContext, manifest: PluginManifest, declaredPaths: Set<string>): Promise<ApprovedPluginAssets> {
   if (declaredPaths.size === 0) return {};
-  const approvals = await listApprovals(c.env.DB, pluginId);
+  const pluginRevision = pluginWorkerRevision(manifest);
+  const approvals = await listApprovals(c.env.DB, manifest.id);
   const entries = approvals
     .filter((approval) => declaredPaths.has(approval.path))
-    .map((approval) => ({ path: approval.path, integrity: approval.integrity }));
-  return entries.length ? { [pluginId]: entries } : {};
+    .map((approval) => ({
+      path: approval.path,
+      integrity: approval.integrity,
+      revision: pluginRevision || approval.integrity,
+    }));
+  return entries.length ? { [manifest.id]: entries } : {};
+}
+
+function pluginWorkerRevision(manifest: PluginManifest): string {
+  const workerVersion = manifest.workerVersion;
+  const metadata = typeof workerVersion === 'object' && workerVersion !== null
+    ? workerVersion
+    : manifest.cfVersionMetadata || manifest.CF_VERSION_METADATA;
+  const value = manifest.workerVersionId
+    || manifest.worker_version_id
+    || (typeof workerVersion === 'string' ? workerVersion : '')
+    || metadata?.id
+    || metadata?.tag
+    || metadata?.timestamp
+    || '';
+  return String(value).replace(/[^A-Za-z0-9._:-]/g, '-');
 }
 
 async function proxyToPlugin(c: AppContext): Promise<Response> {
@@ -215,7 +236,7 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
     const title = decodePluginTitle(upstreamResponse.headers.get('x-cms-title')) || plugin.manifest.name || 'Plugin';
     const base = await buildBaseProps(c);
     const declaredAssetPaths = new Set((plugin.manifest.assets ?? []).map((asset) => asset.path));
-    const approvedPluginAssets = await approvedAssetsFor(c, pluginId, declaredAssetPaths);
+    const approvedPluginAssets = await approvedAssetsFor(c, plugin.manifest, declaredAssetPaths);
     const wrapped = await adminLayout(viewsFor(c.env), base, { title, body, approvedPluginAssets });
     const response = c.html(wrapped, upstreamResponse.status as 200);
     // Opt-in capability relaxation: a plugin page can request the camera (e.g.

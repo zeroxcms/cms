@@ -27,6 +27,7 @@ interface FakePlugin {
 
 interface RenderPayload {
   layoutData: Record<string, unknown>;
+  approvedPluginAssets?: Record<string, Array<{ path: string; integrity: string; revision?: string }>>;
   bodyView: null | {
     viewPath: string;
     data: Record<string, unknown>;
@@ -902,6 +903,50 @@ describe('plugin asset proxy', () => {
     }));
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+  });
+
+  it('passes the plugin Worker version as the approved asset revision for chrome-wrapped pages', async () => {
+    const manifest = {
+      ...ASSET_MANIFEST,
+      worker_version_id: 'plugin-worker-version-123',
+    };
+    const url = `https://plugin-asset-${crypto.randomUUID()}.local`;
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Check-in', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        const path = new URL(href).pathname;
+        if (path === '/__plugin/manifest') return Response.json(manifest);
+        if (path === '/__plugin/admin/kiosk') {
+          return Response.json(
+            {},
+            {
+              headers: {
+                'x-cms-chrome': '1',
+                'x-cms-client-view': '1',
+                'x-cms-view-path': '/templates/kiosk.json',
+              },
+            },
+          );
+        }
+        if (path === '/assets/js/kiosk.js') return new Response('console.log("kiosk")');
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+    const integrity = await computeIntegrity(new TextEncoder().encode('console.log("kiosk")').buffer);
+    await approveAsset(env.DB, 'checkin', '/assets/js/kiosk.js', integrity, 'admin@example.com');
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/checkin/kiosk', {
+      headers: { Cookie: await adminCookie(), 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    const payload = renderPayload(await response.text());
+
+    expect(response.status).toBe(200);
+    expect(payload.approvedPluginAssets?.checkin?.[0]).toMatchObject({
+      path: '/assets/js/kiosk.js',
+      integrity,
+      revision: 'plugin-worker-version-123',
+    });
   });
 
   it('fails closed when the plugin file changed since approval', async () => {

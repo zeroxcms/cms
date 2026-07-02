@@ -65,7 +65,12 @@ export async function adminLayout(
 /** Admin-approved plugin assets (see PluginManifest.assets), keyed by plugin id,
  *  forwarded into the client render payload so client-render.js can let a
  *  matching <script src> / <link> survive plugin-HTML sanitization. */
-export type ApprovedPluginAssets = Record<string, Array<{ path: string; integrity: string }>>;
+export interface ApprovedPluginAsset {
+  path: string;
+  integrity: string;
+  revision: string;
+}
+export type ApprovedPluginAssets = Record<string, ApprovedPluginAsset[]>;
 
 export interface LayoutOptions extends NavFlags {
   title: string;

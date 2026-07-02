@@ -48,10 +48,17 @@
     return path.startsWith('/') ? path : '/' + path;
   }
 
-  function withRevision(url) {
-    const revision = payload.viewRevision;
+  function withRevision(url, revision) {
+    revision = revision || payload.viewRevision;
     if (!revision) return url;
-    return url + (url.includes('?') ? '&' : '?') + 'r=' + encodeURIComponent(revision);
+    const hashIndex = url.indexOf('#');
+    const hash = hashIndex >= 0 ? url.slice(hashIndex) : '';
+    const base = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+    const queryIndex = base.indexOf('?');
+    const path = queryIndex >= 0 ? base.slice(0, queryIndex) : base;
+    const params = new URLSearchParams(queryIndex >= 0 ? base.slice(queryIndex + 1) : '');
+    params.set('r', revision);
+    return path + '?' + params.toString() + hash;
   }
 
   function renderGlobals() {
@@ -473,10 +480,9 @@
       // requires the admin session cookie, which "crossorigin" would strip.
       script.setAttribute('integrity', approval.integrity);
       script.setAttribute('nonce', payload.nonce);
-      // Append the deploy revision so the asset endpoint can cache it immutably
-      // and a new deploy busts the cache (matches how view files are fetched).
-      // Idempotent: skip if the template already added an `r=`.
-      script.setAttribute('src', /[?&]r=/.test(src) ? src : withRevision(src));
+      // Use the plugin asset revision (plugin Worker deploy id when exposed,
+      // otherwise the pinned integrity) so plugin deploys bust their own cache.
+      script.setAttribute('src', withRevision(src, approval.revision));
       script.textContent = '';
     });
     template.content.querySelectorAll('link[rel="stylesheet"]').forEach((link) => {
@@ -487,7 +493,7 @@
         return;
       }
       link.setAttribute('integrity', approval.integrity);
-      link.setAttribute('href', /[?&]r=/.test(href) ? href : withRevision(href));
+      link.setAttribute('href', withRevision(href, approval.revision));
     });
     template.content.querySelectorAll('*').forEach((element) => {
       for (const attr of Array.from(element.attributes)) {
