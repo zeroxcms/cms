@@ -562,6 +562,6 @@
   main();
 
   function pluginContentWrapper(html) {
-    return '<div class="min-w-0 max-w-full overflow-x-hidden px-4 py-5 sm:px-6 sm:py-8 lg:px-8">' + html + '</div>';
+    return '<div class="min-w-0 max-w-full px-4 py-5 sm:px-6 sm:py-8 lg:px-8">' + html + '</div>';
   }
 })();

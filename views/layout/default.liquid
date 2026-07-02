@@ -163,10 +163,75 @@
         setOpen(false);
       }
 
+      function bindMobileHeaderAutoHide() {
+        var bar = document.querySelector('[data-admin-mobile-bar]');
+        var openButton = document.querySelector('[data-mobile-menu-open]');
+        if (!(bar instanceof HTMLElement)) return;
+        if (bar.dataset.mobileHeaderScrollBound === '1') return;
+        bar.dataset.mobileHeaderScrollBound = '1';
+
+        var lastY = window.scrollY || window.pageYOffset || 0;
+        var downDistance = 0;
+        var ticking = false;
+
+        function isDesktop() {
+          return window.matchMedia && window.matchMedia('(min-width: 768px)').matches;
+        }
+
+        function setHidden(hidden) {
+          bar.classList.toggle('is-hidden', hidden);
+          bar.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+          if (openButton instanceof HTMLButtonElement) {
+            openButton.tabIndex = hidden ? -1 : 0;
+          }
+        }
+
+        function update() {
+          ticking = false;
+          if (isDesktop()) {
+            downDistance = 0;
+            lastY = window.scrollY || window.pageYOffset || 0;
+            setHidden(false);
+            return;
+          }
+
+          var currentY = Math.max(window.scrollY || window.pageYOffset || 0, 0);
+          var delta = currentY - lastY;
+          var threshold = Math.max(window.innerHeight / 5, 1);
+
+          if (currentY <= 0) {
+            downDistance = 0;
+            setHidden(false);
+          } else if (delta > 0) {
+            downDistance += delta;
+            if (downDistance >= threshold) setHidden(true);
+          } else if (delta < 0) {
+            downDistance = 0;
+            setHidden(false);
+          }
+
+          lastY = currentY;
+        }
+
+        function requestUpdate() {
+          if (ticking) return;
+          ticking = true;
+          window.requestAnimationFrame(update);
+        }
+
+        window.addEventListener('scroll', requestUpdate, { passive: true });
+        window.addEventListener('resize', requestUpdate);
+        setHidden(false);
+      }
+
       if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', bindMobileMenu);
+        document.addEventListener('DOMContentLoaded', function() {
+          bindMobileMenu();
+          bindMobileHeaderAutoHide();
+        });
       } else {
         bindMobileMenu();
+        bindMobileHeaderAutoHide();
       }
     })();
   </script>

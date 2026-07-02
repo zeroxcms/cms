@@ -191,6 +191,15 @@ th,
   contain: layout paint;
 }
 
+[data-admin-mobile-bar] {
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  will-change: transform;
+}
+
+[data-admin-mobile-bar].is-hidden {
+  transform: translateY(calc(-100% - env(safe-area-inset-top, 0px)));
+}
+
 [data-color-tag-picker]:not([data-color-tag-suppress-open]):hover [data-color-tag-menu],
 [data-color-tag-picker]:not([data-color-tag-suppress-open]):focus-within [data-color-tag-menu] {
   display: flex;
