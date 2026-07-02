@@ -4,6 +4,7 @@ import { cmsConfig } from '../src/cms-config';
 import { hashToken, signJWT } from '../src/utils/jwt';
 import { blueprintToLect, stringifyLect } from '../src/utils/lect';
 import { clearConfigCache } from '../src/plugins/config';
+import { __injectPluginFetcher, clearManifestCache } from '../src/plugins/registry';
 import { clearRolePermissionsCache } from '../src/utils/roles';
 import type { JWTPayload } from '../src/types';
 
@@ -1575,6 +1576,42 @@ describe('capability enforcement', () => {
     expect(response.status).toBe(403);
     expect(response.headers.get('X-CMS-Error')).toBeNull();
     expect(await response.text()).toBe('Forbidden: admin role required');
+  });
+
+  it('lets a custom role reach a plugin that declares the permission it was granted, but not other plugins', async () => {
+    const pluginUrl = `https://plugin-${crypto.randomUUID()}.local`;
+    const manifest = {
+      id: 'checkin',
+      name: 'Check-in',
+      version: '1.0.0',
+      permissions: [{ value: 'checkin:door', label: 'Check-in door access' }],
+    };
+    __injectPluginFetcher(pluginUrl, {
+      fetch: async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+        const path = new URL(url).pathname;
+        if (path === '/__plugin/manifest') return Response.json(manifest);
+        return new Response('ok', { headers: { 'content-type': 'text/plain' } });
+      },
+    } as unknown as Fetcher);
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Checkin', pluginUrl).run();
+    clearManifestCache();
+
+    await env.DB.prepare('INSERT INTO roles (name, label, builtin) VALUES (?, ?, 0)').bind('door-staff', 'Door Staff').run();
+    await env.DB.prepare('INSERT INTO role_permissions (role, permission) VALUES (?, ?)').bind('door-staff', 'checkin:door').run();
+    clearRolePermissionsCache();
+
+    const allowed = await fetchWorker('/admin/plugins/checkin/dashboard', {
+      headers: { Cookie: await authCookie('door-staff') },
+    });
+    expect(allowed.status).toBe(200);
+
+    // The granted permission is namespaced to the checkin plugin — it must not
+    // unlock a different (unregistered, in this test) plugin id.
+    const other = await fetchWorker('/admin/plugins/events/dashboard', {
+      headers: { Cookie: await authCookie('door-staff') },
+    });
+    expect(other.status).toBe(403);
   });
 
   it('lets an editor view page types but not create them (admin only)', async () => {

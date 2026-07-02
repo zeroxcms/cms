@@ -13,6 +13,7 @@ import type { Env, Permission, Variables } from '../../types';
 import { pluginById, PLUGIN_ORIGIN, PLUGIN_PREFIX } from '../../plugins/registry';
 import type { AppContext } from '../../utils/context';
 import { effectivePermissions, resolveRolePermissions, splitRoles } from '../../utils/roles';
+import { jsonError, wantsJsonResponse } from '../../middleware/auth';
 import { adminLayout } from '../../templates/layout';
 import { pluginClientView } from '../../templates/liquid';
 import { buildBaseProps } from '../../utils/admin-render';
@@ -27,12 +28,17 @@ import {
 } from '../../security/plugin-proxy';
 import { sanitizePluginHtmlFragment } from '../../security/plugin-sanitize';
 import { cmsAdminJobMessage, createPluginAdminActionJob } from '../../utils/admin-jobs';
+import { computeIntegrity, getAssetApproval, listApprovals } from '../../utils/plugin-assets';
+import type { ApprovedPluginAssets } from '../../templates/layout';
 
 export const pluginAdminRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // No blanket role gate here — see userCanAccessPlugin() below, applied inside
 // proxyToPlugin once the plugin's manifest (and its declared permissions) is
 // resolved.
+// Registered before the generic catch-all so approved-asset requests don't
+// fall through to the plugin admin proxy.
+pluginAdminRoutes.get('/plugins/:pluginId/assets/*', (c) => servePluginAsset(c));
 pluginAdminRoutes.all('/plugins/:pluginId', (c) => proxyToPlugin(c));
 pluginAdminRoutes.all('/plugins/:pluginId/*', (c) => proxyToPlugin(c));
 
@@ -42,33 +48,102 @@ pluginAdminRoutes.all('/plugins/:pluginId/*', (c) => proxyToPlugin(c));
  * plugins are served from a dedicated origin, only 'admin' passes by default —
  * unless the plugin manifest opts in by declaring its own permissions (see
  * PluginManifest.permissions), in which case a user holding any one of those
- * granted permissions is trusted to reach that plugin's admin routes too.
- * Plugins that declare no permissions stay admin-only (fail closed).
+ * granted permissions is trusted to reach that specific plugin's admin routes
+ * too. Plugins that declare no permissions stay admin-only (fail closed).
  */
-async function userCanAccessPlugin(c: AppContext, manifestPermissions: Array<{ value: string }> | undefined): Promise<boolean> {
-  const user = c.get('user');
-  if (splitRoles(user.role).includes('admin')) return true;
-  const declared = manifestPermissions ?? [];
-  if (declared.length === 0) return false;
+async function hasDeclaredPluginPermission(c: AppContext, manifestPermissions: Array<{ value: string }>): Promise<boolean> {
+  if (manifestPermissions.length === 0) return false;
   const map = await resolveRolePermissions(c.env);
-  const granted = effectivePermissions(map, user.role);
-  return declared.some(({ value }) => granted.has(value as Permission));
+  const granted = effectivePermissions(map, c.get('user').role);
+  return manifestPermissions.some(({ value }) => granted.has(value as Permission));
+}
+
+function adminOnlyForbidden(c: AppContext): Response {
+  if (wantsJsonResponse(c.req.raw)) {
+    return jsonError({ success: false, error: 'Admin role required' }, 403, 'admin-role-required');
+  }
+  return c.text('Forbidden: admin role required', 403);
+}
+
+/**
+ * Serves a single admin-approved plugin asset (JS/CSS) at a CMS-origin URL, so
+ * chrome-wrapped plugin templates can reference it as a same-origin
+ * <script src>/<link href> under the strict CSP (script-src 'self'). Bytes are
+ * re-fetched from the plugin and re-hashed on every request — if they no
+ * longer match the pinned approval, this fails closed rather than serving
+ * content an admin never reviewed. See utils/plugin-assets.ts.
+ */
+async function servePluginAsset(c: AppContext): Promise<Response> {
+  const pluginId = c.req.param('pluginId');
+  if (!pluginId) return c.notFound();
+
+  const isAdmin = splitRoles(c.get('user').role).includes('admin');
+  const plugin = await pluginById(c.env, pluginId);
+  if (!isAdmin && !(plugin && await hasDeclaredPluginPermission(c, plugin.manifest.permissions ?? []))) {
+    return adminOnlyForbidden(c);
+  }
+  if (!plugin) return c.notFound();
+
+  const url = new URL(c.req.url);
+  // The Hono route is `/plugins/:pluginId/assets/*` (a fixed "assets" segment
+  // plus a wildcard), but manifest asset paths already start with "/assets/..."
+  // themselves — so the CMS-side URL is prefix-only (no extra "/assets") and
+  // the remainder reconstructs the manifest path exactly, e.g.
+  // "/admin/plugins/checkin/assets/js/kiosk.js" -> "/assets/js/kiosk.js".
+  const prefix = `/admin/plugins/${pluginId}`;
+  const assetPath = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) : '';
+  if (!assetPath.startsWith('/') || assetPath.includes('..')) return c.notFound();
+
+  const approval = await getAssetApproval(c.env.DB, pluginId, assetPath);
+  if (!approval) return c.text('Not found: asset not approved', 404);
+
+  const upstream = await plugin.fetcher.fetch(`${PLUGIN_ORIGIN}${assetPath}`);
+  if (!upstream.ok) return c.text('Asset unavailable', 502);
+  const bytes = await upstream.arrayBuffer();
+  const integrity = await computeIntegrity(bytes);
+  if (integrity !== approval.integrity) {
+    // The plugin's file changed since approval — do not serve unreviewed bytes.
+    return c.text('Asset changed since approval; re-approval required', 409);
+  }
+
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      'content-type': assetPath.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8',
+      // Integrity is re-checked on every request rather than relying on a cache
+      // to stay in sync with the approval, so this endpoint stays uncached.
+      'cache-control': 'no-store',
+    },
+  });
+}
+
+/** Admin-approved assets for a plugin, restricted to paths it currently
+ *  declares in its manifest (an approval for a path the plugin no longer
+ *  lists is dormant, not revived, until re-declared and re-approved). */
+async function approvedAssetsFor(c: AppContext, pluginId: string, declaredPaths: Set<string>): Promise<ApprovedPluginAssets> {
+  if (declaredPaths.size === 0) return {};
+  const approvals = await listApprovals(c.env.DB, pluginId);
+  const entries = approvals
+    .filter((approval) => declaredPaths.has(approval.path))
+    .map((approval) => ({ path: approval.path, integrity: approval.integrity }));
+  return entries.length ? { [pluginId]: entries } : {};
 }
 
 async function proxyToPlugin(c: AppContext): Promise<Response> {
   const pluginId = c.req.param('pluginId');
   if (!pluginId) return c.notFound();
 
+  const isAdmin = splitRoles(c.get('user').role).includes('admin');
   const plugin = await pluginById(c.env, pluginId);
-  if (!plugin) return c.notFound();
 
-  if (!(await userCanAccessPlugin(c, plugin.manifest.permissions))) {
-    const wantsJson = (c.req.raw.headers.get('Accept') ?? '').includes('application/json');
-    if (wantsJson) {
-      return Response.json({ success: false, error: 'Insufficient plugin permissions' }, { status: 403, headers: { 'X-CMS-Error': 'plugin-permission-required' } });
-    }
-    return c.text('Forbidden: insufficient plugin permissions', 403);
+  // Non-admins are rejected the same way whether the plugin is unregistered or
+  // just doesn't grant them access — matching the prior route-level gate, which
+  // never resolved the plugin at all for a non-admin.
+  if (!isAdmin && !(plugin && await hasDeclaredPluginPermission(c, plugin.manifest.permissions ?? []))) {
+    return adminOnlyForbidden(c);
   }
+
+  if (!plugin) return c.notFound();
 
   // Each plugin authenticates with its own secret (or the env fallback). Fail
   // closed when neither is configured rather than proxying unauthenticated.
@@ -127,7 +202,9 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
       : await sanitizePluginHtmlFragment(await upstreamResponse.text());
     const title = decodePluginTitle(upstreamResponse.headers.get('x-cms-title')) || plugin.manifest.name || 'Plugin';
     const base = await buildBaseProps(c);
-    const wrapped = await adminLayout(viewsFor(c.env), base, { title, body });
+    const declaredAssetPaths = new Set((plugin.manifest.assets ?? []).map((asset) => asset.path));
+    const approvedPluginAssets = await approvedAssetsFor(c, pluginId, declaredAssetPaths);
+    const wrapped = await adminLayout(viewsFor(c.env), base, { title, body, approvedPluginAssets });
     // No explicit CSP here — the global security middleware applies the strict
     // nonce policy (matching the nonce adminLayout embeds), like any CMS page.
     return c.html(wrapped, upstreamResponse.status as 200);

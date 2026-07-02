@@ -11,6 +11,8 @@ export interface PluginListItem {
   manifestId?: string;
   manifestName?: string;
   version?: string;
+  /** True when the manifest declares candidate JS/CSS assets to approve. */
+  hasAssets?: boolean;
 }
 
 const STATUS_BADGE: Record<PluginListItem['status'], string> = {
@@ -35,6 +37,8 @@ export async function pluginsManagePage(views: Fetcher, opts: BaseTemplateProps 
       toggleLabel: plugin.enabled ? 'Disable' : 'Enable',
       editHref: `/admin/plugins-manage/${plugin.id}/edit`,
       deleteAction: `/admin/plugins-manage/${plugin.id}/delete`,
+      hasAssets: !!plugin.hasAssets,
+      assetsHref: `/admin/plugins-manage/${plugin.id}/assets`,
     })),
   });
 
@@ -81,4 +85,48 @@ export async function pluginFormPage(views: Fetcher, opts: BaseTemplateProps & {
   });
 
   return adminLayout(views, opts, { title: heading, body });
+}
+
+export interface PluginAssetRow {
+  path: string;
+  label: string;
+  approved: boolean;
+  drifted: boolean;
+  fetchError: boolean;
+  approvedBy: string;
+  approveAction: string;
+  revokeAction: string;
+}
+
+export async function pluginAssetsPage(views: Fetcher, opts: BaseTemplateProps & {
+  pluginId: number;
+  pluginLabel: string;
+  unreachable: boolean;
+  assets: PluginAssetRow[];
+  flash?: string;
+}): Promise<string> {
+  const { pluginLabel, unreachable, assets, flash } = opts;
+  const flashMessage = flash === 'approved'
+    ? 'Asset approved. It will now execute inside CMS chrome for this plugin.'
+    : flash === 'revoked'
+      ? 'Approval revoked. The asset will no longer execute inside CMS chrome.'
+      : flash === 'fetch-failed'
+        ? 'Could not fetch the asset from the plugin — approval not changed.'
+        : '';
+
+  const body = await renderView(views, '/templates/plugin-assets.json', {
+    pluginLabel,
+    unreachable,
+    hasAssets: assets.length > 0,
+    assets: assets.map((asset) => ({
+      ...asset,
+      statusLabel: asset.drifted ? 'Changed since approval' : asset.approved ? 'Approved' : 'Not approved',
+      statusClass: asset.drifted ? 'bg-amber-100 text-amber-800' : asset.approved ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600',
+    })),
+    hasFlash: !!flashMessage,
+    flashMessage,
+    backHref: '/admin/plugins-manage',
+  });
+
+  return adminLayout(views, opts, { title: `${pluginLabel} · Assets`, body });
 }

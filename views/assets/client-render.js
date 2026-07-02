@@ -402,17 +402,75 @@
     return templateSource.get(templateKey(currentViewBasePath(normalized), normalized)) === 'plugin';
   }
 
+  // Plugin id whose assets are currently allowlisted, derived from the active
+  // view base path (e.g. "/admin/plugins/checkin/views" -> "checkin").
+  function currentPluginId() {
+    const match = /^\/admin\/plugins\/([^/]+)\/views$/.exec(activeViewBasePath || '');
+    return match ? match[1] : null;
+  }
+
+  function approvedAsset(pluginId, path) {
+    if (!pluginId) return null;
+    const list = (payload.approvedPluginAssets || {})[pluginId];
+    if (!Array.isArray(list)) return null;
+    return list.find((entry) => entry.path === path) || null;
+  }
+
+  // Only a <script>/<link> whose src/href points at this exact CMS-served,
+  // admin-approved asset URL survives; everything else (including any inline
+  // script content) is still stripped. See utils/plugin-assets.ts — the CMS
+  // re-hashes the file on every request, so this allowlist can't be used to
+  // smuggle content the admin never reviewed.
+  function approvedAssetSrc(pluginId, url) {
+    // Manifest asset paths already start with "/assets/...", so the CMS-side
+    // URL is just the plugin prefix (no extra "/assets") + that path — e.g.
+    // "/admin/plugins/checkin/assets/js/kiosk.js" -> "/assets/js/kiosk.js".
+    // Must match the server-side prefix in servePluginAsset() (routes/admin/plugins.ts).
+    const prefix = '/admin/plugins/' + pluginId;
+    if (!url || url.indexOf(prefix) !== 0) return null;
+    const path = url.slice(prefix.length);
+    return approvedAsset(pluginId, path);
+  }
+
   function sanitizePluginHtml(html) {
-    if (!html || !/<(?:script|\w+[\s\S]*?\son\w+\s*=|\w+[\s\S]*?\s(?:href|src|action|formaction|xlink:href)\s*=)/i.test(html)) {
+    if (!html || !/<(?:script|link|\w+[\s\S]*?\son\w+\s*=|\w+[\s\S]*?\s(?:href|src|action|formaction|xlink:href)\s*=)/i.test(html)) {
       return html;
     }
-    if (pluginOutputCache.has(html)) return pluginOutputCache.get(html);
+
+    const pluginId = currentPluginId();
+    const cacheKey = pluginId + ' ' + html;
+    if (pluginOutputCache.has(cacheKey)) return pluginOutputCache.get(cacheKey);
 
     const parsed = new DOMParser().parseFromString('<template>' + html + '</template>', 'text/html');
     const template = parsed.querySelector('template');
     if (!template) return html;
 
-    template.content.querySelectorAll('script').forEach((script) => script.remove());
+    template.content.querySelectorAll('script').forEach((script) => {
+      const src = script.getAttribute('src');
+      const approval = src && approvedAssetSrc(pluginId, src);
+      if (!approval) {
+        script.remove();
+        return;
+      }
+      // Keep the tag, but never trust author-supplied attributes for the
+      // security-relevant ones: pin the CMS-verified integrity hash and the
+      // page's nonce (required for executeScripts() to run it), and drop any
+      // inline body (browsers ignore it next to src, but don't carry it along).
+      // No crossorigin attribute: the asset endpoint is same-origin and
+      // requires the admin session cookie, which "crossorigin" would strip.
+      script.setAttribute('integrity', approval.integrity);
+      script.setAttribute('nonce', payload.nonce);
+      script.textContent = '';
+    });
+    template.content.querySelectorAll('link[rel="stylesheet"]').forEach((link) => {
+      const href = link.getAttribute('href');
+      const approval = href && approvedAssetSrc(pluginId, href);
+      if (!approval) {
+        link.remove();
+        return;
+      }
+      link.setAttribute('integrity', approval.integrity);
+    });
     template.content.querySelectorAll('*').forEach((element) => {
       for (const attr of Array.from(element.attributes)) {
         const name = attr.name.toLowerCase();
@@ -423,7 +481,7 @@
     });
 
     const sanitized = template.innerHTML;
-    pluginOutputCache.set(html, sanitized);
+    pluginOutputCache.set(cacheKey, sanitized);
     return sanitized;
   }
 
@@ -460,10 +518,13 @@
     try {
       const layoutData = { ...(payload.layoutData || {}) };
       if (payload.bodyView) {
-        const body = await withViewBasePath(payload.bodyView.viewBasePath, () => (
-          renderView(payload.bodyView.viewPath, payload.bodyView.data || {})
-        ));
-        layoutData.body = payload.bodyView.plugin ? pluginContentWrapper(sanitizePluginHtml(body)) : body;
+        const body = await withViewBasePath(payload.bodyView.viewBasePath, async () => {
+          const rendered = await renderView(payload.bodyView.viewPath, payload.bodyView.data || {});
+          // Sanitize while activeViewBasePath still identifies the plugin, so
+          // the approved-asset allowlist can be applied to this plugin's id.
+          return payload.bodyView.plugin ? sanitizePluginHtml(rendered) : rendered;
+        });
+        layoutData.body = payload.bodyView.plugin ? pluginContentWrapper(body) : body;
       }
       const html = await renderLiquid(payload.layoutPath || '/layout/default.liquid', layoutData);
       replaceDocument(html);

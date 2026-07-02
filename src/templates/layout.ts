@@ -44,7 +44,7 @@ export interface BaseTemplateProps extends NavFlags {
 export async function adminLayout(
   views: Fetcher,
   base: BaseTemplateProps,
-  opts: { title: string; body: RenderedView },
+  opts: { title: string; body: RenderedView; approvedPluginAssets?: ApprovedPluginAssets },
 ): Promise<string> {
   return layout(views, {
     ...navFlags(base),
@@ -58,8 +58,14 @@ export async function adminLayout(
     pluginNav: base.pluginNav,
     pluginSettingsNav: base.pluginSettingsNav,
     viewRevision: base.viewRevision,
+    approvedPluginAssets: opts.approvedPluginAssets,
   });
 }
+
+/** Admin-approved plugin assets (see PluginManifest.assets), keyed by plugin id,
+ *  forwarded into the client render payload so client-render.js can let a
+ *  matching <script src> / <link> survive plugin-HTML sanitization. */
+export type ApprovedPluginAssets = Record<string, Array<{ path: string; integrity: string }>>;
 
 export interface LayoutOptions extends NavFlags {
   title: string;
@@ -76,6 +82,8 @@ export interface LayoutOptions extends NavFlags {
   pluginSettingsNav?: Array<{ label: string; href: string }>;
   /** Cache-busting revision appended to browser-fetched view files. */
   viewRevision?: string;
+  /** Admin-approved plugin assets available to the current page's plugin (if any). */
+  approvedPluginAssets?: ApprovedPluginAssets;
 }
 
 export async function layout(views: Fetcher, opts: LayoutOptions): Promise<string> {
@@ -112,6 +120,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     layoutPath: '/layout/default.liquid',
     layoutData,
     bodyView: isClientView(opts.body) ? opts.body : null,
+    approvedPluginAssets: opts.approvedPluginAssets ?? {},
   };
 
   void views;

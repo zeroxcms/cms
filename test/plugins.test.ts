@@ -7,6 +7,7 @@ import { viewsFor } from '../src/plugins/views';
 import { cmsConfig } from '../src/cms-config';
 import { signJWT } from '../src/utils/jwt';
 import { CMS_ADMIN_JOB_KIND, type CmsAdminJobMessage } from '../src/utils/admin-jobs';
+import { approveAsset, computeIntegrity } from '../src/utils/plugin-assets';
 import type { Env, JWTPayload } from '../src/types';
 
 const EVENTS_MANIFEST = {
@@ -86,6 +87,7 @@ beforeEach(async () => {
   __clearInjectedFetchers();
   await env.DB.prepare('DELETE FROM plugins').run();
   await env.DB.prepare('DELETE FROM admin_jobs').run();
+  await env.DB.prepare('DELETE FROM plugin_asset_approvals').run();
 });
 
 describe('resolveCmsConfig', () => {
@@ -817,5 +819,104 @@ describe('plugin admin proxy', () => {
     expect(payload.layoutData.pluginNav).toEqual([
       { label: 'Events', href: '/admin/plugins/events/dashboard' },
     ]);
+  });
+});
+
+describe('plugin asset proxy', () => {
+  const worker = (exports as unknown as { default: Fetcher }).default;
+  const testEnv = env as unknown as Record<string, unknown>;
+  let savedPluginSecret: unknown;
+
+  const ASSET_MANIFEST = {
+    id: 'checkin',
+    name: 'Check-in',
+    version: '1.0.0',
+    assets: [{ path: '/assets/js/kiosk.js', label: 'Kiosk scanner' }],
+  };
+
+  beforeEach(() => {
+    savedPluginSecret = testEnv.PLUGIN_SECRET;
+    testEnv.PLUGIN_SECRET = 'server-secret';
+  });
+
+  afterEach(() => {
+    if (savedPluginSecret === undefined) delete testEnv.PLUGIN_SECRET;
+    else testEnv.PLUGIN_SECRET = savedPluginSecret;
+  });
+
+  function registerAssetPlugin(assetBody: string, manifest: unknown = ASSET_MANIFEST) {
+    const url = `https://plugin-asset-${crypto.randomUUID()}.local`;
+    return env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Check-in', url).run().then(() => {
+      __injectPluginFetcher(url, {
+        fetch: async (input: RequestInfo | URL): Promise<Response> => {
+          const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+          const path = new URL(href).pathname;
+          if (path === '/__plugin/manifest') return Response.json(manifest);
+          if (path === '/assets/js/kiosk.js') return new Response(assetBody, { headers: { 'content-type': 'text/javascript' } });
+          return new Response('nf', { status: 404 });
+        },
+      } as unknown as Fetcher);
+      return url;
+    });
+  }
+
+  async function adminCookie(): Promise<string> {
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+    return `access_token=${token}`;
+  }
+
+  it('404s an asset that has never been approved', async () => {
+    await registerAssetPlugin('console.log(1)');
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/checkin/assets/js/kiosk.js', {
+      headers: { Cookie: await adminCookie(), 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    expect(response.status).toBe(404);
+  });
+
+  it('serves an approved asset with its pinned integrity verified', async () => {
+    await registerAssetPlugin('console.log("kiosk")');
+    const integrity = await computeIntegrity(new TextEncoder().encode('console.log("kiosk")').buffer);
+    await approveAsset(env.DB, 'checkin', '/assets/js/kiosk.js', integrity, 'admin@example.com');
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/checkin/assets/js/kiosk.js', {
+      headers: { Cookie: await adminCookie(), 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('console.log("kiosk")');
+    expect(response.headers.get('content-type')).toContain('text/javascript');
+  });
+
+  it('fails closed when the plugin file changed since approval', async () => {
+    await registerAssetPlugin('console.log("changed")');
+    // Approve a hash that doesn't match the file the plugin now serves.
+    await approveAsset(env.DB, 'checkin', '/assets/js/kiosk.js', 'sha384-stale-hash', 'admin@example.com');
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/checkin/assets/js/kiosk.js', {
+      headers: { Cookie: await adminCookie(), 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    expect(response.status).toBe(409);
+  });
+
+  it('applies the same admin-or-declared-permission gate as the plugin admin proxy', async () => {
+    await registerAssetPlugin('console.log(1)');
+    const integrity = await computeIntegrity(new TextEncoder().encode('console.log(1)').buffer);
+    await approveAsset(env.DB, 'checkin', '/assets/js/kiosk.js', integrity, 'admin@example.com');
+
+    const now = Math.floor(Date.now() / 1000);
+    // moderator passes editorGuard (has some permissions) but the manifest
+    // declares no permissions of its own, so it still can't reach this plugin.
+    const moderatorToken = await signJWT({
+      sub: '2', email: 'mod@example.com', name: 'Mod', role: 'moderator',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/checkin/assets/js/kiosk.js', {
+      headers: { Cookie: `access_token=${moderatorToken}`, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    expect(response.status).toBe(403);
   });
 });

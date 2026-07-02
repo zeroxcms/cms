@@ -26,7 +26,9 @@ import {
   generatePluginSecret,
   type PluginInput,
 } from '../../utils/plugin-store';
-import { pluginsManagePage, pluginFormPage, type PluginListItem } from '../../templates/plugins-manage';
+import { approveAsset, computeIntegrity, getAssetApproval, listApprovals, revokeAsset } from '../../utils/plugin-assets';
+import { PLUGIN_ORIGIN } from '../../plugins/registry';
+import { pluginsManagePage, pluginFormPage, pluginAssetsPage, type PluginListItem } from '../../templates/plugins-manage';
 
 export const pluginsManageRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -131,6 +133,7 @@ pluginsManageRoutes.get('/plugins-manage', async (c) => {
       manifestId: manifest?.id,
       manifestName: manifest?.name,
       version: manifest?.version,
+      hasAssets: !!manifest?.assets?.length,
     };
   });
 
@@ -231,6 +234,105 @@ pluginsManageRoutes.post('/plugins-manage/:id/delete', async (c) => {
   invalidate();
   logAudit(c, 'plugin.delete', 'plugin', plugin.url);
   return c.redirect('/admin/plugins-manage');
+});
+
+// ── Asset approvals ────────────────────────────────────────────────────────
+// A plugin's manifest only *declares* candidate JS/CSS files (PluginManifest.
+// assets); nothing runs in CMS chrome until an admin explicitly approves a
+// path here, pinning its content hash. See utils/plugin-assets.ts.
+
+async function resolvedPluginFor(env: Env, id: number) {
+  const row = await getPlugin(env.DB, id);
+  if (!row) return null;
+  const resolved = (await getPlugins(env)).find((plugin) => plugin.binding === row.url);
+  return { row, resolved };
+}
+
+pluginsManageRoutes.get('/plugins-manage/:id/assets', async (c) => {
+  const id = Number(c.req.param('id'));
+  const found = await resolvedPluginFor(c.env, id);
+  if (!found) return c.notFound();
+  const { row, resolved } = found;
+  if (!resolved) {
+    return renderPage(c, pluginAssetsPage, {
+      pluginId: id,
+      pluginLabel: row.label || row.url,
+      unreachable: true,
+      assets: [],
+      flash: c.req.query('flash') ?? undefined,
+    });
+  }
+
+  const declared = resolved.manifest.assets ?? [];
+  const approvals = new Map((await listApprovals(c.env.DB, resolved.manifest.id)).map((a) => [a.path, a]));
+
+  const assets = await Promise.all(declared.map(async (asset) => {
+    const approval = approvals.get(asset.path);
+    let currentIntegrity: string | null = null;
+    let fetchError = false;
+    try {
+      const upstream = await resolved.fetcher.fetch(`${PLUGIN_ORIGIN}${asset.path}`);
+      if (upstream.ok) currentIntegrity = await computeIntegrity(await upstream.arrayBuffer());
+      else fetchError = true;
+    } catch {
+      fetchError = true;
+    }
+    const approved = !!approval;
+    const drifted = approved && currentIntegrity !== null && currentIntegrity !== approval.integrity;
+    return {
+      path: asset.path,
+      label: asset.label || asset.path,
+      approved,
+      drifted,
+      fetchError,
+      approvedBy: approval?.approved_by ?? '',
+      approveAction: `/admin/plugins-manage/${id}/assets/approve`,
+      revokeAction: `/admin/plugins-manage/${id}/assets/revoke`,
+    };
+  }));
+
+  return renderPage(c, pluginAssetsPage, {
+    pluginId: id,
+    pluginLabel: resolved.manifest.name || row.label || row.url,
+    unreachable: false,
+    assets,
+    flash: c.req.query('flash') ?? undefined,
+  });
+});
+
+pluginsManageRoutes.post('/plugins-manage/:id/assets/approve', async (c) => {
+  const id = Number(c.req.param('id'));
+  const found = await resolvedPluginFor(c.env, id);
+  if (!found?.resolved) return c.notFound();
+  const { resolved } = found;
+
+  const form = await c.req.formData();
+  const path = str(form.get('path'));
+  const declared = (resolved.manifest.assets ?? []).some((asset) => asset.path === path);
+  if (!declared) return c.text('Unknown asset path', 400);
+
+  const upstream = await resolved.fetcher.fetch(`${PLUGIN_ORIGIN}${path}`);
+  if (!upstream.ok) return c.redirect(`/admin/plugins-manage/${id}/assets?flash=fetch-failed`);
+  const integrity = await computeIntegrity(await upstream.arrayBuffer());
+  await approveAsset(c.env.DB, resolved.manifest.id, path, integrity, c.get('user').email);
+  logAudit(c, 'plugin.asset.approve', 'plugin', resolved.manifest.id, { path, integrity });
+  return c.redirect(`/admin/plugins-manage/${id}/assets?flash=approved`);
+});
+
+pluginsManageRoutes.post('/plugins-manage/:id/assets/revoke', async (c) => {
+  const id = Number(c.req.param('id'));
+  const found = await resolvedPluginFor(c.env, id);
+  if (!found?.resolved) return c.notFound();
+  const { resolved } = found;
+
+  const form = await c.req.formData();
+  const path = str(form.get('path'));
+  const existing = await getAssetApproval(c.env.DB, resolved.manifest.id, path);
+  if (existing) {
+    await revokeAsset(c.env.DB, resolved.manifest.id, path);
+    logAudit(c, 'plugin.asset.revoke', 'plugin', resolved.manifest.id, { path });
+  }
+  return c.redirect(`/admin/plugins-manage/${id}/assets?flash=revoked`);
 });
 
 /** After any registry mutation, drop the plugin-list, manifest, and merged-config caches. */

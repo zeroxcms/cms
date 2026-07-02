@@ -30,14 +30,14 @@ import {
   rotateAuthSession,
 } from '../security/sessions';
 
-function wantsJsonResponse(request: Request): boolean {
+export function wantsJsonResponse(request: Request): boolean {
   const url = new URL(request.url);
   return url.pathname === '/admin/upload'
     || url.pathname.startsWith('/admin/api/')
     || !!request.headers.get('Accept')?.includes('application/json');
 }
 
-function jsonError(body: { success: false; error: string }, status: number, cmsError: string): Response {
+export function jsonError(body: { success: false; error: string }, status: number, cmsError: string): Response {
   return Response.json(body, {
     status,
     headers: { 'X-CMS-Error': cmsError },

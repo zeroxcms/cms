@@ -275,6 +275,28 @@ export interface PluginManifest {
    * custom roles. Values should be namespaced by plugin id (e.g. "events:manage").
    */
   permissions?: Array<{ value: string; label: string }>;
+  /**
+   * Static JS/CSS files this plugin wants to execute/apply inside CMS chrome
+   * (e.g. a live camera scanner). Declaring a file here only makes it eligible
+   * for approval — an admin must still explicitly approve each path (pinning
+   * its content hash) from the plugin's admin-registry page before
+   * client-render.js will let it survive sanitization. Path is relative to the
+   * plugin's own origin, e.g. "/assets/js/kiosk.js". See utils/plugin-assets.ts.
+   */
+  assets?: Array<{ path: string; label?: string }>;
+}
+
+/** An admin-approved plugin asset (see PluginManifest.assets), stored in the
+ *  `plugin_asset_approvals` table. `integrity` is the SRI hash (sha384-...) of
+ *  the file's bytes pinned at approval time. */
+export interface PluginAssetApproval {
+  id: number;
+  plugin_id: string;
+  path: string;
+  integrity: string;
+  approved_by: string;
+  created_at: string;
+  updated_at: string;
 }
 
 /** A resolved, active plugin: its declared binding name, Fetcher, and manifest. */
