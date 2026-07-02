@@ -93,7 +93,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
   const userRoleLabel = userRole.split(',').map((role) => role.trim()).filter(Boolean).join(', ');
   const nonce = currentCspNonce();
   const revision = opts.viewRevision || 'dev';
-  const revisionQuery = revision ? `?r=${encodeURIComponent(revision)}` : '';
+  const revisionQuery = assetRevisionQuery(revision);
   const layoutData = {
     ...opts,
     body: isClientView(opts.body) ? '' : opts.body,
@@ -111,6 +111,8 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     pluginNav: opts.pluginNav ?? [],
     pluginSettingsNav: opts.pluginSettingsNav ?? [],
     viewRevision: revision,
+    assetRevisionQuery: revisionQuery,
+    iconHrefPrefix: `/assets/icons.svg${revisionQuery}`,
     nonce,
   };
   const payload = {
@@ -130,7 +132,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escHtml(opts.title)} - ${escHtml(opts.siteTitle)}</title>
-  <link rel="stylesheet" href="/assets/admin.css">
+  <link rel="stylesheet" href="/assets/admin.css${escHtml(revisionQuery)}">
 </head>
 <body class="h-full overflow-x-hidden">
   <div id="cms-client-root" class="min-h-full">${loadingMarkup('100vh')}</div>
@@ -142,6 +144,11 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
   <script src="/assets/color-tag.js${escHtml(revisionQuery)}" nonce="${escHtml(nonce)}" defer></script>
 </body>
 </html>`;
+}
+
+export function assetRevisionQuery(revision?: string): string {
+  const value = revision || 'dev';
+  return value ? `?r=${encodeURIComponent(value)}` : '';
 }
 
 /** Minimal HTML escaping to prevent XSS in pre-rendered HTML fragments. */

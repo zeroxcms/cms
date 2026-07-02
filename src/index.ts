@@ -20,6 +20,7 @@ import {
   withSecurityHeaders,
 } from './security/http';
 import { generateCspNonce, requestContext } from './utils/request-context';
+import { viewRevision } from './utils/view-revision';
 import type { Env, Variables } from './types';
 import { isCmsAdminJobMessage } from './utils/admin-jobs';
 import { runCmsAdminJob } from './utils/admin-job-runner';
@@ -138,6 +139,7 @@ app.notFound(async (c) => {
       title: 'Not Found',
       heading: 'Page Not Found',
       siteTitle: c.env.SITE_TITLE ?? '0xCMS',
+      viewRevision: viewRevision(c.env),
     }),
     404,
   );
@@ -153,6 +155,7 @@ app.onError(async (err, c) => {
       heading: 'Internal Server Error',
       message: 'Please try again later.',
       siteTitle: c.env.SITE_TITLE ?? '0xCMS',
+      viewRevision: viewRevision(c.env),
     }),
     500,
   );

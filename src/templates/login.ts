@@ -1,4 +1,4 @@
-import { layout } from './layout';
+import { assetRevisionQuery, layout } from './layout';
 import { renderView } from './liquid';
 
 function providerLabel(provider: string): string {
@@ -9,20 +9,21 @@ function providerLabel(provider: string): string {
   return 'GitHub';
 }
 
-function providerIcon(provider: string): string {
+function providerIcon(provider: string, revisionQuery: string): string {
+  const sprite = `/assets/icons.svg${revisionQuery}`;
   if (provider === 'google') {
-    return `<svg class="w-5 h-5" viewBox="0 0 24 24"><use href="/assets/icons.svg#google"></use></svg>`;
+    return `<svg class="w-5 h-5" viewBox="0 0 24 24"><use href="${sprite}#google"></use></svg>`;
   }
   if (provider === 'microsoft') {
-    return `<svg class="w-5 h-5" viewBox="0 0 24 24"><use href="/assets/icons.svg#microsoft"></use></svg>`;
+    return `<svg class="w-5 h-5" viewBox="0 0 24 24"><use href="${sprite}#microsoft"></use></svg>`;
   }
   if (provider === 'apple') {
-    return `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#apple"></use></svg>`;
+    return `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><use href="${sprite}#apple"></use></svg>`;
   }
   if (provider === 'eventuai') {
-    return `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><use href="/assets/icons.svg#key"></use></svg>`;
+    return `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><use href="${sprite}#key"></use></svg>`;
   }
-  return `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#github"></use></svg>`;
+  return `<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><use href="${sprite}#github"></use></svg>`;
 }
 
 export async function loginPage(views: Fetcher, opts: {
@@ -32,6 +33,7 @@ export async function loginPage(views: Fetcher, opts: {
   viewRevision?: string;
 }): Promise<string> {
   const { siteTitle, providers, error } = opts;
+  const revisionQuery = assetRevisionQuery(opts.viewRevision);
 
   const body = await renderView(views, '/templates/login.json', {
     siteTitle,
@@ -43,7 +45,7 @@ export async function loginPage(views: Fetcher, opts: {
         name: provider,
         href: `/auth/start?provider=${encodeURIComponent(provider)}`,
         label: providerLabel(provider),
-        icon: providerIcon(provider),
+        icon: providerIcon(provider, revisionQuery),
         buttonClass: isPrimary
           ? 'border-indigo-500 bg-indigo-600 text-white hover:bg-indigo-700'
           : 'border-gray-200 text-gray-700 hover:border-indigo-400 hover:bg-indigo-50',

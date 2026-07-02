@@ -108,6 +108,14 @@ async function servePluginAsset(c: AppContext): Promise<Response> {
     return c.text('Asset changed since approval; re-approval required', 409);
   }
 
+  // A revisioned request (`?r=<deploy id>`, added to the <script>/<link>/wasm
+  // URLs the client emits) is safe to cache immutably: a new deploy changes the
+  // revision, so the URL changes and the browser refetches (and re-checks
+  // integrity on that miss). Without a revision — e.g. a direct hit — stay
+  // uncached so the integrity check runs every request. Scripts/links are also
+  // SRI-pinned in the page, and a revoked asset is dropped from the HTML
+  // entirely, so a cached copy is never referenced after revocation.
+  const revisioned = url.searchParams.has('r');
   return new Response(bytes, {
     status: 200,
     headers: {
@@ -116,9 +124,7 @@ async function servePluginAsset(c: AppContext): Promise<Response> {
         : assetPath.endsWith('.wasm')
           ? 'application/wasm'
           : 'text/javascript; charset=utf-8',
-      // Integrity is re-checked on every request rather than relying on a cache
-      // to stay in sync with the approval, so this endpoint stays uncached.
-      'cache-control': 'no-store',
+      'cache-control': revisioned ? 'public, max-age=31536000, immutable' : 'no-store',
     },
   });
 }

@@ -1,7 +1,7 @@
 <div class="min-w-0 max-w-4xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <div class="flex items-center gap-3 mb-6">
     <a href="{{ backHref | escape }}" class="shrink-0 text-gray-400 hover:text-gray-600 transition-colors">
-      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#arrow-left"></use></svg>
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#arrow-left"></use></svg>
     </a>
     <h2 class="min-w-0 break-words text-2xl font-bold text-gray-900">{{ pageTitle | escape }}</h2>
     {% if isEdit %}
@@ -31,7 +31,7 @@
 
   {% if hasFlash %}
     <div id="flash" class="mb-6 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700 flex items-center gap-2">
-      <svg class="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><use href="/assets/icons.svg#check-circle"></use></svg>
+      <svg class="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><use href="{{ iconHrefPrefix | escape }}#check-circle"></use></svg>
       {{ flash | escape }}
     </div>
   {% endif %}
@@ -68,28 +68,28 @@
                      class="min-w-[10rem] flex-1 border-b border-transparent bg-transparent p-0 focus:border-indigo-500 focus:outline-none">
               <button type="button" id="copy-slug-btn" title="Copy slug"
                       class="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-700">
-                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#copy"></use></svg>
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#copy"></use></svg>
                 <span class="sr-only">Copy slug</span>
               </button>
   </div>
 
           <div class="mt-4 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
           <label for="start" class="flex min-w-0 items-center gap-2">
-            <svg class="h-4 w-4 shrink-0 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#calendar"></use></svg>
+            <svg class="h-4 w-4 shrink-0 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#calendar"></use></svg>
             <span class="shrink-0 text-xs text-gray-500">From:</span>
             <input type="datetime-local" id="start" name="start"
                    value="{{ page.start | escape }}"
                    class="min-w-0 flex-1 border-b border-transparent bg-transparent p-0 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none">
           </label>
           <label for="end" class="flex min-w-0 items-center gap-2">
-            <svg class="h-4 w-4 shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#calendar"></use></svg>
+            <svg class="h-4 w-4 shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#calendar"></use></svg>
             <span class="shrink-0 text-xs text-gray-500">Until:</span>
             <input type="datetime-local" id="end" name="end"
                    value="{{ page.end | escape }}"
                    class="min-w-0 flex-1 border-b border-transparent bg-transparent p-0 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none">
           </label>
           <label for="timezone" class="flex min-w-0 items-center gap-2 sm:col-span-2">
-            <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#clock"></use></svg>
+            <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#clock"></use></svg>
             <span class="shrink-0 text-xs text-gray-500">Timezone:</span>
             <input type="text" id="timezone" name="timezone"
                    value="{{ page.timezone | escape }}"
@@ -124,7 +124,7 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
 
           <label for="parent_page_search" class="sr-only">Parent Page</label>
           <div class="relative flex min-w-0 items-center gap-1" data-parent-combobox data-parent-exclude="{{ page.id | escape }}">
-            <svg class="h-3.5 w-3.5 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#folder"></use></svg>
+            <svg class="h-3.5 w-3.5 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#folder"></use></svg>
             <input type="hidden" id="page_id" name="page_id" value="{{ selectedParent.id | escape }}">
             <input type="text" id="parent_page_search"
                    value="{{ selectedParent.label | escape }}"
@@ -136,7 +136,7 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
                    class="w-28 max-w-[10rem] truncate border-0 bg-transparent p-0 text-xs text-gray-700 focus:outline-none focus:ring-0"
                    data-parent-search>
             <button type="button" class="shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700" data-parent-toggle aria-label="Search parent pages">
-              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#chevron-down"></use></svg>
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#chevron-down"></use></svg>
             </button>
             <div id="parent_page_results"
                  class="absolute right-0 top-6 z-20 hidden w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
@@ -154,7 +154,7 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
             </div>
           </div>
           <div class="flex min-w-0 items-center gap-1">
-            <svg class="h-3.5 w-3.5 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#user"></use></svg>
+            <svg class="h-3.5 w-3.5 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#user"></use></svg>
             <span class="max-w-[9rem] truncate">{{ userName | escape }}</span>
           </div>
         </div>
@@ -162,7 +162,7 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
 
       <div class="flex min-w-0 flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:px-5">
         <div class="flex shrink-0 items-center gap-2 text-gray-500">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#user-group"></use></svg>
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#user-group"></use></svg>
           <label for="editors" class="sr-only">Editor User IDs</label>
           <span class="sr-only">Editors</span>
         </div>
@@ -183,8 +183,8 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
 
       <details id="lect_json_details" class="group min-w-0 border-t border-gray-200">
         <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-xs font-medium text-gray-500 sm:px-5 [&::-webkit-details-marker]:hidden">
-          <svg class="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#chevron-right"></use></svg>
-          <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#code"></use></svg>
+          <svg class="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#chevron-right"></use></svg>
+          <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#code"></use></svg>
           <span>Lect JSON</span>
           <span class="text-gray-400">Raw metadata</span>
         </summary>
@@ -257,7 +257,7 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
 
       {% if page.hasModifier %}
       <div class="flex min-w-0 items-center gap-2">
-        <svg class="h-4 w-4 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#edit-square"></use></svg>
+        <svg class="h-4 w-4 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#edit-square"></use></svg>
         <span class="text-xs text-gray-500">Last modified by</span>
         <span class="min-w-0 truncate text-xs font-medium text-gray-700">{{ page.modifierName | escape }}</span>
       </div>

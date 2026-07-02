@@ -170,16 +170,16 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/assets/admin.css">
-  <script src="/assets/table-filter.js{% if viewRevision != blank %}?r={{ viewRevision | escape }}{% endif %}" nonce="{{ nonce }}" defer></script>
-  <script src="/assets/privacy-table.js{% if viewRevision != blank %}?r={{ viewRevision | escape }}{% endif %}" nonce="{{ nonce }}" defer></script>
-  <script src="/assets/color-tag.js{% if viewRevision != blank %}?r={{ viewRevision | escape }}{% endif %}" nonce="{{ nonce }}" defer></script>
+  <link rel="stylesheet" href="/assets/admin.css{{ assetRevisionQuery | escape }}">
+  <script src="/assets/table-filter.js{{ assetRevisionQuery | escape }}" nonce="{{ nonce }}" defer></script>
+  <script src="/assets/privacy-table.js{{ assetRevisionQuery | escape }}" nonce="{{ nonce }}" defer></script>
+  <script src="/assets/color-tag.js{{ assetRevisionQuery | escape }}" nonce="{{ nonce }}" defer></script>
 </head>
 <body class="h-full overflow-x-hidden">
   {% if admin %}
     <header class="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-gray-700 bg-gray-900 px-4 py-3 text-white shadow-xl md:hidden" data-admin-mobile-bar>
       <div class="flex min-w-0 items-center gap-3">
-        <svg class="h-7 w-7 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#document"></use></svg>
+        <svg class="h-7 w-7 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#document"></use></svg>
         <span class="min-w-0 truncate text-lg font-bold tracking-tight">{{ siteTitle | escape }}</span>
       </div>
       <button type="button"
@@ -188,7 +188,7 @@
               aria-controls="admin-mobile-menu"
               aria-expanded="false"
               aria-label="Open menu">
-        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#menu"></use></svg>
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#menu"></use></svg>
       </button>
     </header>
 
@@ -197,74 +197,74 @@
            data-admin-sidebar>
       <div class="flex items-center justify-between gap-3 border-b border-gray-700 px-4 py-3 md:px-6 md:py-5">
         <div class="flex min-w-0 items-center gap-3">
-          <svg class="h-7 w-7 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#document"></use></svg>
+          <svg class="h-7 w-7 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#document"></use></svg>
           <span class="min-w-0 truncate text-lg font-bold tracking-tight">{{ siteTitle | escape }}</span>
         </div>
         <button type="button"
                 class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-700 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white md:hidden"
                 data-mobile-menu-close
                 aria-label="Close menu">
-          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#x"></use></svg>
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#x"></use></svg>
         </button>
       </div>
       <nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-4 md:px-4 md:py-6" data-scroll-frame>
         <a href="/admin"
            class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#menu"></use></svg>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#menu"></use></svg>
           Pages
         </a>
         <a href="/admin/tags"
            class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#tag"></use></svg>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#tag"></use></svg>
           Tags
         </a>
         <details class="group overflow-hidden">
           <summary class="flex cursor-pointer list-none items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white [&::-webkit-details-marker]:hidden">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#settings"></use></svg>
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#settings"></use></svg>
             <span>Settings</span>
-            <svg class="ml-auto h-4 w-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#chevron-right"></use></svg>
+            <svg class="ml-auto h-4 w-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#chevron-right"></use></svg>
           </summary>
           <div class="mt-1 ml-3 space-y-1 border-l border-gray-700 pl-3">
             <a href="/admin/taxonomies"
                class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#list-filter"></use></svg>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#list-filter"></use></svg>
               Taxonomies
             </a>
             <a href="/admin/page_types"
                class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#list"></use></svg>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#list"></use></svg>
               Page Types
             </a>
             <a href="/admin/block_types"
                class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#blocks"></use></svg>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#blocks"></use></svg>
               Block Types
             </a>
             {% if canManageUsers %}
             <a href="/admin/users"
                class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#users"></use></svg>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#users"></use></svg>
               Users
             </a>
             {% endif %}
             {% if canManageRoles %}
             <a href="/admin/roles"
                class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#shield-check"></use></svg>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#shield-check"></use></svg>
               Roles
             </a>
             {% endif %}
             {% if canManagePlugins %}
             <a href="/admin/plugins-manage"
                class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#beaker"></use></svg>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#beaker"></use></svg>
               Plugins
             </a>
             {% endif %}
             {% for item in pluginSettingsNav %}
             <a href="{{ item.href | escape }}"
                class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#beaker"></use></svg>
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#beaker"></use></svg>
               {{ item.label | escape }}
             </a>
             {% endfor %}
@@ -272,13 +272,13 @@
         </details>
         <a href="/admin/trash"
            class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#trash"></use></svg>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#trash"></use></svg>
           Trash
         </a>
         {% for item in pluginNav %}
         <a href="{{ item.href | escape }}"
            class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#beaker"></use></svg>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#beaker"></use></svg>
           {{ item.label | escape }}
         </a>
         {% endfor %}
@@ -302,7 +302,7 @@
             <p class="text-sm font-medium text-white truncate">{{ userName | escape }}</p>
             <p class="text-xs text-gray-400 capitalize">{{ userRoleLabel | escape }}</p>
           </div>
-          <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#chevron-right"></use></svg>
+          <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#chevron-right"></use></svg>
         </a>
         <div class="flex shrink-0 items-center gap-3 md:flex-col md:items-start">
           <button type="button"
@@ -310,14 +310,14 @@
                   data-theme-toggle
                   aria-pressed="false"
                   aria-label="Switch to light theme">
-            <svg class="h-4 w-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" data-theme-icon="light"><use href="/assets/icons.svg#sun"></use></svg>
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" data-theme-icon="dark"><use href="/assets/icons.svg#moon"></use></svg>
+            <svg class="h-4 w-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" data-theme-icon="light"><use href="{{ iconHrefPrefix | escape }}#sun"></use></svg>
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" data-theme-icon="dark"><use href="{{ iconHrefPrefix | escape }}#moon"></use></svg>
             <span data-theme-toggle-label>Dark</span>
           </button>
           <form method="POST" action="/auth/logout" class="inline">
             <button type="submit"
                     class="flex shrink-0 items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="/assets/icons.svg#logout"></use></svg>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#logout"></use></svg>
               Sign out
             </button>
           </form>

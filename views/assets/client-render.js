@@ -54,6 +54,17 @@
     return url + (url.includes('?') ? '&' : '?') + 'r=' + encodeURIComponent(revision);
   }
 
+  function renderGlobals() {
+    const revision = payload.viewRevision || '';
+    const assetRevisionQuery = revision ? '?r=' + encodeURIComponent(revision) : '';
+    return {
+      nonce: payload.nonce,
+      viewRevision: revision,
+      assetRevisionQuery,
+      iconHrefPrefix: '/assets/icons.svg' + assetRevisionQuery,
+    };
+  }
+
   function sharedCmsTemplatePath(path) {
     const normalized = path ? normalizePath(path) : '';
     if (normalized.startsWith('/snippets/pagefield/')) return normalized;
@@ -132,7 +143,7 @@
   async function renderLiquid(templatePath, data) {
     const normalized = normalizePath(templatePath);
     const template = await loadTemplate(normalized);
-    const html = String(await engine.parseAndRender(template, { nonce: payload.nonce, ...data }));
+    const html = String(await engine.parseAndRender(template, { ...data, ...renderGlobals() }));
     return isPluginTemplate(normalized) ? sanitizePluginHtml(html) : html;
   }
 
@@ -141,7 +152,7 @@
     const jsonTemplate = JSON.parse(rawTemplate);
     if (!jsonTemplate.order || !jsonTemplate.order.length) return '';
 
-    const renderData = await prepareRenderData(templatePath, { meta: {}, nonce: payload.nonce, ...data });
+    const renderData = await prepareRenderData(templatePath, { meta: {}, ...data, ...renderGlobals() });
     const renders = {};
 
     for (const key of jsonTemplate.order) {
@@ -307,7 +318,7 @@
       ? '<button type="submit" name="action" value="' + escapeHtml(row.deleteAction) + '"\n' +
         '                   title="Delete ' + escapeHtml(row.label.toLowerCase()) + '" aria-label="Delete ' + escapeHtml(row.label.toLowerCase()) + '"\n' +
         '                   class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50 hover:text-red-700">\n' +
-        '             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#trash-can"></use></svg>\n' +
+        '             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="' + escapeHtml(renderGlobals().iconHrefPrefix) + '#trash-can"></use></svg>\n' +
         '             <span class="sr-only">Delete</span>\n' +
         '           </button>'
       : '';
@@ -428,7 +439,9 @@
     // Must match the server-side prefix in servePluginAsset() (routes/admin/plugins.ts).
     const prefix = '/admin/plugins/' + pluginId;
     if (!url || url.indexOf(prefix) !== 0) return null;
-    const path = url.slice(prefix.length);
+    // Match on the bare path — a cache-busting `?r=` / `#` (added here or by a
+    // template via assetRevisionQuery) must not defeat the approval lookup.
+    const path = url.slice(prefix.length).split(/[?#]/)[0];
     return approvedAsset(pluginId, path);
   }
 
@@ -460,6 +473,10 @@
       // requires the admin session cookie, which "crossorigin" would strip.
       script.setAttribute('integrity', approval.integrity);
       script.setAttribute('nonce', payload.nonce);
+      // Append the deploy revision so the asset endpoint can cache it immutably
+      // and a new deploy busts the cache (matches how view files are fetched).
+      // Idempotent: skip if the template already added an `r=`.
+      script.setAttribute('src', /[?&]r=/.test(src) ? src : withRevision(src));
       script.textContent = '';
     });
     template.content.querySelectorAll('link[rel="stylesheet"]').forEach((link) => {
@@ -470,6 +487,7 @@
         return;
       }
       link.setAttribute('integrity', approval.integrity);
+      link.setAttribute('href', /[?&]r=/.test(href) ? href : withRevision(href));
     });
     template.content.querySelectorAll('*').forEach((element) => {
       for (const attr of Array.from(element.attributes)) {

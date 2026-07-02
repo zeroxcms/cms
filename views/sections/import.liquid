@@ -136,7 +136,7 @@
                 title="Confirm Import"
                 aria-label="Confirm Import"
                 class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 {% unless hasPreviewRows %}cursor-not-allowed opacity-50{% endunless %}">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#upload"></use></svg>
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#upload"></use></svg>
           <span class="hidden lg:inline">Confirm Import</span>
         </button>
       </div>
@@ -168,7 +168,7 @@
               title="{% if isCsvImport %}Review Import{% else %}Import{% endif %}"
               aria-label="{% if isCsvImport %}Review Import{% else %}Import{% endif %}"
               class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#upload"></use></svg>
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#upload"></use></svg>
         <span class="hidden lg:inline">{% if isCsvImport %}Review Import{% else %}Import{% endif %}</span>
       </button>
     </form>

@@ -1,4 +1,4 @@
-import { escHtml } from './layout';
+import { assetRevisionQuery, escHtml } from './layout';
 
 export async function errorPage(views: Fetcher, opts: {
   status: 404 | 500;
@@ -6,8 +6,10 @@ export async function errorPage(views: Fetcher, opts: {
   heading: string;
   message?: string;
   siteTitle: string;
+  viewRevision?: string;
 }): Promise<string> {
   void views;
+  const revisionQuery = assetRevisionQuery(opts.viewRevision);
   const message = opts.message
     ? `<p class="mt-2 text-gray-500">${escHtml(opts.message)}</p>`
     : '';
@@ -16,7 +18,7 @@ export async function errorPage(views: Fetcher, opts: {
 <head>
   <meta charset="UTF-8">
   <title>${opts.status} - ${escHtml(opts.title)} - ${escHtml(opts.siteTitle)}</title>
-  <link rel="stylesheet" href="/assets/admin.css">
+  <link rel="stylesheet" href="/assets/admin.css${escHtml(revisionQuery)}">
 </head>
 <body class="min-h-screen flex items-center justify-center bg-gray-50">
   <div class="text-center">

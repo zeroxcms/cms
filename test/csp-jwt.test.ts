@@ -37,12 +37,13 @@ describe('content security policy', () => {
     expect(nonce(first)).not.toBe(nonce(second));
   });
 
-  it('links the locally built stylesheet instead of the Tailwind CDN', async () => {
+  it('links revisioned local admin assets instead of the Tailwind CDN', async () => {
     const response = await worker.fetch(new Request('http://localhost/auth/login'));
     const html = await response.text();
 
-    expect(html).toContain('/assets/admin.css');
-    expect(html).toContain('/assets/table-filter.js');
+    expect(html).toMatch(/\/assets\/admin\.css\?r=[^"'<]+/);
+    expect(html).toMatch(/\/assets\/table-filter\.js\?r=[^"'<]+/);
+    expect(html).toMatch(/\/assets\/icons\.svg\?r=[^"'<#]+#/);
     expect(html).not.toContain('cdn.tailwindcss.com');
   });
 

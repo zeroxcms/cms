@@ -888,6 +888,20 @@ describe('plugin asset proxy', () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('console.log("kiosk")');
     expect(response.headers.get('content-type')).toContain('text/javascript');
+    // Unrevisioned request stays uncached so integrity is re-checked each time.
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('caches an approved asset immutably when the request is revisioned (?r=)', async () => {
+    await registerAssetPlugin('console.log("kiosk")');
+    const integrity = await computeIntegrity(new TextEncoder().encode('console.log("kiosk")').buffer);
+    await approveAsset(env.DB, 'checkin', '/assets/js/kiosk.js', integrity, 'admin@example.com');
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/checkin/assets/js/kiosk.js?r=deploy-123', {
+      headers: { Cookie: await adminCookie(), 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
   });
 
   it('fails closed when the plugin file changed since approval', async () => {

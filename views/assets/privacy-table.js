@@ -9,6 +9,15 @@
   var STORAGE_KEY = 'worker-cms-privacy-revealed';
   var MASK = '***';
 
+  function currentIconHrefPrefix() {
+    var script = document.currentScript;
+    if (!(script instanceof HTMLScriptElement)) return '/assets/icons.svg';
+    var revision = new URL(script.src, window.location.href).searchParams.get('r') || '';
+    return '/assets/icons.svg' + (revision ? '?r=' + encodeURIComponent(revision) : '');
+  }
+
+  var ICON_HREF_PREFIX = currentIconHrefPrefix();
+
   function storedRevealed() {
     try {
       return window.localStorage.getItem(STORAGE_KEY) === '1';
@@ -155,7 +164,7 @@
     button.type = 'button';
     button.setAttribute('data-privacy-toggle', '');
     button.className = 'inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50';
-    button.innerHTML = '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="/assets/icons.svg#eye-off"></use></svg><span data-privacy-toggle-label></span>';
+    button.innerHTML = '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="' + ICON_HREF_PREFIX + '#eye-off"></use></svg><span data-privacy-toggle-label></span>';
     row.appendChild(button);
 
     table.parentElement.insertBefore(row, table);
