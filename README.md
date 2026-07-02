@@ -256,7 +256,10 @@ A plugin can add six things:
 - **Content types** – register new `blueprint`/`blocks`/`blockLists`/`taxonomyLists`
   that merge into the editor's config. Plugin-contributed page types and block
   types appear (read-only) in **Admin → Page Types / Block Types**, badged with
-  the contributing plugin's name.
+  the contributing plugin's name. A companion plugin can also request delegated
+  access with `readTypes`/`writeTypes` to use existing page types through the
+  `/__cms` API without contributing their blueprints; an admin must approve
+  those delegated scopes in plugin management before they are honored.
 - **Fields & blocks** – register new pagefield types and serve their Liquid
   snippets, which render through the CMS editor.
 - **Edit views** – list page-type slugs in the manifest `editViews` to render

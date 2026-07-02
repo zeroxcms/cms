@@ -7,9 +7,16 @@ import {
   listApprovals,
   revokeAsset,
 } from '../src/utils/plugin-assets';
+import {
+  approvePageTypeAccess,
+  getPageTypeApproval,
+  listPageTypeApprovals,
+  revokePageTypeAccess,
+} from '../src/utils/plugin-page-types';
 
 beforeEach(async () => {
   await env.DB.prepare('DELETE FROM plugin_asset_approvals').run();
+  await env.DB.prepare('DELETE FROM plugin_page_type_approvals').run();
 });
 
 describe('computeIntegrity', () => {
@@ -25,6 +32,43 @@ describe('computeIntegrity', () => {
     const a = await computeIntegrity(new TextEncoder().encode('console.log(1)').buffer);
     const b = await computeIntegrity(new TextEncoder().encode('console.log(2)').buffer);
     expect(a).not.toBe(b);
+  });
+});
+
+describe('plugin page type approval store', () => {
+  it('has no approvals for an unapproved delegated scope', async () => {
+    expect(await getPageTypeApproval(env.DB, 'checkin', 'guest', 'write')).toBeNull();
+    expect(await listPageTypeApprovals(env.DB, 'checkin')).toEqual([]);
+  });
+
+  it('approves page type access and records who approved it', async () => {
+    await approvePageTypeAccess(env.DB, 'checkin', 'guest', 'write', 'admin@example.com');
+    const approval = await getPageTypeApproval(env.DB, 'checkin', 'guest', 'write');
+    expect(approval).toMatchObject({
+      plugin_id: 'checkin',
+      page_type: 'guest',
+      access: 'write',
+      approved_by: 'admin@example.com',
+    });
+  });
+
+  it('keeps read and write approvals separate', async () => {
+    await approvePageTypeAccess(env.DB, 'checkin', 'guest', 'read', 'admin@example.com');
+    expect(await getPageTypeApproval(env.DB, 'checkin', 'guest', 'write')).toBeNull();
+  });
+
+  it('re-approving the same scope updates the approver instead of duplicating', async () => {
+    await approvePageTypeAccess(env.DB, 'checkin', 'guest', 'write', 'admin@example.com');
+    await approvePageTypeAccess(env.DB, 'checkin', 'guest', 'write', 'other-admin@example.com');
+    const all = await listPageTypeApprovals(env.DB, 'checkin');
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({ page_type: 'guest', access: 'write', approved_by: 'other-admin@example.com' });
+  });
+
+  it('revokes page type access', async () => {
+    await approvePageTypeAccess(env.DB, 'checkin', 'guest', 'write', 'admin@example.com');
+    await revokePageTypeAccess(env.DB, 'checkin', 'guest', 'write');
+    expect(await getPageTypeApproval(env.DB, 'checkin', 'guest', 'write')).toBeNull();
   });
 });
 

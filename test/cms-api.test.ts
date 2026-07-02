@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { clearManifestCache, __injectPluginFetcher, __clearInjectedFetchers } from '../src/plugins/registry';
 import { clearConfigCache } from '../src/plugins/config';
 import { restoreTrashedPages } from '../src/utils/admin-queries';
+import { approvePageTypeAccess } from '../src/utils/plugin-page-types';
 
 // F1 — plugin write-back API (/__cms/*). Exercises the real Worker so the
 // global middleware (canonical host, cross-origin exemption, auth) is in play.
@@ -65,6 +66,7 @@ beforeEach(async () => {
   clearManifestCache();
   __clearInjectedFetchers();
   await env.DB.prepare('DELETE FROM plugins').run();
+  await env.DB.prepare('DELETE FROM plugin_page_type_approvals').run();
   await env.DB.prepare("DELETE FROM draft_pages WHERE page_type IN ('event','guest','mail_list','contact')").run();
   await env.DB.prepare("DELETE FROM trash_pages WHERE page_type IN ('event','guest','mail_list','contact')").run();
   savedSecret = testEnv.PLUGIN_SECRET;
@@ -97,6 +99,47 @@ describe('F1 auth + scoping', () => {
     const res = await cmsApi('POST', '/__cms/pages', { page_type: 'contact', name: 'X' });
     expect(res.status).toBe(403);
     expect((await res.json() as { error: string }).error).toBe('forbidden_page_type');
+  });
+
+  it('requires admin approval before honoring delegated writeTypes', async () => {
+    await env.DB.prepare('DELETE FROM plugins').run();
+    await env.DB.prepare('DELETE FROM plugin_page_type_approvals').run();
+    __clearInjectedFetchers();
+    clearManifestCache();
+    const url = `https://plugin-${crypto.randomUUID()}.local`;
+    const manifest = {
+      id: PLUGIN_ID,
+      name: 'Check-in Companion',
+      version: '1.0.0',
+      contentTypes: {
+        blueprint: {
+          event: ['@start', '@end', 'name:text/title', 'location'],
+        },
+        writeTypes: ['guest'],
+        readTypes: ['mail_list'],
+      },
+    };
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Check-in', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(href).pathname === '/__plugin/manifest') return Response.json(manifest);
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    const blocked = await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Blocked Guest' });
+    expect(blocked.status).toBe(403);
+
+    await approvePageTypeAccess(env.DB, PLUGIN_ID, 'guest', 'write', 'admin@example.com');
+
+    const createRes = await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Delegated Guest' });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json() as { page: { id: number; page_type: string } }).page;
+    expect(created.page_type).toBe('guest');
+
+    const readRes = await cmsApi('GET', `/__cms/pages/${created.id}`);
+    expect(readRes.status).toBe(200);
   });
 
   it('is not blocked by the cross-origin mutation guard (no Origin header)', async () => {
@@ -192,9 +235,32 @@ describe('F1 create / read / list / update / delete', () => {
     expect(simplified.pages[0].name).toBe('Su Sheng');
   });
 
+  it('filters search results by multiple pointer values', async () => {
+    await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: '陳美玲', lect: { _pointers: { mail_list: '12' } } });
+    await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: '陳家豪', lect: { _pointers: { mail_list: '13' } } });
+    await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: '陳外部', lect: { _pointers: { mail_list: '99' } } });
+
+    const res = await cmsApi('GET', '/__cms/pages?page_type=guest&pointer_key=mail_list&pointer_values=12,13&q=%E9%99%B3');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { total: number; pages: Array<{ name: string }> };
+
+    expect(body.total).toBe(2);
+    expect(body.pages.map((page) => page.name).sort()).toEqual(['陳家豪', '陳美玲']);
+  });
+
   it('rejects listing a type the plugin neither owns nor may read', async () => {
     const res = await cmsApi('GET', '/__cms/pages?page_type=article');
     expect(res.status).toBe(403);
+  });
+
+  it('rejects a delegated readType until an admin approves it', async () => {
+    await env.DB.prepare(
+      "INSERT INTO draft_pages (name, slug, page_type, lect) VALUES (?, ?, 'contact', ?)",
+    ).bind('Ada Lovelace', 'ada-lovelace', JSON.stringify({ first_name: { en: 'Ada' } })).run();
+
+    const res = await cmsApi('GET', '/__cms/pages?page_type=contact');
+    expect(res.status).toBe(403);
+    expect((await res.json() as { error: string }).error).toBe('forbidden_page_type');
   });
 
   it('filters a list by parent page id (guests of an event)', async () => {
@@ -209,6 +275,7 @@ describe('F1 create / read / list / update / delete', () => {
   });
 
   it('allows reading a declared readType but not writing it', async () => {
+    await approvePageTypeAccess(env.DB, PLUGIN_ID, 'contact', 'read', 'admin@example.com');
     // A contact page the events plugin does NOT own, inserted directly.
     await env.DB.prepare(
       "INSERT INTO draft_pages (name, slug, page_type, lect) VALUES (?, ?, 'contact', ?)",

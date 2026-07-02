@@ -27,8 +27,21 @@ import {
   type PluginInput,
 } from '../../utils/plugin-store';
 import { approveAsset, computeIntegrity, getAssetApproval, listApprovals, revokeAsset } from '../../utils/plugin-assets';
+import {
+  approvePageTypeAccess,
+  getPageTypeApproval,
+  listPageTypeApprovals,
+  revokePageTypeAccess,
+} from '../../utils/plugin-page-types';
 import { PLUGIN_ORIGIN } from '../../plugins/registry';
-import { pluginsManagePage, pluginFormPage, pluginAssetsPage, type PluginListItem } from '../../templates/plugins-manage';
+import {
+  pluginsManagePage,
+  pluginFormPage,
+  pluginAssetsPage,
+  pluginPageTypesPage,
+  type PluginListItem,
+} from '../../templates/plugins-manage';
+import type { PluginManifest, PluginPageTypeAccess } from '../../types';
 
 export const pluginsManageRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -134,6 +147,7 @@ pluginsManageRoutes.get('/plugins-manage', async (c) => {
       manifestName: manifest?.name,
       version: manifest?.version,
       hasAssets: !!manifest?.assets?.length,
+      hasPageTypes: !!((manifest?.contentTypes?.readTypes?.length ?? 0) + (manifest?.contentTypes?.writeTypes?.length ?? 0)),
     };
   });
 
@@ -334,6 +348,110 @@ pluginsManageRoutes.post('/plugins-manage/:id/assets/revoke', async (c) => {
     logAudit(c, 'plugin.asset.revoke', 'plugin', resolved.manifest.id, { path });
   }
   return c.redirect(`/admin/plugins-manage/${id}/assets?flash=revoked`);
+});
+
+// ── Page type access approvals ─────────────────────────────────────────────
+// Manifest readTypes/writeTypes are delegated access requests. They are only
+// honored by /__cms after an admin approves the specific plugin/type/access row.
+
+function declaredPageTypeAccess(
+  manifest: PluginManifest,
+  pageType: string,
+  access: PluginPageTypeAccess,
+): boolean {
+  const declared = access === 'read'
+    ? manifest.contentTypes?.readTypes ?? []
+    : manifest.contentTypes?.writeTypes ?? [];
+  return declared.includes(pageType);
+}
+
+function pageTypeAccess(value: string): PluginPageTypeAccess | null {
+  return value === 'read' || value === 'write' ? value : null;
+}
+
+pluginsManageRoutes.get('/plugins-manage/:id/page-types', async (c) => {
+  const id = Number(c.req.param('id'));
+  const found = await resolvedPluginFor(c.env, id);
+  if (!found) return c.notFound();
+  const { row, resolved } = found;
+  if (!resolved) {
+    return renderPage(c, pluginPageTypesPage, {
+      pluginId: id,
+      pluginLabel: row.label || row.url,
+      unreachable: true,
+      pageTypes: [],
+      flash: c.req.query('flash') ?? undefined,
+    });
+  }
+
+  const readTypes = new Set(resolved.manifest.contentTypes?.readTypes ?? []);
+  const writeTypes = new Set(resolved.manifest.contentTypes?.writeTypes ?? []);
+  const pageTypeNames = [...new Set([...readTypes, ...writeTypes])].sort();
+  const approvals = await listPageTypeApprovals(c.env.DB, resolved.manifest.id);
+  const approvalByKey = new Map(approvals.map((approval) => [`${approval.page_type}:${approval.access}`, approval]));
+
+  const pageTypes = pageTypeNames.map((pageType) => {
+    const readApproval = approvalByKey.get(`${pageType}:read`);
+    const writeApproval = approvalByKey.get(`${pageType}:write`);
+    return {
+      pageType,
+      readDeclared: readTypes.has(pageType),
+      writeDeclared: writeTypes.has(pageType),
+      readApproved: !!readApproval,
+      writeApproved: !!writeApproval,
+      readApprovedBy: readApproval?.approved_by ?? '',
+      writeApprovedBy: writeApproval?.approved_by ?? '',
+      approveReadAction: `/admin/plugins-manage/${id}/page-types/approve`,
+      revokeReadAction: `/admin/plugins-manage/${id}/page-types/revoke`,
+      approveWriteAction: `/admin/plugins-manage/${id}/page-types/approve`,
+      revokeWriteAction: `/admin/plugins-manage/${id}/page-types/revoke`,
+    };
+  });
+
+  return renderPage(c, pluginPageTypesPage, {
+    pluginId: id,
+    pluginLabel: resolved.manifest.name || row.label || row.url,
+    unreachable: false,
+    pageTypes,
+    flash: c.req.query('flash') ?? undefined,
+  });
+});
+
+pluginsManageRoutes.post('/plugins-manage/:id/page-types/approve', async (c) => {
+  const id = Number(c.req.param('id'));
+  const found = await resolvedPluginFor(c.env, id);
+  if (!found?.resolved) return c.notFound();
+  const { resolved } = found;
+
+  const form = await c.req.formData();
+  const pageType = str(form.get('page_type'));
+  const access = pageTypeAccess(str(form.get('access')));
+  if (!access || !declaredPageTypeAccess(resolved.manifest, pageType, access)) {
+    return c.text('Unknown page type access', 400);
+  }
+
+  await approvePageTypeAccess(c.env.DB, resolved.manifest.id, pageType, access, c.get('user').email);
+  logAudit(c, 'plugin.page_type.approve', 'plugin', resolved.manifest.id, { page_type: pageType, access });
+  return c.redirect(`/admin/plugins-manage/${id}/page-types?flash=approved`);
+});
+
+pluginsManageRoutes.post('/plugins-manage/:id/page-types/revoke', async (c) => {
+  const id = Number(c.req.param('id'));
+  const found = await resolvedPluginFor(c.env, id);
+  if (!found?.resolved) return c.notFound();
+  const { resolved } = found;
+
+  const form = await c.req.formData();
+  const pageType = str(form.get('page_type'));
+  const access = pageTypeAccess(str(form.get('access')));
+  if (!access) return c.text('Unknown page type access', 400);
+
+  const existing = await getPageTypeApproval(c.env.DB, resolved.manifest.id, pageType, access);
+  if (existing) {
+    await revokePageTypeAccess(c.env.DB, resolved.manifest.id, pageType, access);
+    logAudit(c, 'plugin.page_type.revoke', 'plugin', resolved.manifest.id, { page_type: pageType, access });
+  }
+  return c.redirect(`/admin/plugins-manage/${id}/page-types?flash=revoked`);
 });
 
 /** After any registry mutation, drop the plugin-list, manifest, and merged-config caches. */

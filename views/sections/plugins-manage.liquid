@@ -40,6 +40,7 @@
                 </form>
                 <a href="{{ plugin.editHref | escape }}" class="ml-1 px-3 py-1 rounded-lg border border-gray-300 text-xs font-semibold text-gray-700">Edit</a>
                 {% if plugin.hasAssets %}<a href="{{ plugin.assetsHref | escape }}" class="ml-1 px-3 py-1 rounded-lg border border-gray-300 text-xs font-semibold text-gray-700">Assets</a>{% endif %}
+                {% if plugin.hasPageTypes %}<a href="{{ plugin.pageTypesHref | escape }}" class="ml-1 px-3 py-1 rounded-lg border border-gray-300 text-xs font-semibold text-gray-700">Page types</a>{% endif %}
                 <form method="post" action="{{ plugin.deleteAction | escape }}" class="inline" data-confirm="Remove this plugin?">
                   <button type="submit" class="ml-1 px-3 py-1 rounded-lg border border-red-300 text-xs font-semibold text-red-700">Delete</button>
                 </form>

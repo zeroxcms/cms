@@ -90,6 +90,7 @@ beforeEach(async () => {
   await env.DB.prepare('DELETE FROM plugins').run();
   await env.DB.prepare('DELETE FROM admin_jobs').run();
   await env.DB.prepare('DELETE FROM plugin_asset_approvals').run();
+  await env.DB.prepare('DELETE FROM plugin_page_type_approvals').run();
 });
 
 describe('resolveCmsConfig', () => {
@@ -784,6 +785,68 @@ describe('plugin admin proxy', () => {
     expect(data.blockTypes).toEqual(expect.arrayContaining([
       expect.objectContaining({ slug: 'hero', source: 'plugin', pluginName: 'Events' }),
     ]));
+  });
+
+  it('manages delegated plugin page-type approvals', async () => {
+    const url = 'https://plugin-page-type-approvals.local';
+    await env.DB.prepare('INSERT INTO plugins (id, label, url, enabled) VALUES (?, ?, ?, 1)').bind(44, 'Check-in', url).run();
+    const manifest = {
+      id: 'checkin',
+      name: 'Check-in',
+      version: '1.0.0',
+      contentTypes: { readTypes: ['event', 'mail_list'], writeTypes: ['guest'] },
+    };
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(href).pathname === '/__plugin/manifest') return Response.json(manifest);
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+    const cookie = `access_token=${token}`;
+
+    const listResponse = await worker.fetch(new Request('http://localhost/admin/plugins-manage', {
+      headers: { Cookie: cookie, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    expect(listResponse.status).toBe(200);
+    const listData = bodyData(await listResponse.text());
+    expect(listData.plugins).toEqual(expect.arrayContaining([
+      expect.objectContaining({ pageTypesHref: '/admin/plugins-manage/44/page-types' }),
+    ]));
+
+    const pageResponse = await worker.fetch(new Request('http://localhost/admin/plugins-manage/44/page-types', {
+      headers: { Cookie: cookie, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    expect(pageResponse.status).toBe(200);
+    const pageData = bodyData(await pageResponse.text());
+    expect(pageData.pageTypes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ pageType: 'guest', writeDeclared: true, writeApproved: false }),
+      expect.objectContaining({ pageType: 'event', readDeclared: true, readApproved: false }),
+    ]));
+
+    const approveResponse = await worker.fetch(new Request('http://localhost/admin/plugins-manage/44/page-types/approve', {
+      method: 'POST',
+      headers: {
+        Cookie: cookie,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Sec-Fetch-Site': 'same-origin',
+      },
+      body: new URLSearchParams({ page_type: 'guest', access: 'write' }),
+      redirect: 'manual',
+    }));
+    expect(approveResponse.status).toBe(302);
+    expect(approveResponse.headers.get('location')).toBe('/admin/plugins-manage/44/page-types?flash=approved');
+
+    const approved = await env.DB.prepare(
+      'SELECT approved_by FROM plugin_page_type_approvals WHERE plugin_id = ? AND page_type = ? AND access = ?',
+    ).bind('checkin', 'guest', 'write').first<{ approved_by: string }>();
+    expect(approved?.approved_by).toBe('admin@example.com');
   });
 
   it('places a group:settings nav item inside the Settings group, not the top level', async () => {

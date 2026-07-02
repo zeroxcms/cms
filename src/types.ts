@@ -238,11 +238,18 @@ export interface PluginContentTypes {
   blockLists?: Record<string, string[]>;
   taxonomyLists?: Record<string, string[]>;
   /**
+   * Page types this plugin may WRITE through the write-back API without
+   * contributing/owning their blueprint. Use this for companion plugins that
+   * mutate another plugin's pages by explicit delegation. Admin approval is
+   * required before the CMS honors each declared write scope.
+   */
+  writeTypes?: string[];
+  /**
    * Page types this plugin may READ (but not write) through the write-back API,
-   * in addition to the types it owns via `blueprint`. Lets a plugin pull data
-   * from pages another plugin owns — e.g. the events suite reading `contact`
-   * pages to refresh a guest. Read-only: creates/updates/deletes stay scoped to
-   * owned types.
+   * in addition to the types it owns via `blueprint` or may write via
+   * `writeTypes`. Lets a plugin pull data from pages another plugin owns —
+   * e.g. the events suite reading `contact` pages to refresh a guest. Admin
+   * approval is required before the CMS honors each declared read scope.
    */
   readTypes?: string[];
 }
@@ -303,6 +310,20 @@ export interface PluginAssetApproval {
   plugin_id: string;
   path: string;
   integrity: string;
+  approved_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type PluginPageTypeAccess = 'read' | 'write';
+
+/** An admin-approved delegated page-type scope (see PluginContentTypes
+ *  readTypes/writeTypes), stored in the `plugin_page_type_approvals` table. */
+export interface PluginPageTypeApproval {
+  id: number;
+  plugin_id: string;
+  page_type: string;
+  access: PluginPageTypeAccess;
   approved_by: string;
   created_at: string;
   updated_at: string;

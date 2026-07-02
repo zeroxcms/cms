@@ -13,6 +13,8 @@ export interface PluginListItem {
   version?: string;
   /** True when the manifest declares candidate JS/CSS assets to approve. */
   hasAssets?: boolean;
+  /** True when the manifest declares delegated read/write page-type access. */
+  hasPageTypes?: boolean;
 }
 
 const STATUS_BADGE: Record<PluginListItem['status'], string> = {
@@ -39,6 +41,8 @@ export async function pluginsManagePage(views: Fetcher, opts: BaseTemplateProps 
       deleteAction: `/admin/plugins-manage/${plugin.id}/delete`,
       hasAssets: !!plugin.hasAssets,
       assetsHref: `/admin/plugins-manage/${plugin.id}/assets`,
+      hasPageTypes: !!plugin.hasPageTypes,
+      pageTypesHref: `/admin/plugins-manage/${plugin.id}/page-types`,
     })),
   });
 
@@ -130,4 +134,51 @@ export async function pluginAssetsPage(views: Fetcher, opts: BaseTemplateProps &
   });
 
   return adminLayout(views, opts, { title: `${pluginLabel} · Assets`, body });
+}
+
+export interface PluginPageTypeRow {
+  pageType: string;
+  readDeclared: boolean;
+  writeDeclared: boolean;
+  readApproved: boolean;
+  writeApproved: boolean;
+  readApprovedBy: string;
+  writeApprovedBy: string;
+  approveReadAction: string;
+  revokeReadAction: string;
+  approveWriteAction: string;
+  revokeWriteAction: string;
+}
+
+export async function pluginPageTypesPage(views: Fetcher, opts: BaseTemplateProps & {
+  pluginId: number;
+  pluginLabel: string;
+  unreachable: boolean;
+  pageTypes: PluginPageTypeRow[];
+  flash?: string;
+}): Promise<string> {
+  const { pluginLabel, unreachable, pageTypes, flash } = opts;
+  const flashMessage = flash === 'approved'
+    ? 'Page type access approved. The plugin can now use this delegated scope.'
+    : flash === 'revoked'
+      ? 'Page type access revoked. The plugin can no longer use this delegated scope.'
+      : '';
+
+  const body = await renderView(views, '/templates/plugin-page-types.json', {
+    pluginLabel,
+    unreachable,
+    hasPageTypes: pageTypes.length > 0,
+    pageTypes: pageTypes.map((row) => ({
+      ...row,
+      readStatusLabel: row.readApproved ? 'Approved' : 'Not approved',
+      readStatusClass: row.readApproved ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600',
+      writeStatusLabel: row.writeApproved ? 'Approved' : 'Not approved',
+      writeStatusClass: row.writeApproved ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600',
+    })),
+    hasFlash: !!flashMessage,
+    flashMessage,
+    backHref: '/admin/plugins-manage',
+  });
+
+  return adminLayout(views, opts, { title: `${pluginLabel} · Page types`, body });
 }

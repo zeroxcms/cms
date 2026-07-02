@@ -1,0 +1,10 @@
+{
+  "sections": {
+    "main": {
+      "type": "plugin-page-types"
+    }
+  },
+  "order": [
+    "main"
+  ]
+}

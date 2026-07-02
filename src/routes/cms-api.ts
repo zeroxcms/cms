@@ -3,7 +3,7 @@
 //
 // The standard plugin contract is CMS → plugin only (manifest, admin proxy,
 // hooks, publish snapshots). This router adds the reverse channel: a trusted
-// plugin Worker can read and write the CMS pages whose content types it owns,
+// plugin Worker can read and write the CMS pages it owns or has been delegated,
 // so guest-facing flows that live on the plugin's own domain (public RSVP
 // submit, QR check-in, bulk contact import) can create/update guest pages in
 // the single source of truth.
@@ -14,9 +14,10 @@
 //   - Authenticated by the shared PLUGIN_SECRET (x-plugin-secret header), the
 //     same secret the CMS forwards to plugins for hooks/admin/publish.
 //   - The caller names itself via x-plugin-id; writes are scoped to that
-//     plugin's manifest blueprint page types. Because every plugin shares one
-//     PLUGIN_SECRET, this scoping is a guardrail among co-operating trusted
-//     plugins, not a hard boundary — only register trusted plugin URLs.
+//     plugin's manifest blueprint page types plus explicit, admin-approved
+//     `writeTypes`. Because every plugin shares one PLUGIN_SECRET, this scoping
+//     is a guardrail among co-operating trusted plugins, not a hard boundary —
+//     only register trusted plugin URLs.
 //   - The global cross-origin mutation guard is bypassed for /__cms (see
 //     index.ts): server-to-server callers send no Origin, and PLUGIN_SECRET is
 //     the real authenticator here.
@@ -40,6 +41,7 @@ import { slugify } from '../utils/forms';
 import { chineseSearchVariants } from '../utils/chinese';
 import { unpublishPageFromTargets } from '../publish';
 import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../utils/page-store';
+import { listPageTypeApprovals } from '../utils/plugin-page-types';
 
 export const cmsApiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -98,9 +100,9 @@ interface ApiPage {
 interface PluginAuth {
   plugin: ResolvedPlugin;
   pluginId: string;
-  /** Page types this plugin declared in its manifest blueprint — the write scope. */
+  /** Page types this plugin may write through its manifest-declared scope. */
   allowedTypes: Set<string>;
-  /** Owned types plus any declared `readTypes` — the (wider) read scope. */
+  /** Writable types plus any declared `readTypes` — the (wider) read scope. */
   readableTypes: Set<string>;
 }
 
@@ -158,10 +160,19 @@ async function authenticatePlugin(c: AppContext): Promise<PluginAuth | Response>
     return c.json({ error: 'forbidden' }, 403);
   }
 
-  const allowedTypes = new Set(Object.keys(plugin.manifest.contentTypes?.blueprint ?? {}));
-  // Reads may also reach declared `readTypes` (pages owned by other plugins).
+  const contentTypes = plugin.manifest.contentTypes;
+  const allowedTypes = new Set(Object.keys(contentTypes?.blueprint ?? {}));
+  const approvals = await listPageTypeApprovals(c.env.DB, plugin.manifest.id);
+  const approvedReadTypes = new Set(approvals.filter((approval) => approval.access === 'read').map((approval) => approval.page_type));
+  const approvedWriteTypes = new Set(approvals.filter((approval) => approval.access === 'write').map((approval) => approval.page_type));
+  for (const type of contentTypes?.writeTypes ?? []) {
+    if (approvedWriteTypes.has(type)) allowedTypes.add(type);
+  }
+  // Reads may also reach admin-approved `readTypes` (pages owned by other plugins).
   const readableTypes = new Set(allowedTypes);
-  for (const type of plugin.manifest.contentTypes?.readTypes ?? []) readableTypes.add(type);
+  for (const type of contentTypes?.readTypes ?? []) {
+    if (approvedReadTypes.has(type)) readableTypes.add(type);
+  }
   return { plugin, pluginId, allowedTypes, readableTypes };
 }
 
@@ -425,13 +436,22 @@ cmsApiRoutes.get('/pages', async (c) => {
   const parentId = asFiniteNumber(c.req.query('page_id'));
 
   // Optional pointer filter: pointer_key=mail_list&pointer_value=123
+  // or pointer_key=mail_list&pointer_values=123,456.
   const pointerKey = (c.req.query('pointer_key') ?? '').trim();
   const pointerValue = (c.req.query('pointer_value') ?? '').trim();
-  if ((pointerKey && !pointerValue) || (!pointerKey && pointerValue)) {
+  const pointerValuesParam = (c.req.query('pointer_values') ?? '').trim();
+  const pointerValues = [
+    ...(pointerValue ? [pointerValue] : []),
+    ...pointerValuesParam.split(',').map((value) => value.trim()).filter(Boolean),
+  ].filter((value, index, values) => values.indexOf(value) === index);
+  if ((pointerKey && pointerValues.length === 0) || (!pointerKey && pointerValues.length > 0)) {
     return c.json({ error: 'pointer_key_and_value_required_together' }, 400);
   }
   if (pointerKey && !/^[a-z0-9_-]+$/i.test(pointerKey)) {
     return c.json({ error: 'invalid_pointer_key' }, 400);
+  }
+  if (pointerValues.length > 500) {
+    return c.json({ error: 'too_many_pointer_values' }, 400);
   }
 
   const params: unknown[] = [pageType];
@@ -440,9 +460,13 @@ cmsApiRoutes.get('/pages', async (c) => {
     where += ' AND page_id = ?';
     params.push(parentId);
   }
-  if (pointerKey && pointerValue) {
-    where += ' AND json_extract(lect, ?) = ?';
-    params.push(`$._pointers.${pointerKey}`, pointerValue);
+  if (pointerKey && pointerValues.length > 0) {
+    if (pointerValues.length === 1) {
+      where += ' AND json_extract(lect, ?) = ?';
+    } else {
+      where += ` AND json_extract(lect, ?) IN (${pointerValues.map(() => '?').join(',')})`;
+    }
+    params.push(`$._pointers.${pointerKey}`, ...pointerValues);
   }
   if (q) {
     const terms = chineseSearchVariants(q).map((variant) => `%${variant.replaceAll(' ', '%')}%`);
