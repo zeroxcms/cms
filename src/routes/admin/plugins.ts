@@ -27,6 +27,8 @@ import {
   wantsCmsChrome,
 } from '../../security/plugin-proxy';
 import { sanitizePluginHtmlFragment } from '../../security/plugin-sanitize';
+import { buildContentSecurityPolicy } from '../../security/http';
+import { currentCspNonce } from '../../utils/request-context';
 import { cmsAdminJobMessage, createPluginAdminActionJob } from '../../utils/admin-jobs';
 import { computeIntegrity, getAssetApproval, listApprovals } from '../../utils/plugin-assets';
 import type { ApprovedPluginAssets } from '../../templates/layout';
@@ -109,7 +111,11 @@ async function servePluginAsset(c: AppContext): Promise<Response> {
   return new Response(bytes, {
     status: 200,
     headers: {
-      'content-type': assetPath.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8',
+      'content-type': assetPath.endsWith('.css')
+        ? 'text/css; charset=utf-8'
+        : assetPath.endsWith('.wasm')
+          ? 'application/wasm'
+          : 'text/javascript; charset=utf-8',
       // Integrity is re-checked on every request rather than relying on a cache
       // to stay in sync with the approval, so this endpoint stays uncached.
       'cache-control': 'no-store',
@@ -205,9 +211,20 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
     const declaredAssetPaths = new Set((plugin.manifest.assets ?? []).map((asset) => asset.path));
     const approvedPluginAssets = await approvedAssetsFor(c, pluginId, declaredAssetPaths);
     const wrapped = await adminLayout(viewsFor(c.env), base, { title, body, approvedPluginAssets });
-    // No explicit CSP here — the global security middleware applies the strict
-    // nonce policy (matching the nonce adminLayout embeds), like any CMS page.
-    return c.html(wrapped, upstreamResponse.status as 200);
+    const response = c.html(wrapped, upstreamResponse.status as 200);
+    // Opt-in capability relaxation: a plugin page can request the camera (e.g.
+    // the check-in kiosk scanner) by returning `x-cms-permissions: camera`. We
+    // then enable the camera for this page and add `'wasm-unsafe-eval'` to
+    // script-src (the QR decoder is WebAssembly), setting both headers here so
+    // the global middleware leaves them alone. Every other admin page keeps the
+    // strict camera-off / no-wasm defaults.
+    if (upstreamResponse.headers.get('x-cms-permissions') === 'camera') {
+      response.headers.set('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
+      response.headers.set('Content-Security-Policy', buildContentSecurityPolicy(currentCspNonce(), { allowWasm: true }));
+    }
+    // Otherwise no explicit CSP — the global security middleware applies the
+    // strict nonce policy (matching the nonce adminLayout embeds).
+    return response;
   }
 
   // Give full-document plugin pages their own CSP so (a) the CMS's strict nonce

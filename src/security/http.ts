@@ -1,14 +1,22 @@
+// Permissions-Policy is applied only when the response hasn't already set its
+// own (see withSecurityHeaders) so a route can opt into a capability — e.g. the
+// check-in kiosk enables the camera on its scan page. The rest are unconditional.
+export const DEFAULT_PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=()';
+
 const SECURITY_HEADERS: Record<string, string> = {
   'Referrer-Policy': 'same-origin',
   'X-Content-Type-Options': 'nosniff',
-  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
 };
 
-export function buildContentSecurityPolicy(nonce: string): string {
-  const scriptSrc = nonce
-    ? `'self' 'nonce-${nonce}' https://static.cloudflareinsights.com`
-    : "'self' https://static.cloudflareinsights.com";
+export function buildContentSecurityPolicy(nonce: string, opts: { allowWasm?: boolean } = {}): string {
+  const scriptSrcParts = [
+    nonce ? `'self' 'nonce-${nonce}'` : "'self'",
+    // zxing's WebAssembly module needs wasm compilation, which script-src gates.
+    opts.allowWasm ? "'wasm-unsafe-eval'" : '',
+    'https://static.cloudflareinsights.com',
+  ].filter(Boolean);
+  const scriptSrc = scriptSrcParts.join(' ');
   return [
     "default-src 'self'",
     `script-src ${scriptSrc}`,
@@ -32,6 +40,11 @@ export function withSecurityHeaders(response: Response, cspNonce = ''): Response
   // A route may set its own (stricter) CSP, e.g. the media sandbox; don't clobber it.
   if (!secured.headers.has('Content-Security-Policy')) {
     secured.headers.set('Content-Security-Policy', buildContentSecurityPolicy(cspNonce));
+  }
+  // Likewise a route may opt into a capability (e.g. the kiosk scan page enables
+  // the camera); only apply the locked-down default when none was set.
+  if (!secured.headers.has('Permissions-Policy')) {
+    secured.headers.set('Permissions-Policy', DEFAULT_PERMISSIONS_POLICY);
   }
   // Default to DENY, but let a route opt into same-origin framing (e.g. the plugin
   // admin proxy lets a plugin's preview be shown in a same-origin <iframe>).

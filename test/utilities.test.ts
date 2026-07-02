@@ -241,6 +241,15 @@ describe('security utilities', () => {
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(response.headers.get('Content-Security-Policy')).toContain("default-src 'self'");
+    expect(response.headers.get('Permissions-Policy')).toBe('camera=(), microphone=(), geolocation=()');
+  });
+
+  it('preserves a Permissions-Policy a route already set (e.g. the kiosk enabling the camera)', () => {
+    const response = withSecurityHeaders(
+      new Response('ok', { headers: { 'Permissions-Policy': 'camera=(self), microphone=(), geolocation=()' } }),
+    );
+
+    expect(response.headers.get('Permissions-Policy')).toBe('camera=(self), microphone=(), geolocation=()');
   });
 
   it('marks authenticated surfaces as no-store without touching static paths', () => {
