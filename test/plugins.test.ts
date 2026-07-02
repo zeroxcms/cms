@@ -1002,6 +1002,47 @@ describe('plugin asset proxy', () => {
     expect(payload.bodyView?.viewRevision).toBe('plugin-worker-version-123');
   });
 
+  it('passes the pinned asset sha as the plugin asset revision when no Worker version is exposed', async () => {
+    const url = `https://plugin-asset-${crypto.randomUUID()}.local`;
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Check-in', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        const path = new URL(href).pathname;
+        if (path === '/__plugin/manifest') return Response.json(ASSET_MANIFEST);
+        if (path === '/__plugin/admin/kiosk') {
+          return Response.json(
+            {},
+            {
+              headers: {
+                'x-cms-chrome': '1',
+                'x-cms-client-view': '1',
+                'x-cms-view-path': '/templates/kiosk.json',
+              },
+            },
+          );
+        }
+        if (path === '/assets/js/kiosk.js') return new Response('console.log("kiosk")');
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+    const integrity = await computeIntegrity(new TextEncoder().encode('console.log("kiosk")').buffer);
+    await approveAsset(env.DB, 'checkin', '/assets/js/kiosk.js', integrity, 'admin@example.com');
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/checkin/kiosk', {
+      headers: { Cookie: await adminCookie(), 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    const payload = renderPayload(await response.text());
+
+    expect(response.status).toBe(200);
+    expect(payload.approvedPluginAssets?.checkin?.[0]).toMatchObject({
+      path: '/assets/js/kiosk.js',
+      integrity,
+      revision: integrity,
+    });
+    expect(payload.bodyView?.viewRevision).toBe('1.0.0');
+  });
+
   it('fails closed when the plugin file changed since approval', async () => {
     await registerAssetPlugin('console.log("changed")');
     // Approve a hash that doesn't match the file the plugin now serves.

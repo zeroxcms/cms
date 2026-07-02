@@ -69,14 +69,44 @@
     return payload.viewRevision;
   }
 
+  function pluginIdForBasePath(basePath) {
+    const match = /^\/admin\/plugins\/([^/]+)\/views$/.exec(basePath || '');
+    return match ? match[1] : null;
+  }
+
+  function approvedAssetsForPlugin(pluginId) {
+    if (!pluginId) return [];
+    const list = (payload.approvedPluginAssets || {})[pluginId];
+    return Array.isArray(list) ? list : [];
+  }
+
   function renderGlobals(basePath) {
     const revision = revisionForBasePath(basePath) || '';
-    const assetRevisionQuery = revision ? '?r=' + encodeURIComponent(revision) : '';
+    const viewRevisionQuery = revision ? '?r=' + encodeURIComponent(revision) : '';
+    const cmsRevision = payload.viewRevision || '';
+    const cmsRevisionQuery = cmsRevision ? '?r=' + encodeURIComponent(cmsRevision) : '';
+    const pluginId = pluginIdForBasePath(basePath);
+    const approvedAssets = approvedAssetsForPlugin(pluginId);
+    const assetRevisionQueries = {};
+    approvedAssets.forEach((asset) => {
+      if (!asset || !asset.path || !asset.revision) return;
+      const query = '?r=' + encodeURIComponent(asset.revision);
+      assetRevisionQueries[asset.path] = query;
+      assetRevisionQueries['/admin/plugins/' + pluginId + asset.path] = query;
+    });
+    const firstPluginAssetQuery = approvedAssets.length && approvedAssets[0].revision
+      ? '?r=' + encodeURIComponent(approvedAssets[0].revision)
+      : '';
+    const assetRevisionQuery = firstPluginAssetQuery || viewRevisionQuery;
     return {
       nonce: payload.nonce,
       viewRevision: revision,
+      viewRevisionQuery,
       assetRevisionQuery,
-      iconHrefPrefix: '/assets/icons.svg' + assetRevisionQuery,
+      pluginAssetRevisionQuery: firstPluginAssetQuery,
+      assetRevisionQueries,
+      pluginAssetRevisionQueries: assetRevisionQueries,
+      iconHrefPrefix: '/assets/icons.svg' + cmsRevisionQuery,
     };
   }
 
