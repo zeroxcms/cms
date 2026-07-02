@@ -68,16 +68,36 @@
       }
     })();
 
+    {% if admin %}
     (function() {
-      const INTERVAL = 14 * 60 * 1000;
+      if (window.__cmsSessionKeepaliveBound) return;
+      window.__cmsSessionKeepaliveBound = true;
+      var INTERVAL = 10 * 60 * 1000;
+      var inFlight = false;
+
       async function refresh() {
+        if (inFlight) return;
+        inFlight = true;
         try {
-          const res = await fetch('/auth/refresh', { method: 'POST' });
-          if (!res.ok) { window.location.href = '/auth/login'; }
-        } catch(e) { /* ignore */ }
+          var res = await fetch('/auth/refresh', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' }
+          });
+          if (res.status === 401) window.location.href = '/auth/login';
+        } catch (error) {
+          /* retry on the next tick */
+        } finally {
+          inFlight = false;
+        }
       }
-      setInterval(refresh, INTERVAL);
+
+      window.setInterval(refresh, INTERVAL);
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') refresh();
+      });
     })();
+    {% endif %}
 
     // Confirmation prompts for forms marked with data-confirm (CSP-safe
     // replacement for inline onsubmit handlers).

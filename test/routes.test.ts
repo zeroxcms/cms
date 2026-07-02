@@ -104,6 +104,16 @@ describe('app shell routes', () => {
     expect(asset.headers.get('Cache-Control')).toBe('public, max-age=86400');
   });
 
+  it('includes the session keepalive on admin pages only', async () => {
+    const [login, admin] = await Promise.all([
+      fetchWorker('/auth/login'),
+      fetchWorker('/admin', { headers: { Cookie: await authCookie() } }),
+    ]);
+
+    expect(await admin.text()).toContain("fetch('/auth/refresh'");
+    expect(await login.text()).not.toContain("fetch('/auth/refresh'");
+  });
+
   it('rejects cross-origin mutations before protected routes run', async () => {
     const response = await fetchWorker('/admin/pages', {
       method: 'POST',
@@ -523,6 +533,32 @@ describe('auth routes', () => {
     expect(body).toEqual({ ok: true, expires_in: 900 });
     expect(response.headers.get('Set-Cookie')).toContain('access_token=');
     expect(response.headers.get('Set-Cookie')).toContain('refresh_token=');
+  });
+
+  it('retains an admin browser session with a valid refresh token after access expiry', async () => {
+    const jti = 'browser-reopen-refresh';
+    const [expiredAccessToken, refreshToken] = await Promise.all([
+      signTestToken({ exp: Math.floor(Date.now() / 1000) - 60 }),
+      signTestToken({ type: 'refresh', jti, exp: Math.floor(Date.now() / 1000) + 3600 }),
+    ]);
+    const oldRefreshHash = await hashToken(jti);
+    await env.DB.prepare(
+      "INSERT INTO sessions (user_id, refresh_token_hash, expires_at) VALUES (?, ?, datetime('now', '+1 day'))",
+    )
+      .bind(1, oldRefreshHash)
+      .run();
+
+    const response = await fetchWorker('/admin', {
+      headers: { Cookie: `access_token=${expiredAccessToken}; refresh_token=${refreshToken}` },
+    });
+    const setCookies = response.headers.getSetCookie().join('\n');
+
+    expect(response.status).toBe(200);
+    expect(setCookies).toContain('access_token=');
+    expect(setCookies).toContain('refresh_token=');
+    expect(await env.DB.prepare('SELECT id FROM sessions WHERE refresh_token_hash = ?')
+      .bind(oldRefreshHash)
+      .first()).toBeNull();
   });
 });
 

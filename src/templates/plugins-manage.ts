@@ -121,8 +121,8 @@ export async function pluginAssetsPage(views: Fetcher, opts: BaseTemplateProps &
     hasAssets: assets.length > 0,
     assets: assets.map((asset) => ({
       ...asset,
-      statusLabel: asset.drifted ? 'Changed since approval' : asset.approved ? 'Approved' : 'Not approved',
-      statusClass: asset.drifted ? 'bg-amber-100 text-amber-800' : asset.approved ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600',
+      statusLabel: asset.drifted ? 'Expired' : asset.approved ? 'Approved' : 'Not approved',
+      statusClass: asset.drifted ? 'bg-red-400 text-amber-800' : asset.approved ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600',
     })),
     hasFlash: !!flashMessage,
     flashMessage,

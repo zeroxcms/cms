@@ -142,6 +142,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
 <body class="h-full overflow-x-hidden">
   <div id="cms-client-root" class="min-h-full">${loadingMarkup('100vh')}</div>
   <script id="cms-render-payload" type="application/json" nonce="${escHtml(nonce)}">${jsonScript(payload)}</script>
+  ${admin ? `<script nonce="${escHtml(nonce)}">${adminSessionKeepaliveScript()}</script>` : ''}
   <script src="/assets/liquid.browser.min.js${escHtml(revisionQuery)}" nonce="${escHtml(nonce)}" defer></script>
   <script src="/assets/client-render.js${escHtml(revisionQuery)}" nonce="${escHtml(nonce)}" defer></script>
   <script src="/assets/table-filter.js${escHtml(revisionQuery)}" nonce="${escHtml(nonce)}" defer></script>
@@ -184,4 +185,35 @@ function loadingMarkup(minHeight: string): string {
       </path>
     </svg>
   </div>`;
+}
+
+function adminSessionKeepaliveScript(): string {
+  return `(function() {
+      if (window.__cmsSessionKeepaliveBound) return;
+      window.__cmsSessionKeepaliveBound = true;
+      var INTERVAL = 10 * 60 * 1000;
+      var inFlight = false;
+
+      async function refresh() {
+        if (inFlight) return;
+        inFlight = true;
+        try {
+          var res = await fetch('/auth/refresh', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' }
+          });
+          if (res.status === 401) window.location.href = '/auth/login';
+        } catch (error) {
+          /* retry on the next tick */
+        } finally {
+          inFlight = false;
+        }
+      }
+
+      window.setInterval(refresh, INTERVAL);
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') refresh();
+      });
+    })();`;
 }
