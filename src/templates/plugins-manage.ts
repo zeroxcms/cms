@@ -94,6 +94,7 @@ export interface PluginAssetRow {
   drifted: boolean;
   fetchError: boolean;
   approvedBy: string;
+  integrity: string;
   approveAction: string;
   revokeAction: string;
 }

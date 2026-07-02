@@ -286,6 +286,7 @@ pluginsManageRoutes.get('/plugins-manage/:id/assets', async (c) => {
       drifted,
       fetchError,
       approvedBy: approval?.approved_by ?? '',
+      integrity: approval?.integrity ?? '',
       approveAction: `/admin/plugins-manage/${id}/assets/approve`,
       revokeAction: `/admin/plugins-manage/${id}/assets/revoke`,
     };
