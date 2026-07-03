@@ -99,16 +99,29 @@ tagsRoutes.post('/taxonomies/:id', requirePermission('taxonomy:write'), async (c
   const form = await c.req.formData();
   const name = str(form.get('name'));
   const slug = str(form.get('slug')) || slugify(name);
+  const existing = await c.env.DB.prepare('SELECT * FROM taxonomies WHERE id = ?')
+    .bind(id)
+    .first<Taxonomy>();
+  if (!existing) return c.notFound();
   await c.env.DB.prepare('UPDATE taxonomies SET name = ?, slug = ? WHERE id = ?')
     .bind(name, slug, id)
     .run();
+  if (existing.slug !== slug) {
+    await c.env.DB.prepare('UPDATE tags SET taxonomy_slug = ? WHERE taxonomy_slug = ?')
+      .bind(slug, existing.slug)
+      .run();
+  }
   logAudit(c, 'taxonomy.update', 'taxonomy', id, { name, slug });
   return c.redirect('/admin/taxonomies');
 });
 
 tagsRoutes.post('/taxonomies/:id/delete', requirePermission('taxonomy:write'), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
-  await c.env.DB.prepare('UPDATE tags SET taxonomy_id = NULL WHERE taxonomy_id = ?').bind(id).run();
+  const taxonomy = await c.env.DB.prepare('SELECT * FROM taxonomies WHERE id = ?')
+    .bind(id)
+    .first<Taxonomy>();
+  if (!taxonomy) return c.notFound();
+  await c.env.DB.prepare('UPDATE tags SET taxonomy_slug = NULL WHERE taxonomy_slug = ?').bind(taxonomy.slug).run();
   await c.env.DB.prepare('DELETE FROM taxonomies WHERE id = ?').bind(id).run();
   logAudit(c, 'taxonomy.delete', 'taxonomy', id);
   return c.redirect('/admin/taxonomies');
@@ -117,21 +130,47 @@ tagsRoutes.post('/taxonomies/:id/delete', requirePermission('taxonomy:write'), a
 // ── Tags ─────────────────────────────────────────────────────────────────────
 
 tagsRoutes.get('/tags', async (c) => {
-  const filterTaxonomy = parseInt(c.req.query('filter_taxonomy') ?? '0', 10);
+  const filterTaxonomy = str(c.req.query('filter_taxonomy'));
   const [taxonomies, tags] = await Promise.all([
-    c.env.DB.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
+    tagTaxonomyOptions(c),
     filterTaxonomy
-      ? c.env.DB.prepare('SELECT * FROM tags WHERE taxonomy_id = ? ORDER BY weight ASC, name ASC').bind(filterTaxonomy).all<Tag>()
+      ? c.env.DB.prepare('SELECT * FROM tags WHERE taxonomy_slug = ? ORDER BY weight ASC, name ASC').bind(filterTaxonomy).all<Tag>()
       : c.env.DB.prepare('SELECT * FROM tags ORDER BY weight ASC, name ASC').all<Tag>(),
   ]);
   return renderPage(c, tagsPage, {
-    taxonomies: taxonomies.results,
+    taxonomies,
     tags: tags.results,
     filterTaxonomy,
   });
 });
 
 tagsRoutes.get('/tags/new', async (c) => tagForm(c));
+
+tagsRoutes.post('/tags/batch-weight', requirePermission('tag:write'), async (c) => {
+  const body = await c.req.json<{ updates: { id: number; weight: number }[] }>();
+  const { updates } = body;
+
+  if (!Array.isArray(updates)) return c.json({ error: 'Invalid input' }, 400);
+
+  const statements = [];
+  for (const update of updates) {
+    const id = Number(update?.id);
+    const weight = Number(update?.weight);
+    if (!Number.isInteger(id) || id <= 0 || !Number.isFinite(weight)) {
+      return c.json({ error: 'Invalid input' }, 400);
+    }
+    statements.push(c.env.DB.prepare('UPDATE tags SET weight = ? WHERE id = ?').bind(weight, id));
+  }
+
+  if (!statements.length) return c.json({ success: true });
+
+  const results = await c.env.DB.batch(statements);
+  if (results.some((r) => !r.success)) {
+    return c.json({ error: 'Some updates failed' }, 500);
+  }
+
+  return c.json({ success: true });
+});
 
 tagsRoutes.post('/tags', requirePermission('tag:write'), async (c) => {
   const form = await c.req.formData();
@@ -141,14 +180,14 @@ tagsRoutes.post('/tags', requirePermission('tag:write'), async (c) => {
   const weight = num(form.get('weight'), 5);
   const lect = postToLect(form, language);
   ensureDefaultLectName(lect, name);
-  const taxonomyId = optionalNumericId(form.get('taxonomy_id'));
+  const taxonomySlug = nullableStr(form.get('taxonomy_slug'));
   const parentTagId = optionalNumericId(form.get('parent_tag'));
   const result = await c.env.DB.prepare(
-    'INSERT INTO tags (name, slug, weight, taxonomy_id, parent_tag, lect) VALUES (?, ?, ?, ?, ?, ?)',
+    'INSERT INTO tags (name, slug, weight, taxonomy_slug, parent_tag, lect) VALUES (?, ?, ?, ?, ?, ?)',
   )
-    .bind(name, slug, weight, taxonomyId, parentTagId, stringifyLect(lect))
+    .bind(name, slug, weight, taxonomySlug, parentTagId, stringifyLect(lect))
     .run();
-  logAudit(c, 'tag.create', 'tag', result.meta.last_row_id, { name, slug, weight });
+  logAudit(c, 'tag.create', 'tag', result.meta.last_row_id, { name, slug, weight, taxonomySlug });
   return c.redirect('/admin/tags');
 });
 
@@ -170,14 +209,14 @@ tagsRoutes.post('/tags/:id', requirePermission('tag:write'), async (c) => {
   if (!existing) return c.notFound();
   const lect = mergeLects(safeParseLect(existing.lect), postToLect(form, language));
   ensureDefaultLectName(lect, name);
-  const taxonomyId = optionalNumericId(form.get('taxonomy_id'));
+  const taxonomySlug = nullableStr(form.get('taxonomy_slug'));
   const parentTagId = optionalNumericId(form.get('parent_tag'));
   await c.env.DB.prepare(
-    'UPDATE tags SET name = ?, slug = ?, weight = ?, taxonomy_id = ?, parent_tag = ?, lect = ? WHERE id = ?',
+    'UPDATE tags SET name = ?, slug = ?, weight = ?, taxonomy_slug = ?, parent_tag = ?, lect = ? WHERE id = ?',
   )
-    .bind(name, slug, weight, taxonomyId, parentTagId, stringifyLect(lect), id)
+    .bind(name, slug, weight, taxonomySlug, parentTagId, stringifyLect(lect), id)
     .run();
-  logAudit(c, 'tag.update', 'tag', id, { name, slug, weight });
+  logAudit(c, 'tag.update', 'tag', id, { name, slug, weight, taxonomySlug });
   return c.redirect('/admin/tags');
 });
 
@@ -221,9 +260,8 @@ async function tagTaxonomyOptions(c: AppContext): Promise<TagTaxonomyOption[]> {
     plugins,
     (plugin) => plugin.manifest.contentTypes?.taxonomies,
   ).map((taxonomy) => ({
-    id: `config:${taxonomy.slug}`,
+    id: taxonomy.slug,
     name: config.taxonomies[taxonomy.slug] ?? taxonomy.name,
-    disabled: true,
     sourceLabel: taxonomy.source === 'plugin'
       ? `plugin${taxonomy.pluginName ? `: ${taxonomy.pluginName}` : ''}`
       : 'config',
@@ -231,7 +269,7 @@ async function tagTaxonomyOptions(c: AppContext): Promise<TagTaxonomyOption[]> {
 
   return [
     ...dbTaxonomies.results.map((taxonomy) => ({
-      id: String(taxonomy.id),
+      id: taxonomy.slug,
       name: taxonomy.name,
     })),
     ...configTaxonomies,

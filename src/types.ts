@@ -140,7 +140,7 @@ export interface Tag {
   name: string;
   slug: string;
   weight: number;
-  taxonomy_id: number | null;
+  taxonomy_slug: string | null;
   parent_tag: number | null;
   lect: string | null;
 }

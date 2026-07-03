@@ -950,8 +950,22 @@ describe('plugin admin proxy', () => {
     expect(tagResponse.status).toBe(200);
     const tagData = bodyData(await tagResponse.text());
     expect(tagData.taxonomyOptions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'config:audience', name: 'Audience (plugin: Events)', disabled: true }),
+      expect.objectContaining({ id: 'audience', name: 'Audience (plugin: Events)' }),
     ]));
+
+    const createTag = await worker.fetch(new Request('http://localhost/admin/tags', {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded' },
+      redirect: 'manual',
+      body: new URLSearchParams({ name: 'VIP', slug: 'vip', taxonomy_slug: 'audience' }),
+    }));
+    expect(createTag.status).toBe(302);
+
+    const apiResponse = await worker.fetch(new Request('http://localhost/admin/api/tags/audience', { headers }));
+    expect(apiResponse.status).toBe(200);
+    expect(await apiResponse.json()).toEqual([
+      expect.objectContaining({ label: 'VIP' }),
+    ]);
   });
 
   it('lists plugin-contributed block types with the contributing plugin name', async () => {

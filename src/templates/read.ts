@@ -229,7 +229,7 @@ export async function readPage(
   const selected = new Set(selectedTagIds);
   const tagGroups = taxonomies
     .map((taxonomy) => {
-      const groupTags = tags.filter((tag) => tag.taxonomy_id === taxonomy.id && selected.has(tag.id));
+      const groupTags = tags.filter((tag) => tag.taxonomy_slug === taxonomy.slug && selected.has(tag.id));
       if (!groupTags.length) return '';
       const chipsHtml = groupTags
         .map(

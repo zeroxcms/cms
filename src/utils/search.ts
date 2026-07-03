@@ -346,7 +346,7 @@ export function advancedSearchFormCriteria(criteria: AdvancedSearchCriterion[], 
     tagGroups: taxonomies.map((taxonomy) => ({
       name: taxonomy.name,
       tags: tags
-        .filter((tag) => tag.taxonomy_id === taxonomy.id)
+        .filter((tag) => tag.taxonomy_slug === taxonomy.slug)
         .map((tag) => ({
           id: tag.id,
           idString: String(tag.id),
@@ -361,7 +361,7 @@ export function advancedSearchTagGroups(taxonomies: Taxonomy[], tags: Tag[]) {
   return taxonomies.map((taxonomy) => ({
     name: taxonomy.name,
     tags: tags
-      .filter((tag) => tag.taxonomy_id === taxonomy.id)
+      .filter((tag) => tag.taxonomy_slug === taxonomy.slug)
       .map((tag) => ({
         id: tag.id,
         idString: String(tag.id),

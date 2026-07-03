@@ -10,6 +10,7 @@ import { rateLimitByIP } from '../../middleware/rate-limit';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 import type { AppContext } from '../../utils/context';
+import { resolveCmsConfig } from '../../plugins/config';
 
 export const apiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -91,12 +92,16 @@ apiRoutes.get('/api/pages/:type', requirePermission('content:read'), async (c) =
 
 apiRoutes.get('/api/tags/:type', requirePermission('content:read'), async (c) => {
   const type = c.req.param('type');
-  const taxonomy = await c.env.DB.prepare('SELECT * FROM taxonomies WHERE name = ? OR slug = ?')
+  const dbTaxonomy = await c.env.DB.prepare('SELECT * FROM taxonomies WHERE name = ? OR slug = ?')
     .bind(type, type)
     .first<Taxonomy>();
-  if (!taxonomy) return c.json([]);
-  const tags = await c.env.DB.prepare('SELECT * FROM tags WHERE taxonomy_id = ? ORDER BY weight ASC, name ASC')
-    .bind(taxonomy.id)
+  const config = await resolveCmsConfig(c.env);
+  const configSlug = Object.entries(config.taxonomies)
+    .find(([slug, name]) => slug === type || name === type)?.[0];
+  const taxonomySlug = dbTaxonomy?.slug ?? configSlug;
+  if (!taxonomySlug) return c.json([]);
+  const tags = await c.env.DB.prepare('SELECT * FROM tags WHERE taxonomy_slug = ? ORDER BY weight ASC, name ASC')
+    .bind(taxonomySlug)
     .all<Tag>();
   return c.json(tags.results.map((tag) => ({
     value: tag.id,

@@ -371,7 +371,7 @@ async function pageTagsForExport(db: D1Database): Promise<Map<number, Record<str
     `SELECT dpt.page_id, t.name as tag_name, tt.name as taxonomy_name
      FROM draft_page_tags dpt
      JOIN tags t ON t.id = dpt.tag_id
-     LEFT JOIN taxonomies tt ON tt.id = t.taxonomy_id`,
+     LEFT JOIN taxonomies tt ON tt.slug = t.taxonomy_slug`,
   ).all<{ page_id: number; tag_name: string; taxonomy_name: string | null }>();
   const result = new Map<number, Record<string, string[]>>();
   for (const row of rows.results) {
@@ -630,14 +630,14 @@ async function uniqueTagSlug(db: D1Database, baseSlug: string): Promise<string> 
 }
 
 async function ensureTag(db: D1Database, taxonomy: Taxonomy, name: string): Promise<number> {
-  const existing = await db.prepare('SELECT id FROM tags WHERE taxonomy_id = ? AND name = ?')
-    .bind(taxonomy.id, name)
+  const existing = await db.prepare('SELECT id FROM tags WHERE taxonomy_slug = ? AND name = ?')
+    .bind(taxonomy.slug, name)
     .first<{ id: number }>();
   if (existing) return existing.id;
 
   const slug = await uniqueTagSlug(db, slugify(`${taxonomy.slug || taxonomy.name}-${name}`));
-  const insert = await db.prepare('INSERT INTO tags (name, slug, taxonomy_id) VALUES (?, ?, ?)')
-    .bind(name, slug, taxonomy.id)
+  const insert = await db.prepare('INSERT INTO tags (name, slug, taxonomy_slug) VALUES (?, ?, ?)')
+    .bind(name, slug, taxonomy.slug)
     .run();
   const tag = await db.prepare('SELECT id FROM tags WHERE rowid = ?')
     .bind(insert.meta.last_row_id)
@@ -661,9 +661,9 @@ async function importPageTags(
     if (mode === 'replace') {
       await db.prepare(
         `DELETE FROM draft_page_tags
-         WHERE page_id = ? AND tag_id IN (SELECT id FROM tags WHERE taxonomy_id = ?)`,
+         WHERE page_id = ? AND tag_id IN (SELECT id FROM tags WHERE taxonomy_slug = ?)`,
       )
-        .bind(pageId, taxonomy.id)
+        .bind(pageId, taxonomy.slug)
         .run();
       changed = true;
     }

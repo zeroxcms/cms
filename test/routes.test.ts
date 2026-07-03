@@ -607,9 +607,9 @@ describe('admin routes', () => {
     { name: 'POST /admin/taxonomies/:id/delete', method: 'POST', path: '/admin/taxonomies/300/delete', authenticated: true, expectedStatus: 302, location: '/admin/taxonomies' },
     { name: 'GET /admin/tags', path: '/admin/tags', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/tags/new', path: '/admin/tags/new', authenticated: true, expectedStatus: 200 },
-    { name: 'POST /admin/tags', method: 'POST', path: '/admin/tags', body: form({ name: 'Fresh Tag', slug: 'fresh-tag', taxonomy_id: '300' }), authenticated: true, expectedStatus: 302, location: '/admin/tags' },
+    { name: 'POST /admin/tags', method: 'POST', path: '/admin/tags', body: form({ name: 'Fresh Tag', slug: 'fresh-tag', taxonomy_slug: 'categories' }), authenticated: true, expectedStatus: 302, location: '/admin/tags' },
     { name: 'GET /admin/tags/:id/edit', path: '/admin/tags/301/edit', authenticated: true, expectedStatus: 200 },
-    { name: 'POST /admin/tags/:id', method: 'POST', path: '/admin/tags/301', body: form({ name: 'News Updated', slug: 'news-updated', taxonomy_id: '300' }), authenticated: true, expectedStatus: 302, location: '/admin/tags' },
+    { name: 'POST /admin/tags/:id', method: 'POST', path: '/admin/tags/301', body: form({ name: 'News Updated', slug: 'news-updated', taxonomy_slug: 'categories' }), authenticated: true, expectedStatus: 302, location: '/admin/tags' },
     { name: 'POST /admin/tags/:id/delete', method: 'POST', path: '/admin/tags/301/delete', authenticated: true, expectedStatus: 302, location: '/admin/tags' },
     { name: 'GET /admin/page_types', path: '/admin/page_types', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/page_types/new', path: '/admin/page_types/new', authenticated: true, expectedStatus: 200 },
@@ -646,16 +646,16 @@ describe('admin routes', () => {
     await expectRoute(route);
   });
 
-  it('renders config-only taxonomies in the tag form as read-only options', async () => {
+  it('renders config-only taxonomies in the tag form as slug options', async () => {
     const response = await fetchWorker('/admin/tags/301/edit', { headers: { Cookie: await authCookie() } });
     expect(response.status).toBe(200);
     const data = bodyData(await response.text());
 
     expect(data.taxonomyOptions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: '300', name: 'Categories', selected: true, disabled: false }),
-      expect.objectContaining({ id: 'config:years', name: 'Years (config)', disabled: true }),
-      expect.objectContaining({ id: 'config:topics', name: 'Topics (config)', disabled: true }),
-      expect.objectContaining({ id: 'config:collections', name: 'Collections (config)', disabled: true }),
+      expect.objectContaining({ id: 'categories', name: 'Categories', selected: true }),
+      expect.objectContaining({ id: 'years', name: 'Years (config)' }),
+      expect.objectContaining({ id: 'topics', name: 'Topics (config)' }),
+      expect.objectContaining({ id: 'collections', name: 'Collections (config)' }),
     ]));
   });
 
@@ -663,14 +663,14 @@ describe('admin routes', () => {
     const cookie = await authCookie();
     const createResponse = await fetchWorker('/admin/tags', {
       method: 'POST',
-      body: form({ name: 'Featured', slug: 'featured', taxonomy_id: '300', weight: '1' }),
+      body: form({ name: 'Featured', slug: 'featured', taxonomy_slug: 'categories', weight: '1' }),
       headers: { Cookie: cookie },
     });
     expect(createResponse.status).toBe(302);
 
     const updateResponse = await fetchWorker('/admin/tags/301', {
       method: 'POST',
-      body: form({ name: 'News', slug: 'news', taxonomy_id: '300', weight: '20' }),
+      body: form({ name: 'News', slug: 'news', taxonomy_slug: 'categories', weight: '20' }),
       headers: { Cookie: cookie },
     });
     expect(updateResponse.status).toBe(302);
@@ -697,6 +697,55 @@ describe('admin routes', () => {
       'Updates',
       'News',
     ]);
+  });
+
+  it('POST /admin/tags/batch-weight updates multiple tag weights', async () => {
+    const response = await fetchWorker('/admin/tags/batch-weight', {
+      method: 'POST',
+      headers: {
+        Cookie: await authCookie(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ updates: [{ id: 301, weight: 30 }, { id: 302, weight: 10 }] }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true });
+
+    const rows = await env.DB.prepare('SELECT id, weight FROM tags WHERE id IN (?, ?)')
+      .bind(301, 302)
+      .all<{ id: number; weight: number }>();
+    const weights = Object.fromEntries(rows.results.map((row) => [row.id, row.weight]));
+    expect(weights[301]).toBe(30);
+    expect(weights[302]).toBe(10);
+
+    const listData = bodyData(await (await fetchWorker('/admin/tags', { headers: { Cookie: await authCookie() } })).text());
+    expect((listData.tags as Array<{ id: number }>).map((tag) => tag.id)).toEqual([302, 301]);
+  });
+
+  it('POST /admin/tags/batch-weight rejects unauthenticated requests', async () => {
+    const response = await fetchWorker('/admin/tags/batch-weight', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates: [{ id: 301, weight: 10 }] }),
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/auth/login');
+  });
+
+  it('POST /admin/tags/batch-weight rejects malformed input', async () => {
+    const response = await fetchWorker('/admin/tags/batch-weight', {
+      method: 'POST',
+      headers: {
+        Cookie: await authCookie(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ updates: 'not-an-array' }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Invalid input' });
   });
 
   it('renders the signed-in user profile with connected and available OAuth providers', async () => {
@@ -1785,7 +1834,7 @@ describe('capability enforcement', () => {
     // Editors hold tag:write.
     const tag = await fetchWorker('/admin/tags', {
       method: 'POST',
-      body: form({ name: 'Editor Tag', slug: 'editor-tag', taxonomy_id: '300' }),
+      body: form({ name: 'Editor Tag', slug: 'editor-tag', taxonomy_slug: 'categories' }),
       headers: { Cookie: await authCookie('editor') },
     });
     expect(tag.status).toBe(302);
@@ -1793,7 +1842,7 @@ describe('capability enforcement', () => {
     // Moderators do not.
     const modTag = await fetchWorker('/admin/tags', {
       method: 'POST',
-      body: form({ name: 'Mod Tag', slug: 'mod-tag', taxonomy_id: '300' }),
+      body: form({ name: 'Mod Tag', slug: 'mod-tag', taxonomy_slug: 'categories' }),
       headers: { Cookie: await authCookie('moderator') },
     });
     expect(modTag.status).toBe(403);
@@ -1810,7 +1859,7 @@ describe('capability enforcement', () => {
 
     const taggerTag = await fetchWorker('/admin/tags', {
       method: 'POST',
-      body: form({ name: 'T1', slug: 't1', taxonomy_id: '300' }),
+      body: form({ name: 'T1', slug: 't1', taxonomy_slug: 'categories' }),
       headers: { Cookie: await authCookie('tagger') },
     });
     expect(taggerTag.status).toBe(302);
@@ -1831,7 +1880,7 @@ describe('capability enforcement', () => {
 
     const taxerTag = await fetchWorker('/admin/tags', {
       method: 'POST',
-      body: form({ name: 'T2', slug: 't2', taxonomy_id: '300' }),
+      body: form({ name: 'T2', slug: 't2', taxonomy_slug: 'categories' }),
       headers: { Cookie: await authCookie('taxer') },
     });
     expect(taxerTag.status).toBe(403);
@@ -2370,11 +2419,11 @@ async function seedBaseData(): Promise<void> {
   await env.DB.prepare('INSERT INTO block_types (id, slug, name, blueprint) VALUES (?, ?, ?, ?)')
     .bind(800, 'hero', 'Hero', JSON.stringify(['label', { pictures: ['url'] }]))
     .run();
-  await env.DB.prepare('INSERT INTO tags (id, name, slug, taxonomy_id, lect) VALUES (?, ?, ?, ?, ?)')
-    .bind(301, 'News', 'news', 300, JSON.stringify({ name: { en: 'News' } }))
+  await env.DB.prepare('INSERT INTO tags (id, name, slug, taxonomy_slug, lect) VALUES (?, ?, ?, ?, ?)')
+    .bind(301, 'News', 'news', 'categories', JSON.stringify({ name: { en: 'News' } }))
     .run();
-  await env.DB.prepare('INSERT INTO tags (id, name, slug, taxonomy_id, lect) VALUES (?, ?, ?, ?, ?)')
-    .bind(302, 'Updates', 'updates', 300, JSON.stringify({ name: { en: 'Updates' } }))
+  await env.DB.prepare('INSERT INTO tags (id, name, slug, taxonomy_slug, lect) VALUES (?, ?, ?, ?, ?)')
+    .bind(302, 'Updates', 'updates', 'categories', JSON.stringify({ name: { en: 'Updates' } }))
     .run();
 
   await env.DB.prepare(

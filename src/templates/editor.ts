@@ -631,7 +631,7 @@ function editorTagGroups(
       const taxonomy = taxonomiesBySlug.get(slug);
       if (!taxonomy) return null;
       const groupTags = tags
-        .filter((tag) => tag.taxonomy_id === taxonomy.id)
+        .filter((tag) => tag.taxonomy_slug === taxonomy.slug)
         .map((tag) => {
           renderedTagIds.add(tag.id);
           return {
