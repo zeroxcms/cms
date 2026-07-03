@@ -811,7 +811,13 @@ describe('plugin admin proxy', () => {
     testEnv.PLUGIN_SECRET = 'server-secret';
     const url = 'https://plugin-client-editview.local';
     await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Events', url).run();
-    const manifest = { ...EVENTS_MANIFEST, editViews: ['event'] };
+    const manifest = {
+      ...EVENTS_MANIFEST,
+      editViews: ['event'],
+      assets: [{ path: '/assets/event-new.js', label: 'New event auto slug' }],
+    };
+    const integrity = await computeIntegrity(new TextEncoder().encode('console.log("event-new")').buffer);
+    await approveAsset(env.DB, 'events', '/assets/event-new.js', integrity, 'admin@example.com');
     __injectPluginFetcher(url, {
       fetch: async (input: RequestInfo | URL): Promise<Response> => {
         const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -854,6 +860,11 @@ describe('plugin admin proxy', () => {
       expect(response.status).toBe(200);
       const payload = renderPayload(await response.text());
       expect(payload.layoutData.editorSync).toBe(true);
+      expect(payload.approvedPluginAssets?.events?.[0]).toMatchObject({
+        path: '/assets/event-new.js',
+        integrity,
+        revision: integrity,
+      });
       expect(payload.bodyView?.data).toMatchObject({
         marker: 'client-edit',
         cmsEditPresence: {

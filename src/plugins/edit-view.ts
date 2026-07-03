@@ -23,13 +23,14 @@
 import type { AppContext } from '../utils/context';
 import type { ResolvedPlugin } from '../types';
 import { pluginForEditView, pluginForNewView, pluginForReadView, PLUGIN_ORIGIN, PLUGIN_PREFIX } from './registry';
-import { adminLayout, escHtml } from '../templates/layout';
+import { adminLayout, escHtml, type ApprovedPluginAssets } from '../templates/layout';
 import { pluginClientView } from '../templates/liquid';
 import { buildBaseProps } from '../utils/admin-render';
 import { viewsFor } from './views';
 import { sanitizePluginHtmlFragment } from '../security/plugin-sanitize';
 import { isPluginClientViewResponse, readPluginClientViewData } from '../security/plugin-proxy';
-import { pluginViewRevision } from '../utils/view-revision';
+import { listApprovals } from '../utils/plugin-assets';
+import { pluginViewRevision, pluginWorkerRevision } from '../utils/view-revision';
 
 /** Editor context the CMS sends to a plugin's `/__plugin/edit` endpoint. */
 export interface EditViewContext {
@@ -202,10 +203,33 @@ async function dispatchPluginView(
         pluginViewRevision(plugin.manifest),
       )
     : withPluginEditPresenceBar(await sanitizePluginHtmlFragment(await upstream.text()), editPresence);
-  const wrapped = await adminLayout(viewsFor(c.env), base, { title, body, editorSync: !!editPresence });
+  const declaredAssetPaths = new Set((plugin.manifest.assets ?? []).map((asset) => asset.path));
+  const approvedPluginAssets = await approvedAssetsFor(c, plugin.manifest, declaredAssetPaths);
+  const wrapped = await adminLayout(viewsFor(c.env), base, { title, body, editorSync: !!editPresence, approvedPluginAssets });
   // No explicit CSP: the global security middleware applies the strict nonce
   // policy (matching the nonce adminLayout embeds), like any CMS page.
   return c.html(wrapped);
+}
+
+/** Admin-approved assets for a plugin, restricted to paths it currently
+ *  declares in its manifest. Mirrors the plugin admin chrome path so plugin
+ *  page-view overrides can load the same approved JS/CSS assets. */
+async function approvedAssetsFor(
+  c: AppContext,
+  manifest: ResolvedPlugin['manifest'],
+  declaredPaths: Set<string>,
+): Promise<ApprovedPluginAssets> {
+  if (declaredPaths.size === 0) return {};
+  const pluginRevision = pluginWorkerRevision(manifest);
+  const approvals = await listApprovals(c.env.DB, manifest.id);
+  const entries = approvals
+    .filter((approval) => declaredPaths.has(approval.path))
+    .map((approval) => ({
+      path: approval.path,
+      integrity: approval.integrity,
+      revision: pluginRevision || approval.integrity,
+    }));
+  return entries.length ? { [manifest.id]: entries } : {};
 }
 
 interface PluginEditPresence {
