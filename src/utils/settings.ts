@@ -2,6 +2,7 @@ import type { Env } from '../types';
 
 export const SIDEBAR_MENU_SETTING_KEY = 'admin.sidebar_menu.hidden_items';
 export const APP_BRANDING_SETTING_KEY = 'admin.app_branding';
+export const ADMIN_HOME_SETTING_KEY = 'admin.home';
 export const DEFAULT_SETTINGS_GROUP_WEIGHT = 30;
 export const DEFAULT_PLUGIN_NAV_WEIGHT = 35;
 export const DEFAULT_PLUGIN_SETTINGS_NAV_WEIGHT = 80;
@@ -38,6 +39,10 @@ export type AppIcon = typeof APP_ICON_OPTIONS[number]['value'];
 export interface AppBrandingSettings {
   appName: string;
   appIcon: AppIcon;
+}
+
+export interface AdminHomeSettings {
+  href: string;
 }
 
 export interface SidebarChromeSettings {
@@ -99,6 +104,24 @@ export async function saveAppBrandingSettings(env: Env, input: { appName: unknow
     : defaults.appIcon;
   const settings = { appName, appIcon };
   await saveSetting(env, APP_BRANDING_SETTING_KEY, JSON.stringify(settings));
+  return settings;
+}
+
+export async function loadAdminHomeSettings(env: Env): Promise<AdminHomeSettings> {
+  const raw = await getSetting(env, ADMIN_HOME_SETTING_KEY);
+  if (!raw) return defaultAdminHomeSettings();
+
+  try {
+    const saved = JSON.parse(raw);
+    return { href: adminHomePath(saved?.href) };
+  } catch (error) {
+    return defaultAdminHomeSettings();
+  }
+}
+
+export async function saveAdminHomeSettings(env: Env, input: { href: unknown }): Promise<AdminHomeSettings> {
+  const settings = { href: adminHomePath(input.href) };
+  await saveSetting(env, ADMIN_HOME_SETTING_KEY, JSON.stringify(settings));
   return settings;
 }
 
@@ -207,6 +230,17 @@ export function defaultPluginNavWeight(keyOrGroup?: string): number {
 
 function defaultAppBrandingSettings(fallbackName: string): AppBrandingSettings {
   return { appName: fallbackName, appIcon: 'document' };
+}
+
+function defaultAdminHomeSettings(): AdminHomeSettings {
+  return { href: '/admin' };
+}
+
+function adminHomePath(value: unknown): string {
+  if (typeof value !== 'string') return '/admin';
+  const href = value.trim().slice(0, 300);
+  if (href === '/admin' || href.startsWith('/admin/') || href.startsWith('/admin?')) return href;
+  return '/admin';
 }
 
 function legacySidebarMenuKey(value: unknown): SidebarMenuItemKey | null {

@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { trashPage } from '../../templates/trash';
 import type { Env, Variables, Page, PageTag, PageVersion } from '../../types';
 import { restoreTrashedPages, savePageVersion } from '../../utils/admin-queries';
-import { dashboardPagination, renderPage } from '../../utils/admin-render';
+import { dashboardPagination, renderPage, userCan } from '../../utils/admin-render';
 import { dashboardPageNumber, dashboardPageSize } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
@@ -68,6 +68,7 @@ trashRoutes.get('/trash', async (c) => {
     filterType,
     typeCounts,
     recentCount: recentRow?.cnt ?? 0,
+    canPurgeTrash: await userCan(c, 'trash:purge'),
   });
 });
 

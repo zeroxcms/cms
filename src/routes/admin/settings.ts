@@ -10,8 +10,10 @@ import {
   SIDEBAR_MENU_ITEMS,
   defaultPluginNavWeight,
   loadAppBrandingSettings,
+  loadAdminHomeSettings,
   loadSidebarChromeSettings,
   pluginSidebarKey,
+  saveAdminHomeSettings,
   saveAppBrandingSettings,
   saveSidebarMenuSettings,
 } from '../../utils/settings';
@@ -25,9 +27,10 @@ settingsRoutes.get('/settings/menu', (c) => c.redirect('/admin/settings/system')
 
 settingsRoutes.get('/settings/system', async (c) => {
   const fallbackName = c.env.SITE_TITLE ?? '0xCMS';
-  const [sidebarSettings, branding, pluginItems] = await Promise.all([
+  const [sidebarSettings, branding, adminHome, pluginItems] = await Promise.all([
     loadSidebarChromeSettings(c.env),
     loadAppBrandingSettings(c.env, fallbackName),
+    loadAdminHomeSettings(c.env),
     pluginNav(c.env),
   ]);
   const menuOption = (item: typeof SIDEBAR_MENU_ITEMS[number]) => ({
@@ -53,6 +56,7 @@ settingsRoutes.get('/settings/system', async (c) => {
   return renderPage(c, systemSettingsPage, {
     appName: branding.appName,
     appIcon: branding.appIcon,
+    adminHomePath: adminHome.href,
     iconOptions: APP_ICON_OPTIONS.map((option) => ({
       ...option,
       selected: option.value === branding.appIcon,
@@ -83,6 +87,9 @@ settingsRoutes.post('/settings/system', async (c) => {
       appName: form.get('app_name'),
       appIcon: form.get('app_icon'),
     }, c.env.SITE_TITLE ?? '0xCMS'),
+    saveAdminHomeSettings(c.env, {
+      href: form.get('admin_home_path'),
+    }),
     saveSidebarMenuSettings(c.env, visibleKeys, weights, {
       settingsGroupWeight: form.get('settings_group_weight'),
       pluginWeights,

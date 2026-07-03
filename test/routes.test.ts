@@ -1687,6 +1687,16 @@ describe('capability enforcement', () => {
   });
 
   it('lets a moderator move to trash and restore but not purge', async () => {
+    await env.DB.prepare("UPDATE trash_pages SET created_at = datetime('now') WHERE id = ?").bind(201).run();
+
+    const trashList = await fetchWorker('/admin/trash', {
+      headers: { Cookie: await authCookie('moderator') },
+    });
+    const trashHtml = await trashList.text();
+    const trashData = bodyData(trashHtml);
+    expect(trashData.canPurgeTrash).toBe(false);
+    expect(trashData.hasRecent).toBe(true);
+
     const restore = await fetchWorker('/admin/trash/201/restore', {
       method: 'POST',
       headers: { Cookie: await authCookie('moderator') },
@@ -1987,6 +1997,7 @@ describe('permission-aware admin UI', () => {
       body: new URLSearchParams([
         ['app_name', 'Control Room'],
         ['app_icon', 'settings'],
+        ['admin_home_path', '/admin/plugins/events/dashboard'],
         ['visible_items', 'pages'],
         ['visible_items', 'trash'],
         ['weight_pages', '50'],
@@ -1996,7 +2007,11 @@ describe('permission-aware admin UI', () => {
     });
     expect(response.status).toBe(302);
 
-    const dashboardPayload = renderPayload(await (await fetchWorker('/admin', { headers: { Cookie: await authCookie() } })).text());
+    const redirectedHome = await fetchWorker('/admin', { headers: { Cookie: await authCookie() } });
+    expect(redirectedHome.status).toBe(302);
+    expect(redirectedHome.headers.get('Location')).toBe('/admin/plugins/events/dashboard');
+
+    const dashboardPayload = renderPayload(await (await fetchWorker('/admin?pagesize=100', { headers: { Cookie: await authCookie() } })).text());
     expect(dashboardPayload.layoutData.showSidebarPages).toBe(true);
     expect(dashboardPayload.layoutData.showSidebarTrash).toBe(true);
     expect(dashboardPayload.layoutData.showSidebarTags).toBe(false);
@@ -2013,6 +2028,7 @@ describe('permission-aware admin UI', () => {
     const settingsData = bodyData(await (await fetchWorker('/admin/settings/system', { headers: { Cookie: await authCookie() } })).text());
     expect(settingsData.appName).toBe('Control Room');
     expect(settingsData.appIcon).toBe('settings');
+    expect(settingsData.adminHomePath).toBe('/admin/plugins/events/dashboard');
     expect(settingsData.iconOptions).toEqual(expect.arrayContaining([
       expect.objectContaining({ value: 'settings', selected: true }),
     ]));
@@ -2022,6 +2038,21 @@ describe('permission-aware admin UI', () => {
       expect.objectContaining({ value: 'system', checked: true, locked: true }),
       expect.objectContaining({ value: 'trash', checked: true, weight: 5 }),
     ]));
+  });
+
+  it('falls back to the page dashboard for unsafe admin home paths', async () => {
+    const response = await fetchWorker('/admin/settings/system', {
+      method: 'POST',
+      body: form({ admin_home_path: 'https://evil.example/admin' }),
+      headers: { Cookie: await authCookie() },
+    });
+    expect(response.status).toBe(302);
+
+    const settingsData = bodyData(await (await fetchWorker('/admin/settings/system', { headers: { Cookie: await authCookie() } })).text());
+    expect(settingsData.adminHomePath).toBe('/admin');
+
+    const dashboard = await fetchWorker('/admin', { headers: { Cookie: await authCookie() } });
+    expect(dashboard.status).toBe(200);
   });
 
   it('requires menu:manage for the system settings page', async () => {

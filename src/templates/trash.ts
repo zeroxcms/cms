@@ -26,8 +26,9 @@ export async function trashPage(views: Fetcher, opts: BaseTemplateProps & {
   filterType?: string;
   typeCounts?: TypeCount[];
   recentCount?: number;
+  canPurgeTrash?: boolean;
 }): Promise<string> {
-  const { pages, flash, pagination, total = pages.length, typeCounts = [], recentCount = 0, filterType = '' } = opts;
+  const { pages, flash, pagination, total = pages.length, typeCounts = [], recentCount = 0, filterType = '', canPurgeTrash = false } = opts;
   const grandTotal = opts.grandTotal ?? total;
   const showPagination = (pagination?.totalPages ?? 1) > 1;
   const typeSuffix = filterType ? `${filterType} ` : '';
@@ -46,6 +47,7 @@ export async function trashPage(views: Fetcher, opts: BaseTemplateProps & {
     recentCount,
     hasRecent: recentCount > 0,
     total,
+    canPurgeTrash,
     pages: pages.map((page) => ({
       id: page.id,
       name: page.name,

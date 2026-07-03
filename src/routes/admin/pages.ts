@@ -59,6 +59,7 @@ import {
 } from '../../publish';
 import type { PublishOutcome } from '../../publish';
 import { dashboardPagination, exportPageList, renderPage } from '../../utils/admin-render';
+import { loadAdminHomeSettings } from '../../utils/settings';
 import { requirePermission } from '../../middleware/auth';
 import type { AppContext } from '../../utils/context';
 import {
@@ -393,6 +394,11 @@ async function deletePageVersion(db: D1Database, page: Page, versionId: number):
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 pagesRoutes.get('/', async (c) => {
+  const adminHome = await loadAdminHomeSettings(c.env);
+  if (!new URL(c.req.url).search && adminHome.href !== '/admin') {
+    return c.redirect(adminHome.href);
+  }
+
   const flash = c.req.query('flash') ?? '';
   const search = c.req.query('search')?.trim() ?? '';
   const pageSize = dashboardPageSize(c.req.query('pagesize'));

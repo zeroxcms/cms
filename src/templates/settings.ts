@@ -29,6 +29,7 @@ export interface SystemSettingsIconOption {
 export async function systemSettingsPage(views: Fetcher, opts: BaseTemplateProps & {
   appName: string;
   appIcon: string;
+  adminHomePath: string;
   iconOptions: SystemSettingsIconOption[];
   settingsGroupWeight: number;
   mainOptions: SystemSettingsMenuOption[];
@@ -40,6 +41,7 @@ export async function systemSettingsPage(views: Fetcher, opts: BaseTemplateProps
   const body = await renderView(views, '/templates/menu-settings.json', {
     appName: opts.appName,
     appIcon: opts.appIcon,
+    adminHomePath: opts.adminHomePath,
     iconOptions: opts.iconOptions,
     settingsGroupWeight: opts.settingsGroupWeight,
     mainOptions: opts.mainOptions,
