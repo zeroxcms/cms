@@ -262,9 +262,10 @@ A plugin can add six things:
   those delegated scopes in plugin management before they are honored.
 - **Fields & blocks** – register new pagefield types and serve their Liquid
   snippets, which render through the CMS editor.
-- **Edit views** – list page-type slugs in the manifest `editViews` to render
-  the *whole* edit/new form for those types yourself, instead of the built-in
-  structured editor. See [Plugin edit views](#plugin-edit-views).
+- **Edit & read views** – list page-type slugs in the manifest `editViews`
+  (and/or `readViews`) to render the *whole* edit/new form — or the read-only
+  view — for those types yourself, instead of the built-in structured editor.
+  See [Plugin edit views](#plugin-edit-views).
 - **Admin routes + nav** – add an admin page (proxied at
   `/admin/plugins/<id>/...`) and a navigation entry. A nav item may set
   `group: 'settings'` to nest under the sidebar's **Settings** group instead of
@@ -335,6 +336,48 @@ To bypass a plugin edit view and use the built-in structured editor for a single
 page, append **`?native=1`** (or `?editor=cms`) to the edit URL, e.g.
 `/admin/pages/42/edit?native=1`. The flag is carried through the editor's form
 action and post-save redirect, so it survives validation errors and reloads.
+
+#### Read views
+
+Every page also has a built-in **read-only view** at `/admin/pages/<id>/read`
+(the eye icon on the dashboard, or *View* in the editor header): the same
+structured content rendered as static text instead of inputs. A plugin can take
+over that view for the page types it owns exactly like the edit view — list the
+slugs under `readViews` (independent of `editViews`; a plugin may own the edit
+view, the read view, both, or neither):
+
+```js
+const MANIFEST = {
+  id: 'events',
+  // …
+  editViews: ['event'],
+  readViews: ['event'],
+};
+```
+
+For a page of one of those types the CMS `POST`s a read context to the plugin's
+`/__plugin/read` endpoint (JSON body + `x-plugin-secret` + `x-cms-user`). It
+mirrors the edit context but omits the form-submission fields (`mode`, `action`,
+`flash`, `errors`) and adds `editHref` — a link back to the CMS editor:
+
+```jsonc
+{
+  "editHref": "/admin/pages/42/edit",
+  "backHref": "/admin",
+  "language": "en",
+  "pageType": "event",
+  "page": { "id": 42, "name": "…", "slug": "…", "weight": 5,
+            "start": null, "end": null, "timezone": "+0800",
+            "editors": null, "lect": "{…stringified lect JSON…}" },
+  "versions": [{ "id": 9, "created_at": "…", "action": "update" }]
+}
+```
+
+The plugin returns an **HTML fragment** with `x-cms-chrome: 1` (and optionally a
+percent-encoded `x-cms-title`), wrapped in the standard admin chrome under the
+strict nonce CSP — just like the edit view. Returning `404` (or any error /
+non-HTML response) falls back to the built-in read view, and `?native=1`
+(or `?editor=cms`) forces it, so a half-built plugin can never hide a page.
 
 Admin responses are `X-Frame-Options: DENY` by default. A plugin **full-document**
 admin response (no `x-cms-chrome`) may opt into being shown in a same-origin

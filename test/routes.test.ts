@@ -576,6 +576,8 @@ describe('admin routes', () => {
     { name: 'GET /admin/pages/new', path: '/admin/pages/new', authenticated: true, expectedStatus: 200 },
     { name: 'POST /admin/pages', method: 'POST', path: '/admin/pages', body: form({ name: 'Created', slug: 'created', page_type: 'default' }), authenticated: true, expectedStatus: 302, location: '/admin?flash=Page+created+successfully' },
     { name: 'GET /admin/pages/:id/edit', path: '/admin/pages/101/edit', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/pages/:id/read', path: '/admin/pages/101/read', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/pages/:id/read (missing page)', path: '/admin/pages/99999/read', authenticated: true, expectedStatus: 404 },
     { name: 'POST /admin/pages/:id/weight', method: 'POST', path: '/admin/pages/101/weight', body: form({ weight: '9', return_to: '/admin/pages/list/default' }), authenticated: true, expectedStatus: 302, location: '/admin/pages/list/default?flash=Draft+weight+updated' },
     { name: 'POST /admin/pages/:id', method: 'POST', path: '/admin/pages/101', body: form({ name: 'About Updated', slug: 'about-updated', page_type: 'default', weight: '3' }), authenticated: true, expectedStatus: 302, location: '/admin/pages/101/edit?language=mis&flash=Page+updated+successfully' },
     { name: 'POST /admin/pages/:id/publish', method: 'POST', path: '/admin/pages/101/publish', authenticated: true, expectedStatus: 302, location: '/admin?flash=Page+published+successfully' },

@@ -21,7 +21,8 @@
 // ============================================================
 
 import type { AppContext } from '../utils/context';
-import { pluginForEditView, PLUGIN_ORIGIN, PLUGIN_PREFIX } from './registry';
+import type { ResolvedPlugin } from '../types';
+import { pluginForEditView, pluginForReadView, PLUGIN_ORIGIN, PLUGIN_PREFIX } from './registry';
 import { adminLayout } from '../templates/layout';
 import { pluginClientView } from '../templates/liquid';
 import { buildBaseProps } from '../utils/admin-render';
@@ -64,6 +65,23 @@ export interface EditViewContext {
   errors?: string[];
 }
 
+/** Read-only context the CMS sends to a plugin's `/__plugin/read` endpoint.
+ *  Mirrors EditViewContext minus the form-submission fields — a read view has
+ *  nothing to POST back — plus `editHref` so it can offer an "Edit" control. */
+export interface ReadViewContext {
+  /** Link to the CMS editor for this page (for an optional "Edit" control). */
+  editHref: string;
+  /** Where the view's back / cancel control should return to. */
+  backHref: string;
+  /** Active display language. */
+  language: string;
+  /** The page type being viewed (one of the plugin's declared readViews). */
+  pageType: string;
+  page: EditViewContext['page'];
+  /** Saved versions (most-recent first), for an optional version picker. */
+  versions: EditViewContext['versions'];
+}
+
 /**
  * Renders the edit/new view through the plugin that owns `pageType`, returning
  * a ready-to-send chrome-wrapped Response — or `null` when no plugin owns the
@@ -77,11 +95,45 @@ export async function pluginEditView(
 ): Promise<Response | null> {
   const plugin = await pluginForEditView(c.env, pageType);
   if (!plugin) return null;
+  const fallbackTitle = context.mode === 'edit' ? `Edit: ${context.page.name}` : `New ${pageType}`;
+  return dispatchPluginView(c, plugin, '/edit', context, fallbackTitle, 'edit view');
+}
 
-  // A plugin that can't authenticate must not silently take over the editor;
-  // fall back to the built-in view (and log) rather than fail the request.
+/**
+ * Renders the read-only view through the plugin that owns `pageType` (its
+ * manifest `readViews`), returning a chrome-wrapped Response — or `null` when no
+ * plugin owns the type, the plugin is misconfigured, or it declined (404 /
+ * error / non-HTML), in which case the caller renders the built-in read view.
+ */
+export async function pluginReadView(
+  c: AppContext,
+  pageType: string,
+  context: ReadViewContext,
+): Promise<Response | null> {
+  const plugin = await pluginForReadView(c.env, pageType);
+  if (!plugin) return null;
+  return dispatchPluginView(c, plugin, '/read', context, `View: ${context.page.name}`, 'read view');
+}
+
+/**
+ * Shared plumbing for both plugin-rendered views: forwards the signed-in user +
+ * plugin secret, POSTs the context to the plugin's `/__plugin/<endpoint>`,
+ * validates the response, and wraps the returned fragment (or client view) in
+ * the standard admin chrome. Returns `null` on any decline/failure so the
+ * caller can fall back to the built-in view.
+ */
+async function dispatchPluginView(
+  c: AppContext,
+  plugin: ResolvedPlugin,
+  endpoint: '/edit' | '/read',
+  context: unknown,
+  fallbackTitle: string,
+  label: string,
+): Promise<Response | null> {
+  // A plugin that can't authenticate must not silently take over the view;
+  // fall back to the built-in one (and log) rather than fail the request.
   if (!plugin.secret) {
-    console.error(`Plugin ${plugin.manifest.id} declares an edit view but has no secret configured`);
+    console.error(`Plugin ${plugin.manifest.id} declares a ${label} but has no secret configured`);
     return null;
   }
 
@@ -94,20 +146,20 @@ export async function pluginEditView(
 
   let upstream: Response;
   try {
-    upstream = await plugin.fetcher.fetch(`${PLUGIN_ORIGIN}${PLUGIN_PREFIX}/edit`, {
+    upstream = await plugin.fetcher.fetch(`${PLUGIN_ORIGIN}${PLUGIN_PREFIX}${endpoint}`, {
       method: 'POST',
       headers,
       body: JSON.stringify(context),
     });
   } catch (error) {
-    console.error(`Plugin ${plugin.manifest.id} edit view fetch failed:`, error);
+    console.error(`Plugin ${plugin.manifest.id} ${label} fetch failed:`, error);
     return null;
   }
 
   if (!upstream.ok) {
     // 404 = "I don't actually render this view"; anything else is unexpected.
     if (upstream.status !== 404) {
-      console.error(`Plugin ${plugin.manifest.id} edit view returned ${upstream.status}`);
+      console.error(`Plugin ${plugin.manifest.id} ${label} returned ${upstream.status}`);
     }
     return null;
   }
@@ -115,20 +167,19 @@ export async function pluginEditView(
   const contentType = upstream.headers.get('content-type') ?? '';
   const clientView = await readPluginClientViewData(upstream.clone());
   if (!contentType.includes('text/html') && !clientView) {
-    console.error(`Plugin ${plugin.manifest.id} edit view returned non-HTML (${contentType})`);
+    console.error(`Plugin ${plugin.manifest.id} ${label} returned non-HTML (${contentType})`);
     return null;
   }
 
   if (upstream.headers.get('x-cms-client-view') === '1' && !isPluginClientViewResponse(upstream)) {
-    console.error(`Plugin ${plugin.manifest.id} edit view returned an invalid client view`);
+    console.error(`Plugin ${plugin.manifest.id} ${label} returned an invalid client view`);
     return null;
   }
 
   const body = clientView
     ? pluginClientView(clientView.viewPath, clientView.data, `/admin/plugins/${plugin.manifest.id}/views`, pluginViewRevision(plugin.manifest))
     : await sanitizePluginHtmlFragment(await upstream.text());
-  const title = decodeTitle(upstream.headers.get('x-cms-title'))
-    || (context.mode === 'edit' ? `Edit: ${context.page.name}` : `New ${pageType}`);
+  const title = decodeTitle(upstream.headers.get('x-cms-title')) || fallbackTitle;
   const base = await buildBaseProps(c);
   const wrapped = await adminLayout(viewsFor(c.env), base, { title, body });
   // No explicit CSP: the global security middleware applies the strict nonce

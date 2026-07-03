@@ -2,13 +2,14 @@
 // Reference Worker CMS plugin — "events".
 //
 // A self-contained Cloudflare Worker that implements the CMS plugin
-// contract over the reserved /__plugin/* prefix. It exercises all
-// five extension points:
+// contract over the reserved /__plugin/* prefix. It exercises every
+// extension point:
 //   - content types  : registers an `event` blueprint
 //   - fields & blocks : registers an `events-map` field + its snippet
 //   - lifecycle hooks : logs publish/unpublish/delete
 //   - admin + nav     : an "Events" nav item + a proxied admin page
 //   - edit view       : renders the whole edit/new form for `event` pages
+//   - read view       : renders the read-only view for `event` pages
 //   - publish target  : receives full page snapshots on publish —
 //     swap the log lines for an IPFS pin, webhook, search index, …
 //
@@ -37,6 +38,9 @@ const MANIFEST = {
   // `event` pages render their edit/new form here (POST /__plugin/edit) instead
   // of the built-in editor. The form posts back to the CMS's save handler.
   editViews: ['event'],
+  // `event` pages render their read-only view here (POST /__plugin/read)
+  // instead of the built-in static view.
+  readViews: ['event'],
 };
 
 /** Context the CMS POSTs to /__plugin/edit. Mirrors EditViewContext in the CMS. */
@@ -63,6 +67,16 @@ interface EditViewContext {
   errors?: string[];
 }
 
+/** Context the CMS POSTs to /__plugin/read. Mirrors ReadViewContext in the CMS. */
+interface ReadViewContext {
+  editHref: string;
+  backHref: string;
+  language: string;
+  pageType: string;
+  page: EditViewContext['page'];
+  versions: Array<{ id: number; created_at: string; action: string | null }>;
+}
+
 // Liquid snippet for the `events-map` field, served to the CMS Liquid engine.
 // Receives the same `field`/`values`/`names` data as core pagefield snippets.
 const EVENTS_MAP_SNIPPET = `<label for="{{ field.id | escape }}" class="min-w-0 block">
@@ -84,7 +98,8 @@ export default {
     const secretRequired = path.startsWith('/__plugin/hooks/')
       || path.startsWith('/__plugin/publish/')
       || path.startsWith('/__plugin/admin')
-      || path === '/__plugin/edit';
+      || path === '/__plugin/edit'
+      || path === '/__plugin/read';
     if (secretRequired && env.PLUGIN_SECRET && request.headers.get('x-plugin-secret') !== env.PLUGIN_SECRET) {
       return new Response('forbidden', { status: 403 });
     }
@@ -135,6 +150,21 @@ export default {
           'content-type': 'text/html; charset=utf-8',
           'x-cms-chrome': '1',
           'x-cms-title': encodeURIComponent(title),
+        },
+      });
+    }
+
+    // Read view: the CMS hands `event` pages to us for a read-only render. We
+    // return an HTML *fragment* (the CMS wraps it in admin chrome) — no form,
+    // just static fields plus a link back to the CMS editor (ctx.editHref).
+    if (path === '/__plugin/read' && request.method === 'POST') {
+      const ctx = (await request.json().catch(() => null)) as ReadViewContext | null;
+      if (!ctx) return new Response('bad request', { status: 400 });
+      return new Response(eventReadView(ctx), {
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'x-cms-chrome': '1',
+          'x-cms-title': encodeURIComponent(`View: ${ctx.page.name}`),
         },
       });
     }
@@ -208,6 +238,40 @@ function eventEditForm(ctx: EditViewContext): string {
               class="px-4 py-2 rounded-lg bg-gray-800 text-white text-sm font-semibold">Save &amp; Publish</button>
     </div>
   </form>`;
+}
+
+// The plugin-owned read-only view for an `event` page. Returns an HTML fragment
+// the CMS wraps in admin chrome. Pure static display — no inputs — with an Edit
+// link back to the CMS editor (ctx.editHref).
+function eventReadView(ctx: ReadViewContext): string {
+  const lect = (() => {
+    try { return JSON.parse(ctx.page.lect || '{}') as Record<string, unknown>; }
+    catch { return {}; }
+  })();
+  const lang = ctx.language;
+  const row = (label: string, value: string) => `
+    <div class="min-w-0">
+      <dt class="text-xs font-semibold uppercase tracking-wide text-gray-400">${esc(label)}</dt>
+      <dd class="mt-0.5 min-w-0 break-words text-sm text-gray-800">${value ? esc(value) : '<span class="text-gray-400">&mdash;</span>'}</dd>
+    </div>`;
+
+  return `<div class="max-w-2xl mx-auto space-y-5 p-2">
+    <div class="flex items-center justify-between gap-3">
+      <h1 class="min-w-0 break-words text-xl font-bold text-gray-900">${esc(ctx.page.name)}</h1>
+      <div class="flex shrink-0 items-center gap-3">
+        <a href="${esc(ctx.editHref)}" class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Edit</a>
+        <a href="${esc(ctx.backHref)}" class="text-sm text-gray-500 hover:text-gray-700">Back</a>
+      </div>
+    </div>
+
+    <dl class="grid grid-cols-1 gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 sm:p-6">
+      ${row('Slug', `/${ctx.page.slug}`)}
+      ${row('Weight', String(ctx.page.weight))}
+      ${row('Date', lectValue(lect, 'date', lang))}
+      ${row('Venue', lectValue(lect, 'venue', lang))}
+      ${row('Location', lectValue(lect, 'location', lang))}
+    </dl>
+  </div>`;
 }
 
 function parseUser(header: string | null): { name?: string; role?: string } {

@@ -19,7 +19,7 @@ interface RenderedLectFields {
   hasContent: boolean;
 }
 
-interface PageFieldRenderModel {
+export interface PageFieldRenderModel {
   templatePath: string | null;
   inputName: string;
   label: string;
@@ -45,7 +45,7 @@ interface PageFieldRenderModel {
   };
 }
 
-interface ItemGroupRenderModel {
+export interface ItemGroupRenderModel {
   name: string;
   addAction: string;
   rows: Array<{
@@ -71,7 +71,7 @@ const implicitItemAttributes: FieldProps[] = [
   { name: '_weight', type: 'number' },
 ];
 
-interface StructuredEditorRenderModel {
+export interface StructuredEditorRenderModel {
   languageOptions: Array<{ value: string; selected: boolean }>;
   hasSettings: boolean;
   hasContent: boolean;
@@ -99,7 +99,7 @@ interface StructuredEditorRenderModel {
   }>;
 }
 
-function renderStructuredEditor(opts: {
+export function renderStructuredEditor(opts: {
   config: CmsConfig;
   language: string;
   lect: Lect;
@@ -554,6 +554,7 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
     action,
     backHref,
     deleteAction: page ? `/admin/pages/${page.id}/delete` : '',
+    readHref: page ? `/admin/pages/${page.id}/read` : '',
     isEdit,
     isVersionPreview: !!selectedVersion,
     selectedVersion: selectedVersion

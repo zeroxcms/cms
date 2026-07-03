@@ -286,6 +286,16 @@ export interface PluginManifest {
    */
   editViews?: string[];
   /**
+   * Page-type slugs whose read-only view this plugin renders itself. For a page
+   * of one of these types the CMS POSTs the read context to the plugin's
+   * `/__plugin/read` endpoint and wraps the returned HTML fragment in the admin
+   * chrome instead of rendering the built-in read view. A 404 (or any error)
+   * from the plugin falls back to the built-in read view, and `?native=1`
+   * forces it. Independent of `editViews`: a plugin may own the edit view, the
+   * read view, both, or neither. See src/plugins/edit-view.ts (pluginReadView).
+   */
+  readViews?: string[];
+  /**
    * Additional permission types this plugin contributes. They appear in the
    * Roles admin alongside built-in permissions so editors can grant them to
    * custom roles. Values should be namespaced by plugin id (e.g. "events:manage").

@@ -5,8 +5,14 @@
     </a>
     <h2 class="min-w-0 break-words text-2xl font-bold text-gray-900">{{ pageTitle | escape }}</h2>
     {% if isEdit %}
+      <a href="{{ readHref | escape }}"
+         title="Read-only view"
+         class="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#eye"></use></svg>
+        View
+      </a>
       <div id="presence-bar"
-           class="ml-auto flex items-center gap-1.5 shrink-0"
+           class="flex items-center gap-1.5 shrink-0"
            data-page-id="{{ page.id }}"
            data-user-id="{{ currentUserId | escape }}"
            data-user-avatar="{{ userAvatar | escape }}">

@@ -121,6 +121,7 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
       isPublished: page.isPublished,
       weightAction: page.isDraftMissing ? '' : `/admin/pages/${page.id}/weight`,
       editHref: page.isDraftMissing ? '' : `/admin/pages/${page.id}/edit`,
+      readHref: page.isDraftMissing ? '' : `/admin/pages/${page.id}/read`,
       publishAction: page.isDraftMissing ? '' : `/admin/pages/${page.id}/publish`,
       unpublishAction: page.isDraftMissing ? '' : `/admin/pages/${page.id}/unpublish`,
       deleteAction: page.isDraftMissing ? '' : `/admin/pages/${page.id}/delete`,

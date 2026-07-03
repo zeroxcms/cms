@@ -3,11 +3,12 @@
 import { Hono } from 'hono';
 import { dashboardPage } from '../../templates/dashboard';
 import { editorPage } from '../../templates/editor';
+import { readPage } from '../../templates/read';
 import { resolveCmsConfig } from '../../plugins/config';
 import { dispatchHook } from '../../plugins/hooks';
 import { viewsFor } from '../../plugins/views';
-import { pluginEditView } from '../../plugins/edit-view';
-import type { EditViewContext } from '../../plugins/edit-view';
+import { pluginEditView, pluginReadView } from '../../plugins/edit-view';
+import type { EditViewContext, ReadViewContext } from '../../plugins/edit-view';
 import { blueprintToLect, safeParseLect, stringifyLect } from '../../utils/lect';
 import type { Lect } from '../../utils/lect';
 import type { Env, Variables, Page, PageVersion } from '../../types';
@@ -284,6 +285,22 @@ async function maybePluginEditView(
 ): Promise<Response | null> {
   if (preferNativeEditor(c)) return null;
   return pluginEditView(c, context.pageType, {
+    ...context,
+    versions: (context.versions ?? []).map((v) => ({ id: v.id, created_at: v.created_at, action: v.action })),
+  });
+}
+
+/**
+ * Renders through the owning plugin's read view, unless the native escape hatch
+ * (`?native=1`) is active. Returns null when the caller should render the
+ * built-in read view instead.
+ */
+async function maybePluginReadView(
+  c: AppContext,
+  context: Omit<ReadViewContext, 'versions'> & { versions?: PageVersion[] },
+): Promise<Response | null> {
+  if (preferNativeEditor(c)) return null;
+  return pluginReadView(c, context.pageType, {
     ...context,
     versions: (context.versions ?? []).map((v) => ({ id: v.id, created_at: v.created_at, action: v.action })),
   });
@@ -639,6 +656,63 @@ pagesRoutes.post('/pages/batch-weight', requirePermission('content:write'), asyn
   }
 
   return c.json({ success: true });
+});
+
+// ── Read page (read-only view) ────────────────────────────────────────────────
+// Same structured content as the editor, rendered as static text instead of
+// inputs. Always uses the built-in read view (plugin edit views are for editing).
+
+pagesRoutes.get('/pages/:id/read', requirePermission('content:read'), async (c) => {
+  const pageId = parseInt(c.req.param('id'), 10);
+  const language = languageFromRequest(c);
+  const requestedVersionId = parseInt(c.req.query('version') ?? '', 10);
+  const backHref = safeAdminReturnPath(c.req.query('return_to'));
+
+  const page = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(pageId).first<Page>();
+  if (!page) return c.notFound();
+
+  const data = await editorPageData(c, page, page.page_id, requestedVersionId);
+  const pageType = page.page_type ?? 'default';
+  const config = await resolveCmsConfig(c.env);
+  const lect = lectForPage(config, pageType, data.version?.lect ?? page.lect);
+
+  // A plugin that owns this page type's read view renders it (unless ?native=1).
+  const pluginView = await maybePluginReadView(c, {
+    editHref: `/admin/pages/${pageId}/edit`,
+    backHref,
+    language,
+    pageType,
+    page: {
+      id: page.id,
+      name: page.name,
+      slug: page.slug,
+      pageType,
+      weight: page.weight,
+      start: page.start,
+      end: page.end,
+      timezone: page.timezone,
+      editors: page.editors,
+      lect: stringifyLect(lect),
+    },
+    versions: data.versions,
+  });
+  if (pluginView) return pluginView;
+
+  const modifierName = await fetchUserName(c.env.DB, num(lect._modifier, 0));
+
+  return renderPage(c, readPage, {
+    page: { ...page, lect: stringifyLect(lect) },
+    modifierName: modifierName ?? undefined,
+    version: data.version ?? undefined,
+    isVersionPreview: Number.isFinite(requestedVersionId) && !!data.version,
+    liveVersionId: data.liveVersionId,
+    parentPages: data.parentPages,
+    tags: data.taxonomy.tags,
+    taxonomies: data.taxonomy.taxonomies,
+    selectedTagIds: data.selectedTagIds,
+    backHref,
+    structured: structuredEditorProps(config, language, lect, pageType, data.versions),
+  });
 });
 
 // ── Edit page form ────────────────────────────────────────────────────────────

@@ -131,6 +131,12 @@ export async function pluginForEditView(env: Env, pageType: string): Promise<Res
   return plugins.find((plugin) => (plugin.manifest.editViews ?? []).includes(pageType)) ?? null;
 }
 
+/** Finds the plugin that renders the read-only view for a given page type, if any. */
+export async function pluginForReadView(env: Env, pageType: string): Promise<ResolvedPlugin | null> {
+  const plugins = await getPlugins(env);
+  return plugins.find((plugin) => (plugin.manifest.readViews ?? []).includes(pageType)) ?? null;
+}
+
 /** Resolves a plugin by its manifest id (used by the admin proxy). */
 export async function pluginById(env: Env, id: string): Promise<ResolvedPlugin | null> {
   const plugins = await getPlugins(env);

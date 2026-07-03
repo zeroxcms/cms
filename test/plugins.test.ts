@@ -732,6 +732,90 @@ describe('plugin admin proxy', () => {
     }
   });
 
+  it('renders an event page read view from the plugin and falls back when it declines', async () => {
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const url = 'https://plugin-readview.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Events', url).run();
+    const manifest = { ...EVENTS_MANIFEST, readViews: ['event'] };
+    let serveReadView = true;
+    const captured: Array<{ body: unknown; headers: Headers }> = [];
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        const path = new URL(u).pathname;
+        if (path === '/__plugin/manifest') return Response.json(manifest);
+        if (path === '/__plugin/read') {
+          captured.push({ body: init?.body ? JSON.parse(String(init.body)) : null, headers: new Headers(init?.headers) });
+          if (!serveReadView) return new Response('nf', { status: 404 });
+          return new Response('<div onclick="PLUGIN_READ_CLICK()">PLUGIN_READ_MARKER<script>PLUGIN_READ_SCRIPT()</script></div>', {
+            headers: {
+              'content-type': 'text/html; charset=utf-8',
+              'x-cms-chrome': '1',
+              'x-cms-title': encodeURIComponent('View event'),
+            },
+          });
+        }
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    const insert = await env.DB.prepare(
+      'INSERT INTO draft_pages (name, slug, weight, page_type, lect) VALUES (?, ?, ?, ?, ?)',
+    ).bind('Gala', 'gala', 5, 'event', '{}').run();
+    const row = await env.DB.prepare('SELECT id FROM draft_pages WHERE rowid = ?')
+      .bind(insert.meta.last_row_id).first<{ id: number }>();
+    const pageId = row!.id;
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+    const request = (query = '') => new Request(`http://localhost/admin/pages/${pageId}/read${query}`, {
+      headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
+    });
+
+    try {
+      const served = await worker.fetch(request());
+      expect(served.status).toBe(200);
+      const servedBody = await served.text();
+      const servedPayload = renderPayload(servedBody);
+      expect(servedBody).toContain('PLUGIN_READ_MARKER');    // plugin-rendered view
+      expect(servedBody).not.toContain('PLUGIN_READ_SCRIPT'); // inline script stripped
+      expect(servedBody).not.toContain('PLUGIN_READ_CLICK');  // on* handler stripped
+      expect(servedBody).toContain('/assets/admin.css');      // wrapped in CMS chrome
+      expect(servedPayload.layoutData.title).toBe('View event'); // decoded title
+      // The CMS hands the plugin the read context + trusted user, with a link
+      // back to the CMS editor.
+      expect(captured).toHaveLength(1);
+      expect(captured[0].headers.get('x-plugin-secret')).toBe('server-secret');
+      expect(captured[0].body).toMatchObject({
+        editHref: `/admin/pages/${pageId}/edit`,
+        pageType: 'event',
+        page: { id: pageId, name: 'Gala', slug: 'gala' },
+      });
+
+      // ?native=1 forces the built-in read view without consulting the plugin.
+      const native = await worker.fetch(request('?native=1'));
+      expect(native.status).toBe(200);
+      const nativeBody = await native.text();
+      expect(nativeBody).not.toContain('PLUGIN_READ_MARKER');
+      expect(nativeBody).toContain('Read-only'); // built-in read view badge
+      expect(captured).toHaveLength(1); // plugin /__plugin/read was not called again
+
+      // When the plugin declines (404), the CMS renders its built-in read view.
+      clearManifestCache();
+      serveReadView = false;
+      const fallback = await worker.fetch(request());
+      expect(fallback.status).toBe(200);
+      const fallbackBody = await fallback.text();
+      expect(fallbackBody).not.toContain('PLUGIN_READ_MARKER');
+      expect(fallbackBody).toContain('Read-only');
+    } finally {
+      await env.DB.prepare('DELETE FROM draft_pages WHERE id = ?').bind(pageId).run();
+    }
+  });
+
   it('shows the contributing plugin name beside its page types', async () => {
     const url = 'https://plugin-page-types.local';
     await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Event tools', url).run();
