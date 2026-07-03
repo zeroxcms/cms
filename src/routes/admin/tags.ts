@@ -133,13 +133,11 @@ tagsRoutes.get('/tags', async (c) => {
   const filterTaxonomy = str(c.req.query('filter_taxonomy'));
   const [taxonomies, tags] = await Promise.all([
     tagTaxonomyOptions(c),
-    filterTaxonomy
-      ? c.env.DB.prepare('SELECT * FROM tags WHERE taxonomy_slug = ? ORDER BY weight ASC, name ASC').bind(filterTaxonomy).all<Tag>()
-      : c.env.DB.prepare('SELECT * FROM tags ORDER BY weight ASC, name ASC').all<Tag>(),
+    listTags(c.env.DB, filterTaxonomy),
   ]);
   return renderPage(c, tagsPage, {
     taxonomies,
-    tags: tags.results,
+    tags,
     filterTaxonomy,
   });
 });
@@ -240,6 +238,37 @@ async function taxonomyForm(c: AppContext, taxonomy?: TaxonomyFormData, readOnly
   });
 }
 
+interface TagSchema {
+  hasTaxonomySlug: boolean;
+  hasWeight: boolean;
+}
+
+async function tagSchema(db: D1Database): Promise<TagSchema> {
+  const columns = await db.prepare('PRAGMA table_info(tags)').all<{ name: string }>();
+  const names = new Set(columns.results.map((column) => column.name));
+  return {
+    hasTaxonomySlug: names.has('taxonomy_slug'),
+    hasWeight: names.has('weight'),
+  };
+}
+
+async function listTags(db: D1Database, filterTaxonomy = ''): Promise<Tag[]> {
+  const schema = await tagSchema(db);
+  const weightExpr = schema.hasWeight ? 'tags.weight' : '5';
+  const taxonomyExpr = schema.hasTaxonomySlug ? 'tags.taxonomy_slug' : 'taxonomies.slug';
+  const taxonomyJoin = schema.hasTaxonomySlug ? '' : ' LEFT JOIN taxonomies ON taxonomies.id = tags.taxonomy_id';
+  const select = `SELECT tags.id, tags.uuid, tags.created_at, tags.updated_at, tags.name, tags.slug,
+    ${weightExpr} AS weight, ${taxonomyExpr} AS taxonomy_slug, tags.parent_tag, tags.lect
+    FROM tags${taxonomyJoin}`;
+
+  if (filterTaxonomy) {
+    return (await db.prepare(`${select} WHERE ${taxonomyExpr} = ? ORDER BY weight ASC, name ASC`)
+      .bind(filterTaxonomy)
+      .all<Tag>()).results;
+  }
+  return (await db.prepare(`${select} ORDER BY weight ASC, name ASC`).all<Tag>()).results;
+}
+
 function optionalNumericId(value: FormValue): number | null {
   const raw = nullableStr(value);
   if (!raw || !/^\d+$/.test(raw)) return null;
@@ -280,7 +309,7 @@ async function tagForm(c: AppContext, tag?: Tag) {
   const language = languageFromRequest(c);
   const [taxonomies, tags] = await Promise.all([
     tagTaxonomyOptions(c),
-    c.env.DB.prepare('SELECT * FROM tags ORDER BY weight ASC, name ASC').all<Tag>(),
+    listTags(c.env.DB),
   ]);
   const lect = safeParseLect(tag?.lect);
   const rawTranslatedName = getLectLocalizedValue(lect, 'name', language);
@@ -294,6 +323,6 @@ async function tagForm(c: AppContext, tag?: Tag) {
     translatedName,
     translatedPlaceholder,
     taxonomies,
-    parentTags: tags.results,
+    parentTags: tags,
   });
 }

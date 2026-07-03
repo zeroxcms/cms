@@ -1,10 +1,10 @@
 // ============================================================
-// Plugin-rendered page edit view.
+// Plugin-rendered page edit/create view.
 //
-// When a plugin declares a page type in its manifest `editViews`, the CMS
-// hands the whole edit/new view for that type to the plugin instead of
-// rendering the built-in editor. The CMS POSTs the editor context to the
-// plugin's `/__plugin/edit` endpoint, wraps the returned HTML *fragment* in
+// When a plugin declares a page type in its manifest `editViews` or `newViews`,
+// the CMS hands the matching edit/create view for that type to the plugin
+// instead of rendering the built-in editor. The CMS POSTs the editor context to
+// the plugin's `/__plugin/edit` endpoint, wraps the returned HTML *fragment* in
 // the standard admin chrome (same sidebar/fonts/CSS as every CMS page), and
 // serves it under the CMS origin — exactly like the chrome path in
 // routes/admin/plugins.ts.
@@ -22,7 +22,7 @@
 
 import type { AppContext } from '../utils/context';
 import type { ResolvedPlugin } from '../types';
-import { pluginForEditView, pluginForReadView, PLUGIN_ORIGIN, PLUGIN_PREFIX } from './registry';
+import { pluginForEditView, pluginForNewView, pluginForReadView, PLUGIN_ORIGIN, PLUGIN_PREFIX } from './registry';
 import { adminLayout, escHtml } from '../templates/layout';
 import { pluginClientView } from '../templates/liquid';
 import { buildBaseProps } from '../utils/admin-render';
@@ -41,7 +41,7 @@ export interface EditViewContext {
   backHref: string;
   /** Active editing language. */
   language: string;
-  /** The page type being edited (one of the plugin's declared editViews). */
+  /** The page type being edited/created (one of the plugin's declared editViews or newViews). */
   pageType: string;
   page: {
     /** Numeric id when editing; '' when creating. */
@@ -97,6 +97,21 @@ export async function pluginEditView(
   if (!plugin) return null;
   const fallbackTitle = context.mode === 'edit' ? `Edit: ${context.page.name}` : `New ${pageType}`;
   return dispatchPluginView(c, plugin, '/edit', context, fallbackTitle, 'edit view');
+}
+
+/**
+ * Renders the create/new view through the plugin that owns `pageType`. Explicit
+ * manifest `newViews` entries win; legacy `editViews` entries still own the new
+ * form for backwards compatibility.
+ */
+export async function pluginNewView(
+  c: AppContext,
+  pageType: string,
+  context: EditViewContext,
+): Promise<Response | null> {
+  const plugin = await pluginForNewView(c.env, pageType);
+  if (!plugin) return null;
+  return dispatchPluginView(c, plugin, '/edit', context, `New ${pageType}`, 'new view');
 }
 
 /**

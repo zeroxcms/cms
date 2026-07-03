@@ -281,15 +281,24 @@ export interface PluginManifest {
   contentTypes?: PluginContentTypes;
   fieldTypes?: PluginFieldType[];
   /**
-   * Page-type slugs whose edit/new view this plugin renders itself. For a page
-   * of one of these types the CMS POSTs the editor context to the plugin's
+   * Page-type slugs whose edit view this plugin renders itself. For a page of
+   * one of these types the CMS POSTs the editor context to the plugin's
    * `/__plugin/edit` endpoint and wraps the returned HTML fragment in the admin
    * chrome instead of rendering the built-in editor. The plugin's form posts
    * back to the CMS's normal save handler, so save/version/publish logic is
    * unchanged. A 404 (or any error) from the plugin falls back to the built-in
-   * editor. See src/plugins/edit-view.ts.
+   * editor. For backwards compatibility, `editViews` also owns the create/new
+   * view unless `newViews` is declared by a plugin for that page type. See
+   * src/plugins/edit-view.ts.
    */
   editViews?: string[];
+  /**
+   * Page-type slugs whose create/new view this plugin renders itself. The CMS
+   * POSTs the same editor context to `/__plugin/edit`, with `mode: "new"` and
+   * `action` pointing at the CMS create handler. This lets a plugin override
+   * creation without overriding the edit view for existing pages.
+   */
+  newViews?: string[];
   /**
    * Page-type slugs whose read-only view this plugin renders itself. For a page
    * of one of these types the CMS POSTs the read context to the plugin's

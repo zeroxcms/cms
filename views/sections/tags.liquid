@@ -39,7 +39,6 @@
         <tr>
           <th class="w-10 px-3 py-3"></th>
           <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Slug</th>
           <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
           <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
           <th class="px-6 py-3"></th>
@@ -54,8 +53,10 @@
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#menu"></use></svg>
                 </span>
               </td>
-              <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ tag.name | escape }}</td>
-              <td class="px-6 py-3 text-sm font-mono text-gray-500">{{ tag.slug | escape }}</td>
+              <td class="px-6 py-3 text-sm font-medium text-gray-900">
+                <a href="{{ tag.editHref | escape }}" class="block text-sm font-medium text-indigo-600 hover:text-indigo-800">{{ tag.name | escape }}</a>
+                <div class="text-xs font-mono text-gray-500">{{ tag.slug | escape }}</div>
+              </td>
               <td class="px-6 py-3 text-sm text-gray-500">{{ tag.weight }}</td>
               <td class="px-6 py-3 text-sm text-gray-500">{{ tag.taxonomyName | escape }}</td>
               <td class="px-6 py-3 text-right">

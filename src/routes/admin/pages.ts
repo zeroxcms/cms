@@ -7,7 +7,7 @@ import { readPage } from '../../templates/read';
 import { resolveCmsConfig } from '../../plugins/config';
 import { dispatchHook } from '../../plugins/hooks';
 import { viewsFor } from '../../plugins/views';
-import { pluginEditView, pluginReadView } from '../../plugins/edit-view';
+import { pluginEditView, pluginNewView, pluginReadView } from '../../plugins/edit-view';
 import type { EditViewContext, ReadViewContext } from '../../plugins/edit-view';
 import { blueprintToLect, safeParseLect, stringifyLect } from '../../utils/lect';
 import type { Lect } from '../../utils/lect';
@@ -291,6 +291,22 @@ async function maybePluginEditView(
 }
 
 /**
+ * Renders the new/create form through the owning plugin, unless the native
+ * editor escape hatch is active. Returns null when the caller should render the
+ * built-in editor instead.
+ */
+async function maybePluginNewView(
+  c: AppContext,
+  context: Omit<EditViewContext, 'versions'> & { versions?: PageVersion[] },
+): Promise<Response | null> {
+  if (preferNativeEditor(c)) return null;
+  return pluginNewView(c, context.pageType, {
+    ...context,
+    versions: (context.versions ?? []).map((v) => ({ id: v.id, created_at: v.created_at, action: v.action })),
+  });
+}
+
+/**
  * Renders through the owning plugin's read view, unless the native escape hatch
  * (`?native=1`) is active. Returns null when the caller should render the
  * built-in read view instead.
@@ -514,7 +530,7 @@ pagesRoutes.get('/pages/new', async (c) => {
   const lect = blueprintToLect(pageType, config.blueprint, config.defaultLanguage);
   const backHref = safeAdminReturnPath(c.req.query('return_to'));
 
-  const pluginView = await maybePluginEditView(c, {
+  const pluginView = await maybePluginNewView(c, {
     mode: 'new',
     action: '/admin/pages',
     backHref,
@@ -571,7 +587,7 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
       language,
     );
 
-    const pluginView = await maybePluginEditView(c, {
+    const pluginView = await maybePluginNewView(c, {
       mode: 'new',
       action: '/admin/pages',
       backHref,

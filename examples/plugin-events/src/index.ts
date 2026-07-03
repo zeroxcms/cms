@@ -8,7 +8,7 @@
 //   - fields & blocks : registers an `events-map` field + its snippet
 //   - lifecycle hooks : logs publish/unpublish/delete
 //   - admin + nav     : an "Events" nav item + a proxied admin page
-//   - edit view       : renders the whole edit/new form for `event` pages
+//   - edit/new views  : renders the whole edit and create forms for `event` pages
 //   - read view       : renders the read-only view for `event` pages
 //   - publish target  : receives full page snapshots on publish —
 //     swap the log lines for an IPFS pin, webhook, search index, …
@@ -41,9 +41,12 @@ const MANIFEST = {
     },
   },
   fieldTypes: [{ type: 'events-map' }],
-  // `event` pages render their edit/new form here (POST /__plugin/edit) instead
+  // `event` pages render their edit form here (POST /__plugin/edit) instead
   // of the built-in editor. The form posts back to the CMS's save handler.
   editViews: ['event'],
+  // `event` pages render their create/new form through the same endpoint, with
+  // ctx.mode === 'new'. Omit this to use the built-in new-page form.
+  newViews: ['event'],
   // `event` pages render their read-only view here (POST /__plugin/read)
   // instead of the built-in static view.
   readViews: ['event'],

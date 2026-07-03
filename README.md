@@ -262,9 +262,10 @@ A plugin can add six things:
   those delegated scopes in plugin management before they are honored.
 - **Fields & blocks** – register new pagefield types and serve their Liquid
   snippets, which render through the CMS editor.
-- **Edit & read views** – list page-type slugs in the manifest `editViews`
-  (and/or `readViews`) to render the *whole* edit/new form — or the read-only
-  view — for those types yourself, instead of the built-in structured editor.
+- **Edit, create & read views** – list page-type slugs in the manifest
+  `editViews`, `newViews` (and/or `readViews`) to render the *whole* edit form,
+  create form, or read-only view for those types yourself, instead of the
+  built-in structured editor.
   See [Plugin edit views](#plugin-edit-views).
 - **Admin routes + nav** – add an admin page (proxied at
   `/admin/plugins/<id>/...`) and a navigation entry. A nav item may set
@@ -290,9 +291,9 @@ fetches and caches their manifests, forwards the signed-in user plus a shared
 
 ### Plugin edit views
 
-By default every page is edited through the built-in structured editor. A plugin
-can take over the whole edit/new form for the page types it owns by listing their
-slugs in the manifest:
+By default every page is edited and created through the built-in structured
+editor. A plugin can take over the whole edit form, create/new form, or both for
+the page types it owns by listing their slugs in the manifest:
 
 ```js
 const MANIFEST = {
@@ -300,11 +301,15 @@ const MANIFEST = {
   // …
   contentTypes: { blueprint: { event: ['@date', 'venue'] } },
   editViews: ['event'],
+  newViews: ['event'],
 };
 ```
 
 For a page of one of those types the CMS `POST`s the editor context to the
-plugin's `/__plugin/edit` endpoint (JSON body + `x-plugin-secret` + `x-cms-user`):
+plugin's `/__plugin/edit` endpoint (JSON body + `x-plugin-secret` + `x-cms-user`).
+`editViews` owns existing-page edit forms; `newViews` owns create forms. Existing
+plugins that only declare `editViews` continue to own both edit and create forms
+for backwards compatibility.
 
 ```jsonc
 {
@@ -351,6 +356,7 @@ const MANIFEST = {
   id: 'events',
   // …
   editViews: ['event'],
+  newViews: ['event'],
   readViews: ['event'],
 };
 ```

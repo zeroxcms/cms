@@ -743,6 +743,70 @@ describe('plugin admin proxy', () => {
     }
   });
 
+  it('lets plugins override a page create view without overriding edit', async () => {
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const url = 'https://plugin-newview.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Events', url).run();
+    const manifest = { ...EVENTS_MANIFEST, newViews: ['event'] };
+    const captured: Array<{ body: unknown; headers: Headers }> = [];
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        const path = new URL(u).pathname;
+        if (path === '/__plugin/manifest') return Response.json(manifest);
+        if (path === '/__plugin/edit') {
+          captured.push({ body: init?.body ? JSON.parse(String(init.body)) : null, headers: new Headers(init?.headers) });
+          return new Response('<form>PLUGIN_NEW_MARKER</form>', {
+            headers: {
+              'content-type': 'text/html; charset=utf-8',
+              'x-cms-chrome': '1',
+              'x-cms-title': encodeURIComponent('New event'),
+            },
+          });
+        }
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    const insert = await env.DB.prepare(
+      'INSERT INTO draft_pages (name, slug, weight, page_type, lect) VALUES (?, ?, ?, ?, ?)',
+    ).bind('Gala', 'gala', 5, 'event', '{}').run();
+    const row = await env.DB.prepare('SELECT id FROM draft_pages WHERE rowid = ?')
+      .bind(insert.meta.last_row_id).first<{ id: number }>();
+    const pageId = row!.id;
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+    const headers = { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' };
+
+    try {
+      const newResponse = await worker.fetch(new Request('http://localhost/admin/pages/new?page_type=event', { headers }));
+      expect(newResponse.status).toBe(200);
+      const newBody = await newResponse.text();
+      expect(newBody).toContain('PLUGIN_NEW_MARKER');
+      expect(captured).toHaveLength(1);
+      expect(captured[0].headers.get('x-plugin-secret')).toBe('server-secret');
+      expect(captured[0].body).toMatchObject({
+        mode: 'new',
+        action: '/admin/pages',
+        pageType: 'event',
+        page: { id: '', pageType: 'event', weight: 5 },
+      });
+
+      const editResponse = await worker.fetch(new Request(`http://localhost/admin/pages/${pageId}/edit`, { headers }));
+      expect(editResponse.status).toBe(200);
+      const editBody = await editResponse.text();
+      expect(editBody).not.toContain('PLUGIN_NEW_MARKER');
+      expect(bodyData(editBody).page).toMatchObject({ id: pageId, name: 'Gala', slug: 'gala' });
+      expect(captured).toHaveLength(1);
+    } finally {
+      await env.DB.prepare('DELETE FROM draft_pages WHERE id = ?').bind(pageId).run();
+    }
+  });
+
   it('injects editor sync data into plugin client edit views', async () => {
     testEnv.PLUGIN_SECRET = 'server-secret';
     const url = 'https://plugin-client-editview.local';

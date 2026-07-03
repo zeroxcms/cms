@@ -659,6 +659,17 @@ describe('admin routes', () => {
     ]));
   });
 
+  it('filters tags by taxonomy slug', async () => {
+    const response = await fetchWorker('/admin/tags?filter_taxonomy=categories', { headers: { Cookie: await authCookie() } });
+    expect(response.status).toBe(200);
+    const data = bodyData(await response.text());
+
+    expect(data.filterOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'categories', selected: true }),
+    ]));
+    expect((data.tags as Array<{ slug: string }>).map((tag) => tag.slug)).toEqual(['news', 'updates']);
+  });
+
   it('persists tag weights and orders tag lists by weight', async () => {
     const cookie = await authCookie();
     const createResponse = await fetchWorker('/admin/tags', {
