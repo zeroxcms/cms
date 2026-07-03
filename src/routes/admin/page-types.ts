@@ -14,6 +14,7 @@ import { renderPage, userCan } from '../../utils/admin-render';
 import { clearConfigCache, resolveCmsConfig } from '../../plugins/config';
 import { getPlugins } from '../../plugins/registry';
 import { listDbPageTypes } from '../../utils/page-type-store';
+import { configOnlyTypes, validateTypeForm } from '../../utils/type-admin';
 import type { AppContext } from '../../utils/context';
 
 export const pageTypesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -49,25 +50,15 @@ function parseStringArray(value: string | null | undefined): string[] {
   }
 }
 
-/** Validates a form submission; returns an error message or null. `ignoreId`
- *  skips the row being edited during the slug-collision check. */
 async function validate(c: AppContext, values: PageTypeFormValues, slug: string, ignoreId?: number): Promise<string | null> {
-  if (!values.name) return 'Name is required.';
-  if (!slug) return 'Slug is required.';
-  if (slug in cmsConfig.blueprint) return `Slug "${slug}" is already defined in the config file.`;
-
-  const existing = await c.env.DB.prepare('SELECT id FROM page_types WHERE slug = ?')
-    .bind(slug)
-    .first<{ id: number }>();
-  if (existing && existing.id !== ignoreId) return `Slug "${slug}" is already in use.`;
-
-  try {
-    const blueprint = JSON.parse(values.blueprint || '[]');
-    if (!Array.isArray(blueprint)) return 'Blueprint must be a JSON array.';
-  } catch {
-    return 'Blueprint is not valid JSON.';
-  }
-  return null;
+  return validateTypeForm(c, {
+    name: values.name,
+    slug,
+    blueprint: values.blueprint,
+    table: 'page_types',
+    configSlugs: cmsConfig.blueprint,
+    ignoreId,
+  });
 }
 
 function nullableJsonArray(values: string[]): string | null {
@@ -83,22 +74,12 @@ pageTypesRoutes.get('/page_types', async (c) => {
   ]);
   const resolved = await resolveCmsConfig(c.env);
   const dbSlugs = new Set(dbPageTypes.map((pageType) => pageType.slug));
-  // Plugins are merged in registry order, so the last declaration is the
-  // effective source when two plugins define the same page type.
-  const pluginNameBySlug = new Map<string, string>();
-  for (const plugin of plugins) {
-    for (const slug of Object.keys(plugin.manifest.contentTypes?.blueprint ?? {})) {
-      pluginNameBySlug.set(slug, plugin.manifest.name);
-    }
-  }
-  // Read-only types = everything in the resolved config that isn't a DB row:
-  // static config-file blueprints + those contributed by active plugins.
-  const configPageTypes = Object.keys(resolved.blueprint)
-    .filter((slug) => !dbSlugs.has(slug))
-    .map((slug) => {
-      const pluginName = pluginNameBySlug.get(slug) ?? '';
-      return { slug, name: slug, source: pluginName ? 'plugin' : 'config', pluginName };
-    });
+  const configPageTypes = configOnlyTypes(
+    Object.keys(resolved.blueprint),
+    dbSlugs,
+    plugins,
+    (plugin) => plugin.manifest.contentTypes?.blueprint,
+  );
 
   return renderPage(c, pageTypesPage, {
     dbPageTypes,

@@ -13,6 +13,7 @@ import type { Env, Permission, Variables } from '../../types';
 import { pluginById, PLUGIN_ORIGIN, PLUGIN_PREFIX } from '../../plugins/registry';
 import type { AppContext } from '../../utils/context';
 import { effectivePermissions, resolveRolePermissions, splitRoles } from '../../utils/roles';
+import { appendQuery } from '../../utils/forms';
 import { jsonError, wantsJsonResponse } from '../../middleware/auth';
 import { adminLayout } from '../../templates/layout';
 import { pluginClientView } from '../../templates/liquid';
@@ -304,6 +305,5 @@ function queueRedirect(pluginId: string, rest: string): string {
 }
 
 function withFlash(path: string, message: string): string {
-  const separator = path.includes('?') ? '&' : '?';
-  return `${path}${separator}flash=${encodeURIComponent(message)}`;
+  return appendQuery(path, `flash=${encodeURIComponent(message)}`);
 }

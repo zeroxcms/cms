@@ -218,30 +218,22 @@ trashRoutes.post('/trash/:id/delete', requirePermission('trash:purge'), async (c
 trashRoutes.post('/trash/empty', requirePermission('trash:purge'), async (c) => {
   const form = await c.req.formData();
   const pageType = (form.get('type') as string | null)?.trim() || null;
-  const action = (form.get('action') as string | null)?.trim();
+  const withinLastHour = (form.get('action') as string | null)?.trim() === '1h';
 
-  if (action === '1h') {
-    if (pageType) {
-      await c.env.DB.prepare(
-        `DELETE FROM trash_pages WHERE page_type = ? AND created_at >= datetime('now', '-1 hour')`,
-      ).bind(pageType).run();
-    } else {
-      await c.env.DB.prepare(
-        `DELETE FROM trash_pages WHERE created_at >= datetime('now', '-1 hour')`,
-      ).run();
-    }
-    logAudit(c, 'page.purge_all', 'page', undefined);
-    const label = pageType ? `${pageType}+pages` : 'Trash';
-    return c.redirect(`/admin/trash?flash=${label}+from+last+hour+emptied`);
-  }
-
+  const conditions: string[] = [];
+  const params: unknown[] = [];
   if (pageType) {
-    await c.env.DB.prepare('DELETE FROM trash_pages WHERE page_type = ?').bind(pageType).run();
-    logAudit(c, 'page.purge_all', 'page', undefined);
-    return c.redirect(`/admin/trash?flash=${pageType}+pages+emptied`);
+    conditions.push('page_type = ?');
+    params.push(pageType);
   }
+  if (withinLastHour) conditions.push(`created_at >= datetime('now', '-1 hour')`);
 
-  await c.env.DB.prepare('DELETE FROM trash_pages').run();
+  await c.env.DB.prepare(
+    `DELETE FROM trash_pages${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''}`,
+  ).bind(...params).run();
   logAudit(c, 'page.purge_all', 'page', undefined);
-  return c.redirect('/admin/trash?flash=Trash+emptied');
+
+  const label = pageType ? `${pageType}+pages` : 'Trash';
+  const flash = withinLastHour ? `${label}+from+last+hour+emptied` : `${label}+emptied`;
+  return c.redirect(`/admin/trash?flash=${flash}`);
 });

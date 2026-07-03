@@ -14,6 +14,7 @@ import { renderPage, userCan } from '../../utils/admin-render';
 import { clearConfigCache, resolveCmsConfig } from '../../plugins/config';
 import { getPlugins } from '../../plugins/registry';
 import { listDbBlockTypes } from '../../utils/block-type-store';
+import { configOnlyTypes, validateTypeForm } from '../../utils/type-admin';
 import type { AppContext } from '../../utils/context';
 
 export const blockTypesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -34,25 +35,15 @@ function formValues(form: FormData): BlockTypeFormValues {
   };
 }
 
-/** Validates a form submission; returns an error message or null. `ignoreId`
- *  skips the row being edited during the slug-collision check. */
 async function validate(c: AppContext, values: BlockTypeFormValues, slug: string, ignoreId?: number): Promise<string | null> {
-  if (!values.name) return 'Name is required.';
-  if (!slug) return 'Slug is required.';
-  if (slug in cmsConfig.blocks) return `Slug "${slug}" is already defined in the config file.`;
-
-  const existing = await c.env.DB.prepare('SELECT id FROM block_types WHERE slug = ?')
-    .bind(slug)
-    .first<{ id: number }>();
-  if (existing && existing.id !== ignoreId) return `Slug "${slug}" is already in use.`;
-
-  try {
-    const blueprint = JSON.parse(values.blueprint || '[]');
-    if (!Array.isArray(blueprint)) return 'Blueprint must be a JSON array.';
-  } catch {
-    return 'Blueprint is not valid JSON.';
-  }
-  return null;
+  return validateTypeForm(c, {
+    name: values.name,
+    slug,
+    blueprint: values.blueprint,
+    table: 'block_types',
+    configSlugs: cmsConfig.blocks,
+    ignoreId,
+  });
 }
 
 // ── List ────────────────────────────────────────────────────────────────────
@@ -64,22 +55,12 @@ blockTypesRoutes.get('/block_types', async (c) => {
   ]);
   const resolved = await resolveCmsConfig(c.env);
   const dbSlugs = new Set(dbBlockTypes.map((blockType) => blockType.slug));
-  // Plugins are merged in registry order, so the last declaration is the
-  // effective source when two plugins define the same block type.
-  const pluginNameBySlug = new Map<string, string>();
-  for (const plugin of plugins) {
-    for (const slug of Object.keys(plugin.manifest.contentTypes?.blocks ?? {})) {
-      pluginNameBySlug.set(slug, plugin.manifest.name);
-    }
-  }
-  // Read-only types = everything in the resolved config that isn't a DB row:
-  // static config-file blocks + those contributed by active plugins.
-  const configBlockTypes = Object.keys(resolved.blocks)
-    .filter((slug) => !dbSlugs.has(slug))
-    .map((slug) => {
-      const pluginName = pluginNameBySlug.get(slug) ?? '';
-      return { slug, name: slug, source: pluginName ? 'plugin' : 'config', pluginName };
-    });
+  const configBlockTypes = configOnlyTypes(
+    Object.keys(resolved.blocks),
+    dbSlugs,
+    plugins,
+    (plugin) => plugin.manifest.contentTypes?.blocks,
+  );
 
   return renderPage(c, blockTypesPage, {
     dbBlockTypes,

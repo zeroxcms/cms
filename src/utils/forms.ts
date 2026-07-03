@@ -146,3 +146,8 @@ export function safeAdminReturnPath(path: FormValue, fallback = '/admin'): strin
   const value = str(path);
   return value.startsWith('/admin') ? value : fallback;
 }
+
+/** Appends a pre-encoded query fragment to a URL, using `?` or `&` as appropriate. */
+export function appendQuery(url: string, query: string): string {
+  return `${url}${url.includes('?') ? '&' : '?'}${query}`;
+}

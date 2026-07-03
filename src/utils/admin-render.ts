@@ -1,5 +1,6 @@
 // Shared template-prop builders and CSV/list export responses for the admin routes.
 
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { AppContext } from './context';
 import { advancedSearchPage } from '../templates/advanced-search';
 import { dashboardPageHref, num, userIdFromContext } from './forms';
@@ -85,15 +86,18 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
  * `extra` supplies the page-specific fields and may override base props
  * (e.g. a page-specific siteTitle). `views` defaults to env.VIEWS; pass
  * viewsFor(env) for templates that resolve plugin-owned snippets.
+ * `status` overrides the 200 default (e.g. 422 validation re-renders).
  */
 export async function renderPage<P extends BaseTemplateProps>(
   c: AppContext,
   page: (views: Fetcher, props: P) => Promise<string>,
   extra: Omit<P, keyof BaseTemplateProps> & Partial<BaseTemplateProps>,
   views: Fetcher = c.env.VIEWS,
+  status?: ContentfulStatusCode,
 ): Promise<Response> {
   const base = await buildBaseProps(c);
-  return c.html(await page(views, { ...base, ...extra } as unknown as P));
+  const html = await page(views, { ...base, ...extra } as unknown as P);
+  return status ? c.html(html, status) : c.html(html);
 }
 
 export function dashboardPagination(

@@ -7,10 +7,13 @@ import { resolveCmsConfig } from '../../plugins/config';
 import { dispatchHook } from '../../plugins/hooks';
 import { viewsFor } from '../../plugins/views';
 import { pluginEditView } from '../../plugins/edit-view';
+import type { EditViewContext } from '../../plugins/edit-view';
 import { blueprintToLect, safeParseLect, stringifyLect } from '../../utils/lect';
+import type { Lect } from '../../utils/lect';
 import type { Env, Variables, Page, PageVersion } from '../../types';
 import type { BlueprintEntry } from '../../cms-config';
 import {
+  appendQuery,
   dashboardPageHref,
   dashboardPageNumber,
   dashboardPageSize,
@@ -54,7 +57,7 @@ import {
   unpublishPageFromTargets,
 } from '../../publish';
 import type { PublishOutcome } from '../../publish';
-import { buildBaseProps, dashboardPagination, exportPageList, renderPage } from '../../utils/admin-render';
+import { dashboardPagination, exportPageList, renderPage } from '../../utils/admin-render';
 import { requirePermission } from '../../middleware/auth';
 import type { AppContext } from '../../utils/context';
 import {
@@ -225,6 +228,109 @@ function publishFlash(outcome: PublishOutcome): string {
   return encodeURIComponent(`Page published, but these targets failed: ${failed}`);
 }
 
+// ── Shared editor rendering ───────────────────────────────────────────────────
+
+type ResolvedConfig = Awaited<ReturnType<typeof resolveCmsConfig>>;
+
+function defaultTimezone(c: AppContext): string {
+  return c.env.DEFAULT_TIMEZONE ?? '+0800';
+}
+
+/** The `structured` prop block shared by every built-in editor render. */
+function structuredEditorProps(
+  config: ResolvedConfig,
+  language: string,
+  lect: Lect,
+  pageType: string,
+  versions: PageVersion[] = [],
+) {
+  return {
+    config,
+    language,
+    lect,
+    blueprintProps: blueprintPropsFor(config, pageType),
+    blockProps: blockPropsByName(config),
+    blockNames: blockNamesFor(config, pageType),
+    versions,
+  };
+}
+
+/** EditViewContext.page built from a submitted editor form (validation re-renders). */
+function pluginPageFromForm(
+  form: FormData,
+  base: { id: number | string; name: string; slug: string; pageType: string },
+  lect: Lect,
+  fallbackTimezone: string | null,
+): EditViewContext['page'] {
+  return {
+    ...base,
+    weight: num(form.get('weight')),
+    start: nullableStr(form.get('start')),
+    end: nullableStr(form.get('end')),
+    timezone: nullableStr(form.get('timezone')) ?? fallbackTimezone,
+    editors: editorsFromForm(form),
+    lect: stringifyLect(lect),
+  };
+}
+
+/**
+ * Renders through the owning plugin's edit view, unless the native-editor
+ * escape hatch is active. Returns null when the caller should render the
+ * built-in editor instead.
+ */
+async function maybePluginEditView(
+  c: AppContext,
+  context: Omit<EditViewContext, 'versions'> & { versions?: PageVersion[] },
+): Promise<Response | null> {
+  if (preferNativeEditor(c)) return null;
+  return pluginEditView(c, context.pageType, {
+    ...context,
+    versions: (context.versions ?? []).map((v) => ({ id: v.id, created_at: v.created_at, action: v.action })),
+  });
+}
+
+/**
+ * Loads everything the built-in editor needs alongside a draft page row:
+ * parent options, taxonomy, the current (or requested) version, recent
+ * version history, which version is live, and the selected tag ids.
+ */
+async function editorPageData(
+  c: AppContext,
+  page: Page,
+  parentId: string | number | null | undefined,
+  requestedVersionId = NaN,
+) {
+  const [parentPages, taxonomy, version, versions, liveLect, pageTags] = await Promise.all([
+    parentPageOption(c.env.DB, parentId),
+    editorTaxonomy(c.env.DB),
+    Number.isFinite(requestedVersionId)
+      ? c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? AND id = ?')
+          .bind(page.id, requestedVersionId)
+          .first<PageVersion>()
+      : page.current_page_version_id
+      ? c.env.DB.prepare('SELECT * FROM page_versions WHERE id = ?')
+          .bind(page.current_page_version_id)
+          .first<PageVersion>()
+      : Promise.resolve(null),
+    c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
+      .bind(page.id)
+      .all<PageVersion>(),
+    getLiveLect(c.env, page.uuid),
+    c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?')
+      .bind(page.id)
+      .all<{ tag_id: number }>(),
+  ]);
+
+  return {
+    parentPages,
+    taxonomy,
+    version,
+    versions: versions.results,
+    liveVersionId: versions.results.find((candidate) => candidate.lect === liveLect)?.id,
+    selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
+  };
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 pagesRoutes.get('/', async (c) => {
@@ -363,32 +469,30 @@ pagesRoutes.get('/pages/new', async (c) => {
   const language = languageFromRequest(c);
   const config = await resolveCmsConfig(c.env);
   const lect = blueprintToLect(pageType, config.blueprint, config.defaultLanguage);
-  const taxonomy = await editorTaxonomy(c.env.DB);
+  const backHref = safeAdminReturnPath(c.req.query('return_to'));
 
-  if (!preferNativeEditor(c)) {
-    const pluginView = await pluginEditView(c, pageType, {
-      mode: 'new',
-      action: '/admin/pages',
-      backHref: safeAdminReturnPath(c.req.query('return_to')),
-      language,
+  const pluginView = await maybePluginEditView(c, {
+    mode: 'new',
+    action: '/admin/pages',
+    backHref,
+    language,
+    pageType,
+    page: {
+      id: '',
+      name: '',
+      slug: '',
       pageType,
-      page: {
-        id: '',
-        name: '',
-        slug: '',
-        pageType,
-        weight: 5,
-        start: null,
-        end: null,
-        timezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
-        editors: null,
-        lect: stringifyLect(lect),
-      },
-      versions: [],
-    });
-    if (pluginView) return pluginView;
-  }
+      weight: 5,
+      start: null,
+      end: null,
+      timezone: defaultTimezone(c),
+      editors: null,
+      lect: stringifyLect(lect),
+    },
+  });
+  if (pluginView) return pluginView;
 
+  const taxonomy = await editorTaxonomy(c.env.DB);
   return renderPage(c, editorPage, {
     parentPages: [],
     tags: taxonomy.tags,
@@ -396,17 +500,9 @@ pagesRoutes.get('/pages/new', async (c) => {
     selectedTagIds: [],
     action: withNativeFlag(c, '/admin/pages'),
     defaultPageType: pageType,
-    defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
-    backHref: safeAdminReturnPath(c.req.query('return_to')),
-    structured: {
-      config,
-      language,
-      lect,
-      blueprintProps: blueprintPropsFor(config, pageType),
-      blockProps: blockPropsByName(config),
-      blockNames: blockNamesFor(config, pageType),
-      versions: [],
-    },
+    defaultTimezone: defaultTimezone(c),
+    backHref,
+    structured: structuredEditorProps(config, language, lect, pageType),
   }, viewsFor(c.env));
 });
 
@@ -432,65 +528,39 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
       language,
     );
 
-    if (!preferNativeEditor(c)) {
-      const pluginView = await pluginEditView(c, pageType, {
-        mode: 'new',
-        action: '/admin/pages',
-        backHref,
-        language,
-        pageType,
-        page: {
-          id: '',
-          name,
-          slug,
-          pageType,
-          weight: num(form.get('weight')),
-          start: nullableStr(form.get('start')),
-          end: nullableStr(form.get('end')),
-          timezone: nullableStr(form.get('timezone')) ?? c.env.DEFAULT_TIMEZONE ?? '+0800',
-          editors: editorsFromForm(form),
-          lect: stringifyLect(lect),
-        },
-        versions: [],
-        errors,
-      });
-      if (pluginView) return pluginView;
-    }
+    const pluginView = await maybePluginEditView(c, {
+      mode: 'new',
+      action: '/admin/pages',
+      backHref,
+      language,
+      pageType,
+      page: pluginPageFromForm(form, { id: '', name, slug, pageType }, lect, defaultTimezone(c)),
+      errors,
+    });
+    if (pluginView) return pluginView;
 
     const [parentPages, taxonomy] = await Promise.all([
       parentPageOption(c.env.DB, nullableStr(form.get('page_id'))),
       editorTaxonomy(c.env.DB),
     ]);
-    return c.html(
-      await editorPage(viewsFor(c.env), {
-        ...(await buildBaseProps(c)),
-        parentPages,
-        tags: taxonomy.tags,
-        taxonomies: taxonomy.taxonomies,
-        selectedTagIds: [],
-        errors,
-        action: withNativeFlag(c, '/admin/pages'),
-        defaultPageType: pageType,
-        defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
-        backHref,
-        structured: {
-          config,
-          language,
-          lect,
-          blueprintProps: blueprintPropsFor(config, pageType),
-          blockProps: blockPropsByName(config),
-          blockNames: blockNamesFor(config, pageType),
-          versions: [],
-        },
-      }),
-      422,
-    );
+    return renderPage(c, editorPage, {
+      parentPages,
+      tags: taxonomy.tags,
+      taxonomies: taxonomy.taxonomies,
+      selectedTagIds: [],
+      errors,
+      action: withNativeFlag(c, '/admin/pages'),
+      defaultPageType: pageType,
+      defaultTimezone: defaultTimezone(c),
+      backHref,
+      structured: structuredEditorProps(config, language, lect, pageType),
+    }, viewsFor(c.env), 422);
   }
 
   const pageTypeVal = nullableStr(form.get('page_type')) ?? 'default';
   const startVal = nullableStr(form.get('start'));
   const endVal = nullableStr(form.get('end'));
-  const timezoneVal = nullableStr(form.get('timezone')) ?? c.env.DEFAULT_TIMEZONE ?? '+0800';
+  const timezoneVal = nullableStr(form.get('timezone')) ?? defaultTimezone(c);
   const pageIdVal = nullableStr(form.get('page_id'));
   const weightVal = num(form.get('weight'));
   const creator = userIdFromContext(c);
@@ -542,8 +612,7 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
 
   dispatchHook(c, 'create', { id: pageId, page_type: pageTypeVal, name, slug: uniqueSlug });
 
-  const createdFlash = 'flash=Page+created+successfully';
-  return c.redirect(`${backHref}${backHref.includes('?') ? '&' : '?'}${createdFlash}`);
+  return c.redirect(appendQuery(backHref, 'flash=Page+created+successfully'));
 });
 
 pagesRoutes.post('/pages/batch-weight', requirePermission('content:write'), async (c) => {
@@ -581,90 +650,56 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
   const flash = c.req.query('flash') ?? '';
   const backHref = safeAdminReturnPath(c.req.query('return_to'));
 
-  const [page, taxonomy] = await Promise.all([
-    c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(pageId).first<Page>(),
-    editorTaxonomy(c.env.DB),
-  ]);
-
+  const page = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(pageId).first<Page>();
   if (!page) return c.notFound();
 
-  const [version, versions, liveLect, pageTags] = await Promise.all([
-    Number.isFinite(requestedVersionId)
-      ? c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? AND id = ?')
-          .bind(pageId, requestedVersionId)
-          .first<PageVersion>()
-      : page.current_page_version_id
-      ? c.env.DB.prepare('SELECT * FROM page_versions WHERE id = ?')
-          .bind(page.current_page_version_id)
-          .first<PageVersion>()
-      : Promise.resolve(null),
-    c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
-      .bind(pageId)
-      .all<PageVersion>(),
-    getLiveLect(c.env, page.uuid),
-    c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?')
-      .bind(pageId)
-      .all<{ tag_id: number }>(),
-  ]);
+  const data = await editorPageData(c, page, page.page_id, requestedVersionId);
   const pageType = page.page_type ?? 'default';
   const config = await resolveCmsConfig(c.env);
-  const lect = lectForPage(config, pageType, version?.lect ?? page.lect);
-  const displayPage = { ...page, lect: stringifyLect(lect) };
-  const [parentPages, modifierName] = await Promise.all([
-    parentPageOption(c.env.DB, page.page_id),
-    fetchUserName(c.env.DB, num(lect._modifier, 0)),
-  ]);
+  const lect = lectForPage(config, pageType, data.version?.lect ?? page.lect);
 
-  if (!preferNativeEditor(c)) {
-    const pluginView = await pluginEditView(c, pageType, {
-      mode: 'edit',
-      action: `/admin/pages/${pageId}`,
-      backHref,
-      language,
+  const pluginView = await maybePluginEditView(c, {
+    mode: 'edit',
+    action: `/admin/pages/${pageId}`,
+    backHref,
+    language,
+    pageType,
+    page: {
+      id: page.id,
+      name: page.name,
+      slug: page.slug,
       pageType,
-      page: {
-        id: page.id,
-        name: page.name,
-        slug: page.slug,
-        pageType,
-        weight: page.weight,
-        start: page.start,
-        end: page.end,
-        timezone: page.timezone,
-        editors: page.editors,
-        lect: stringifyLect(lect),
-      },
-      versions: versions.results.map((v) => ({ id: v.id, created_at: v.created_at, action: v.action })),
-      flash: flash || undefined,
-    });
-    if (pluginView) return pluginView;
-  }
+      weight: page.weight,
+      start: page.start,
+      end: page.end,
+      timezone: page.timezone,
+      editors: page.editors,
+      lect: stringifyLect(lect),
+    },
+    versions: data.versions,
+    flash: flash || undefined,
+  });
+  if (pluginView) return pluginView;
+
+  const modifierName = await fetchUserName(c.env.DB, num(lect._modifier, 0));
 
   return renderPage(c, editorPage, {
-    page: displayPage,
+    page: { ...page, lect: stringifyLect(lect) },
     modifierName: modifierName ?? undefined,
-    version: version ?? undefined,
-    isVersionPreview: Number.isFinite(requestedVersionId) && !!version,
-    liveVersionId: versions.results.find((candidate) => candidate.lect === liveLect)?.id,
-    parentPages,
-    tags: taxonomy.tags,
-    taxonomies: taxonomy.taxonomies,
-    selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
+    version: data.version ?? undefined,
+    isVersionPreview: Number.isFinite(requestedVersionId) && !!data.version,
+    liveVersionId: data.liveVersionId,
+    parentPages: data.parentPages,
+    tags: data.taxonomy.tags,
+    taxonomies: data.taxonomy.taxonomies,
+    selectedTagIds: data.selectedTagIds,
     flash: flash || undefined,
     action: withNativeFlag(c, `/admin/pages/${pageId}`),
     backHref,
-    defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
+    defaultTimezone: defaultTimezone(c),
     // Current draft lect, so a version preview can diff against it.
     draftLect: stringifyLect(lectForPage(config, pageType, page.lect)),
-    structured: {
-      config,
-      language,
-      lect,
-      blueprintProps: blueprintPropsFor(config, pageType),
-      blockProps: blockPropsByName(config),
-      blockNames: blockNamesFor(config, pageType),
-      versions: versions.results,
-    },
+    structured: structuredEditorProps(config, language, lect, pageType, data.versions),
   }, viewsFor(c.env));
 });
 
@@ -677,11 +712,9 @@ pagesRoutes.post('/pages/:id/weight', requirePermission('content:write'), async 
   const result = await c.env.DB.prepare('UPDATE draft_pages SET weight = ? WHERE id = ?')
     .bind(weight, pageId)
     .run();
-  if (!result.success) {
-    return c.redirect(`${returnPath}${returnPath.includes('?') ? '&' : '?'}flash=Weight+update+failed`);
-  }
 
-  return c.redirect(`${returnPath}${returnPath.includes('?') ? '&' : '?'}flash=Draft+weight+updated`);
+  const flash = result.success ? 'flash=Draft+weight+updated' : 'flash=Weight+update+failed';
+  return c.redirect(appendQuery(returnPath, flash));
 });
 
 // ── Update page ───────────────────────────────────────────────────────────────
@@ -720,74 +753,36 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
   }
 
   if (errors.length) {
-    const [parentPages, taxonomy, version, versions, liveLect, pageTags] = await Promise.all([
-      parentPageOption(c.env.DB, nullableStr(form.get('page_id')) ?? page.page_id),
-      editorTaxonomy(c.env.DB),
-      page.current_page_version_id
-        ? c.env.DB.prepare('SELECT * FROM page_versions WHERE id = ?')
-            .bind(page.current_page_version_id)
-            .first<PageVersion>()
-        : Promise.resolve(null),
-      c.env.DB.prepare('SELECT * FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 20')
-        .bind(pageId)
-        .all<PageVersion>(),
-      getLiveLect(c.env, page.uuid),
-      c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?').bind(pageId).all<{ tag_id: number }>(),
-    ]);
+    const data = await editorPageData(c, page, nullableStr(form.get('page_id')) ?? page.page_id);
     const pageType = nullableStr(form.get('page_type')) ?? page.page_type ?? 'default';
     const lect = lectFromForm(config, pageType, lectForPage(config, pageType, page.lect), form, language);
 
-    if (!preferNativeEditor(c)) {
-      const pluginView = await pluginEditView(c, pageType, {
-        mode: 'edit',
-        action: `/admin/pages/${pageId}`,
-        backHref,
-        language,
-        pageType,
-        page: {
-          id: pageId,
-          name,
-          slug,
-          pageType,
-          weight: num(form.get('weight')),
-          start: nullableStr(form.get('start')),
-          end: nullableStr(form.get('end')),
-          timezone: nullableStr(form.get('timezone')) ?? page.timezone,
-          editors: editorsFromForm(form),
-          lect: stringifyLect(lect),
-        },
-        versions: versions.results.map((v) => ({ id: v.id, created_at: v.created_at, action: v.action })),
-        errors,
-      });
-      if (pluginView) return pluginView;
-    }
+    const pluginView = await maybePluginEditView(c, {
+      mode: 'edit',
+      action: `/admin/pages/${pageId}`,
+      backHref,
+      language,
+      pageType,
+      page: pluginPageFromForm(form, { id: pageId, name, slug, pageType }, lect, page.timezone),
+      versions: data.versions,
+      errors,
+    });
+    if (pluginView) return pluginView;
 
-    return c.html(
-      await editorPage(viewsFor(c.env), {
-        ...(await buildBaseProps(c)),
-        page,
-        version: version ?? undefined,
-        liveVersionId: versions.results.find((candidate) => candidate.lect === liveLect)?.id,
-        parentPages,
-        tags: taxonomy.tags,
-        taxonomies: taxonomy.taxonomies,
-        selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
-        errors,
-        action: withNativeFlag(c, `/admin/pages/${pageId}`),
-        backHref,
-        defaultTimezone: c.env.DEFAULT_TIMEZONE ?? '+0800',
-        structured: {
-          config,
-          language,
-          lect,
-          blueprintProps: blueprintPropsFor(config, pageType),
-          blockProps: blockPropsByName(config),
-          blockNames: blockNamesFor(config, pageType),
-          versions: versions.results,
-        },
-      }),
-      422,
-    );
+    return renderPage(c, editorPage, {
+      page,
+      version: data.version ?? undefined,
+      liveVersionId: data.liveVersionId,
+      parentPages: data.parentPages,
+      tags: data.taxonomy.tags,
+      taxonomies: data.taxonomy.taxonomies,
+      selectedTagIds: data.selectedTagIds,
+      errors,
+      action: withNativeFlag(c, `/admin/pages/${pageId}`),
+      backHref,
+      defaultTimezone: defaultTimezone(c),
+      structured: structuredEditorProps(config, language, lect, pageType, data.versions),
+    }, viewsFor(c.env), 422);
   }
 
   const pageTypeVal = nullableStr(form.get('page_type')) ?? page.page_type ?? 'default';

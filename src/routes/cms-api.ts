@@ -418,6 +418,43 @@ function cmsId(used: Set<number>): number {
   return id;
 }
 
+interface BulkPageRow {
+  id: number;
+  uuid: string;
+  createdAt: string;
+  name: string;
+  slug: string;
+  weight: number;
+  start: string | null;
+  end: string | null;
+  timezone: string | null;
+  pageType: string;
+  versionId: number;
+  lect: string;
+  parentId: number | null;
+}
+
+/**
+ * The draft_pages + page_versions INSERT pair for one bulk-created page.
+ * Ids, uuids, and timestamps are assigned by the caller so a whole batch
+ * commits in a single DB.batch without per-row SELECT-backs.
+ */
+function bulkPageInsertStatements(db: D1Database, row: BulkPageRow): D1PreparedStatement[] {
+  return [
+    db.prepare(
+      `INSERT INTO draft_pages (id, uuid, created_at, updated_at, name, slug, weight, start, end, timezone, page_type, current_page_version_id, lect, page_id, creator)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      row.id, row.uuid, row.createdAt, row.createdAt, row.name, row.slug, row.weight, row.start,
+      row.end, row.timezone, row.pageType, row.versionId, row.lect, row.parentId, null,
+    ),
+    db.prepare(
+      `INSERT INTO page_versions (id, uuid, created_at, updated_at, page_id, lect, action)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(row.versionId, crypto.randomUUID(), row.createdAt, row.createdAt, row.id, row.lect, 'create'),
+  ];
+}
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // List pages of a content type the plugin owns.
@@ -556,33 +593,13 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
       usedIds.add(id);
       const uuid = crypto.randomUUID();
       const versionId = cmsId(usedIds);
-      const versionUuid = crypto.randomUUID();
       const slug = allocateSlug(item.baseSlug, usedSlugs);
 
-      statements.push(c.env.DB.prepare(
-        `INSERT INTO draft_pages (id, uuid, created_at, updated_at, name, slug, weight, start, end, timezone, page_type, current_page_version_id, lect, page_id, creator)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(
-        id,
-        uuid,
-        createdAt,
-        createdAt,
-        item.name,
-        slug,
-        item.weight,
-        item.start,
-        item.end,
-        item.timezone,
-        item.pageType,
-        versionId,
-        item.lect,
-        item.parentId,
-        null,
-      ));
-      statements.push(c.env.DB.prepare(
-        `INSERT INTO page_versions (id, uuid, created_at, updated_at, page_id, lect, action)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(versionId, versionUuid, createdAt, createdAt, id, item.lect, 'create'));
+      statements.push(...bulkPageInsertStatements(c.env.DB, {
+        id, uuid, createdAt, name: item.name, slug, weight: item.weight, start: item.start,
+        end: item.end, timezone: item.timezone, pageType: item.pageType, versionId,
+        lect: item.lect, parentId: item.parentId,
+      }));
       for (const tagId of item.tags) {
         statements.push(c.env.DB.prepare('INSERT OR IGNORE INTO draft_page_tags (page_id, tag_id) VALUES (?, ?)')
           .bind(id, tagId));
@@ -689,18 +706,13 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
 
       const id = cmsId(usedIds);
       const uuid = crypto.randomUUID();
-      const versionId = cmsId(usedIds);
-      const versionUuid = crypto.randomUUID();
       const slug = allocateSlug(slugify(row.name) || pageType, usedSlugs);
 
-      statements.push(c.env.DB.prepare(
-        `INSERT INTO draft_pages (id, uuid, created_at, updated_at, name, slug, weight, start, end, timezone, page_type, current_page_version_id, lect, page_id, creator)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(id, uuid, createdAt, createdAt, row.name, slug, row.weight ?? 5, row.start, row.end, row.timezone, pageType, versionId, lect, targetParentId, null));
-      statements.push(c.env.DB.prepare(
-        `INSERT INTO page_versions (id, uuid, created_at, updated_at, page_id, lect, action)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(versionId, versionUuid, createdAt, createdAt, id, lect, 'create'));
+      statements.push(...bulkPageInsertStatements(c.env.DB, {
+        id, uuid, createdAt, name: row.name, slug, weight: row.weight ?? 5, start: row.start,
+        end: row.end, timezone: row.timezone, pageType, versionId: cmsId(usedIds),
+        lect, parentId: targetParentId,
+      }));
 
       hookPages.push({ id, uuid, page_type: pageType, name: row.name, slug });
     }

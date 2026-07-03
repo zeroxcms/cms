@@ -127,27 +127,25 @@ function getEnabledProviders(env: Env): string[] {
     .filter((p) => p in PROVIDERS);
 }
 
+const PROVIDER_CREDENTIAL_VARS = {
+  github: ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'],
+  google: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
+  microsoft: ['MICROSOFT_CLIENT_ID', 'MICROSOFT_CLIENT_SECRET'],
+  apple: ['APPLE_CLIENT_ID', 'APPLE_CLIENT_SECRET'],
+  eventuai: ['EVENTUAI_CLIENT_ID', 'EVENTUAI_CLIENT_SECRET'],
+} as const satisfies Record<string, readonly [keyof Env, keyof Env]>;
+
 /** Returns the client ID and secret for the given provider. */
 function getProviderCredentials(
   env: Env,
   provider: string,
 ): { clientId: string; clientSecret: string } | null {
-  if (provider === 'github' && env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) {
-    return { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET };
-  }
-  if (provider === 'google' && env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
-    return { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET };
-  }
-  if (provider === 'microsoft' && env.MICROSOFT_CLIENT_ID && env.MICROSOFT_CLIENT_SECRET) {
-    return { clientId: env.MICROSOFT_CLIENT_ID, clientSecret: env.MICROSOFT_CLIENT_SECRET };
-  }
-  if (provider === 'apple' && env.APPLE_CLIENT_ID && env.APPLE_CLIENT_SECRET) {
-    return { clientId: env.APPLE_CLIENT_ID, clientSecret: env.APPLE_CLIENT_SECRET };
-  }
-  if (provider === 'eventuai' && env.EVENTUAI_CLIENT_ID && env.EVENTUAI_CLIENT_SECRET) {
-    return { clientId: env.EVENTUAI_CLIENT_ID, clientSecret: env.EVENTUAI_CLIENT_SECRET };
-  }
-  return null;
+  const vars = PROVIDER_CREDENTIAL_VARS[provider as keyof typeof PROVIDER_CREDENTIAL_VARS];
+  if (!vars) return null;
+  const [clientId, clientSecret] = [env[vars[0]], env[vars[1]]];
+  if (typeof clientId !== 'string' || !clientId) return null;
+  if (typeof clientSecret !== 'string' || !clientSecret) return null;
+  return { clientId, clientSecret };
 }
 
 function getProviderConfig(env: Env, provider: string): OAuthProvider | null {
