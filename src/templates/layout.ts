@@ -44,7 +44,7 @@ export interface BaseTemplateProps extends NavFlags {
 export async function adminLayout(
   views: Fetcher,
   base: BaseTemplateProps,
-  opts: { title: string; body: RenderedView; approvedPluginAssets?: ApprovedPluginAssets },
+  opts: { title: string; body: RenderedView; approvedPluginAssets?: ApprovedPluginAssets; editorSync?: boolean },
 ): Promise<string> {
   return layout(views, {
     ...navFlags(base),
@@ -59,6 +59,7 @@ export async function adminLayout(
     pluginSettingsNav: base.pluginSettingsNav,
     viewRevision: base.viewRevision,
     approvedPluginAssets: opts.approvedPluginAssets,
+    editorSync: opts.editorSync ?? false,
   });
 }
 
@@ -89,6 +90,8 @@ export interface LayoutOptions extends NavFlags {
   viewRevision?: string;
   /** Admin-approved plugin assets available to the current page's plugin (if any). */
   approvedPluginAssets?: ApprovedPluginAssets;
+  /** Load the CMS-owned live editor presence/sync script for plugin edit views. */
+  editorSync?: boolean;
 }
 
 export async function layout(views: Fetcher, opts: LayoutOptions): Promise<string> {

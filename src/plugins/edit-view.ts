@@ -23,7 +23,7 @@
 import type { AppContext } from '../utils/context';
 import type { ResolvedPlugin } from '../types';
 import { pluginForEditView, pluginForReadView, PLUGIN_ORIGIN, PLUGIN_PREFIX } from './registry';
-import { adminLayout } from '../templates/layout';
+import { adminLayout, escHtml } from '../templates/layout';
 import { pluginClientView } from '../templates/liquid';
 import { buildBaseProps } from '../utils/admin-render';
 import { viewsFor } from './views';
@@ -126,7 +126,7 @@ async function dispatchPluginView(
   c: AppContext,
   plugin: ResolvedPlugin,
   endpoint: '/edit' | '/read',
-  context: unknown,
+  context: EditViewContext | ReadViewContext,
   fallbackTitle: string,
   label: string,
 ): Promise<Response | null> {
@@ -176,15 +176,60 @@ async function dispatchPluginView(
     return null;
   }
 
-  const body = clientView
-    ? pluginClientView(clientView.viewPath, clientView.data, `/admin/plugins/${plugin.manifest.id}/views`, pluginViewRevision(plugin.manifest))
-    : await sanitizePluginHtmlFragment(await upstream.text());
   const title = decodeTitle(upstream.headers.get('x-cms-title')) || fallbackTitle;
   const base = await buildBaseProps(c);
-  const wrapped = await adminLayout(viewsFor(c.env), base, { title, body });
+  const editPresence = pluginEditPresence(endpoint, context, base);
+  const body = clientView
+    ? pluginClientView(
+        clientView.viewPath,
+        editPresence ? { ...clientView.data, cmsEditPresence: editPresence } : clientView.data,
+        `/admin/plugins/${plugin.manifest.id}/views`,
+        pluginViewRevision(plugin.manifest),
+      )
+    : withPluginEditPresenceBar(await sanitizePluginHtmlFragment(await upstream.text()), editPresence);
+  const wrapped = await adminLayout(viewsFor(c.env), base, { title, body, editorSync: !!editPresence });
   // No explicit CSP: the global security middleware applies the strict nonce
   // policy (matching the nonce adminLayout embeds), like any CMS page.
   return c.html(wrapped);
+}
+
+interface PluginEditPresence {
+  pageId: string;
+  currentUserId: string;
+  userAvatar: string;
+}
+
+function pluginEditPresence(
+  endpoint: '/edit' | '/read',
+  context: EditViewContext | ReadViewContext,
+  base: Awaited<ReturnType<typeof buildBaseProps>>,
+): PluginEditPresence | null {
+  if (endpoint !== '/edit') return null;
+  const editContext = context as EditViewContext;
+  if (editContext.mode !== 'edit') return null;
+  const pageId = String(editContext.page.id ?? '').trim();
+  if (!pageId) return null;
+  return {
+    pageId,
+    currentUserId: base.currentUserId,
+    userAvatar: base.userAvatar,
+  };
+}
+
+function withPluginEditPresenceBar(body: string, presence: PluginEditPresence | null): string {
+  if (!presence || body.includes('id="presence-bar"')) return body;
+  return `<div class="mb-4 flex justify-end" data-plugin-editor-presence>
+    <div id="presence-bar"
+         class="flex items-center gap-1.5 shrink-0"
+         data-page-id="${escHtml(presence.pageId)}"
+         data-user-id="${escHtml(presence.currentUserId)}"
+         data-user-avatar="${escHtml(presence.userAvatar)}">
+      <div id="presence-avatars" class="flex items-center gap-1"></div>
+      <div id="sync-indicator"
+           title=""
+           style="width:8px;height:8px;border-radius:50%;background:#9ca3af;flex-shrink:0;transition:background .4s,opacity .4s;display:none"></div>
+    </div>
+  </div>${body}`;
 }
 
 /** Decodes the percent-encoded x-cms-title header (plugins encode it for header safety). */

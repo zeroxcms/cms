@@ -259,6 +259,7 @@
   <script src="/assets/table-filter.js{{ assetRevisionQuery | escape }}" nonce="{{ nonce }}" defer></script>
   <script src="/assets/privacy-table.js{{ assetRevisionQuery | escape }}" nonce="{{ nonce }}" defer></script>
   <script src="/assets/color-tag.js{{ assetRevisionQuery | escape }}" nonce="{{ nonce }}" defer></script>
+  {% if editorSync %}<script src="/assets/editor-sync.js{{ assetRevisionQuery | escape }}" nonce="{{ nonce }}" defer></script>{% endif %}
 </head>
 <body class="h-full overflow-x-hidden">
   {% if admin %}
