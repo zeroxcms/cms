@@ -67,7 +67,7 @@ export async function parentPageOption(db: D1Database, pageId: string | number |
 
 export async function editorTaxonomy(db: D1Database): Promise<{ tags: Tag[]; taxonomies: Taxonomy[] }> {
   const [tags, taxonomies] = await Promise.all([
-    db.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
+    db.prepare('SELECT * FROM tags ORDER BY weight ASC, name ASC').all<Tag>(),
     db.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
   ]);
   return {

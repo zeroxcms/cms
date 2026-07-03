@@ -945,6 +945,13 @@ describe('plugin admin proxy', () => {
     expect(formData.taxonomyOptions).toEqual(expect.arrayContaining([
       expect.objectContaining({ value: 'audience', label: 'Audience' }),
     ]));
+
+    const tagResponse = await worker.fetch(new Request('http://localhost/admin/tags/new', { headers }));
+    expect(tagResponse.status).toBe(200);
+    const tagData = bodyData(await tagResponse.text());
+    expect(tagData.taxonomyOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'config:audience', name: 'Audience (plugin: Events)', disabled: true }),
+    ]));
   });
 
   it('lists plugin-contributed block types with the contributing plugin name', async () => {

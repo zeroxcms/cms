@@ -26,12 +26,16 @@
       <span class="block text-sm font-medium text-gray-700 mb-1">Slug</span>
       <input id="tag_slug" name="slug" value="{{ slug | escape }}" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
     </label>
+    <label for="tag_weight" class="block min-w-0">
+      <span class="block text-sm font-medium text-gray-700 mb-1">Weight</span>
+      <input id="tag_weight" name="weight" type="number" value="{{ weight | escape }}" class="block min-w-0 w-32 max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+    </label>
     <label for="taxonomy_id" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Taxonomy</span>
       <select id="taxonomy_id" name="taxonomy_id" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
         <option value="">None</option>
         {% for option in taxonomyOptions %}
-          <option value="{{ option.id }}" {% if option.selected %}selected{% endif %}>{{ option.name | escape }}</option>
+          <option value="{{ option.id | escape }}" {% if option.selected %}selected{% endif %}{% if option.disabled %} disabled{% endif %}>{{ option.name | escape }}</option>
         {% endfor %}
       </select>
     </label>

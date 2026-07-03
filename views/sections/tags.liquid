@@ -39,6 +39,7 @@
         <tr>
           <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
           <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Slug</th>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
           <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
           <th class="px-6 py-3"></th>
         </tr>
@@ -49,6 +50,7 @@
             <tr class="hover:bg-gray-50">
               <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ tag.name | escape }}</td>
               <td class="px-6 py-3 text-sm font-mono text-gray-500">{{ tag.slug | escape }}</td>
+              <td class="px-6 py-3 text-sm text-gray-500">{{ tag.weight }}</td>
               <td class="px-6 py-3 text-sm text-gray-500">{{ tag.taxonomyName | escape }}</td>
               <td class="px-6 py-3 text-right">
                 <a href="{{ tag.editHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
@@ -56,7 +58,7 @@
             </tr>
           {% endfor %}
         {% else %}
-          <tr><td colspan="4" class="px-6 py-10 text-center text-gray-400">No tags yet.</td></tr>
+          <tr><td colspan="5" class="px-6 py-10 text-center text-gray-400">No tags yet.</td></tr>
         {% endif %}
       </tbody>
     </table>

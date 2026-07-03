@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { taxonomyFormPage, taxonomiesPage } from '../../templates/taxonomies';
 import type { TaxonomyFormData } from '../../templates/taxonomies';
 import { tagFormPage, tagsPage } from '../../templates/tags';
+import type { TagTaxonomyOption } from '../../templates/tags';
 import { cmsConfig } from '../../cms-config';
 import {
   getLectLocalizedValue,
@@ -20,6 +21,7 @@ import {
   slugify,
   str,
 } from '../../utils/forms';
+import type { FormValue } from '../../utils/forms';
 import { ensureDefaultLectName } from '../../utils/page-logic';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
@@ -119,8 +121,8 @@ tagsRoutes.get('/tags', async (c) => {
   const [taxonomies, tags] = await Promise.all([
     c.env.DB.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
     filterTaxonomy
-      ? c.env.DB.prepare('SELECT * FROM tags WHERE taxonomy_id = ? ORDER BY name ASC').bind(filterTaxonomy).all<Tag>()
-      : c.env.DB.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
+      ? c.env.DB.prepare('SELECT * FROM tags WHERE taxonomy_id = ? ORDER BY weight ASC, name ASC').bind(filterTaxonomy).all<Tag>()
+      : c.env.DB.prepare('SELECT * FROM tags ORDER BY weight ASC, name ASC').all<Tag>(),
   ]);
   return renderPage(c, tagsPage, {
     taxonomies: taxonomies.results,
@@ -136,14 +138,17 @@ tagsRoutes.post('/tags', requirePermission('tag:write'), async (c) => {
   const language = languageFromRequest(c, form);
   const name = str(form.get('name'));
   const slug = str(form.get('slug')) || slugify(name);
+  const weight = num(form.get('weight'), 5);
   const lect = postToLect(form, language);
   ensureDefaultLectName(lect, name);
+  const taxonomyId = optionalNumericId(form.get('taxonomy_id'));
+  const parentTagId = optionalNumericId(form.get('parent_tag'));
   const result = await c.env.DB.prepare(
-    'INSERT INTO tags (name, slug, taxonomy_id, parent_tag, lect) VALUES (?, ?, ?, ?, ?)',
+    'INSERT INTO tags (name, slug, weight, taxonomy_id, parent_tag, lect) VALUES (?, ?, ?, ?, ?, ?)',
   )
-    .bind(name, slug, nullableStr(form.get('taxonomy_id')) ? num(form.get('taxonomy_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyLect(lect))
+    .bind(name, slug, weight, taxonomyId, parentTagId, stringifyLect(lect))
     .run();
-  logAudit(c, 'tag.create', 'tag', result.meta.last_row_id, { name, slug });
+  logAudit(c, 'tag.create', 'tag', result.meta.last_row_id, { name, slug, weight });
   return c.redirect('/admin/tags');
 });
 
@@ -160,16 +165,19 @@ tagsRoutes.post('/tags/:id', requirePermission('tag:write'), async (c) => {
   const language = languageFromRequest(c, form);
   const name = str(form.get('name'));
   const slug = str(form.get('slug')) || slugify(name);
+  const weight = num(form.get('weight'), 5);
   const existing = await c.env.DB.prepare('SELECT * FROM tags WHERE id = ?').bind(id).first<Tag>();
   if (!existing) return c.notFound();
   const lect = mergeLects(safeParseLect(existing.lect), postToLect(form, language));
   ensureDefaultLectName(lect, name);
+  const taxonomyId = optionalNumericId(form.get('taxonomy_id'));
+  const parentTagId = optionalNumericId(form.get('parent_tag'));
   await c.env.DB.prepare(
-    'UPDATE tags SET name = ?, slug = ?, taxonomy_id = ?, parent_tag = ?, lect = ? WHERE id = ?',
+    'UPDATE tags SET name = ?, slug = ?, weight = ?, taxonomy_id = ?, parent_tag = ?, lect = ? WHERE id = ?',
   )
-    .bind(name, slug, nullableStr(form.get('taxonomy_id')) ? num(form.get('taxonomy_id')) : null, nullableStr(form.get('parent_tag')) ? num(form.get('parent_tag')) : null, stringifyLect(lect), id)
+    .bind(name, slug, weight, taxonomyId, parentTagId, stringifyLect(lect), id)
     .run();
-  logAudit(c, 'tag.update', 'tag', id, { name, slug });
+  logAudit(c, 'tag.update', 'tag', id, { name, slug, weight });
   return c.redirect('/admin/tags');
 });
 
@@ -193,11 +201,48 @@ async function taxonomyForm(c: AppContext, taxonomy?: TaxonomyFormData, readOnly
   });
 }
 
+function optionalNumericId(value: FormValue): number | null {
+  const raw = nullableStr(value);
+  if (!raw || !/^\d+$/.test(raw)) return null;
+  const id = num(raw, 0);
+  return id > 0 ? id : null;
+}
+
+async function tagTaxonomyOptions(c: AppContext): Promise<TagTaxonomyOption[]> {
+  const [dbTaxonomies, plugins, config] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
+    getPlugins(c.env),
+    resolveCmsConfig(c.env),
+  ]);
+  const dbSlugs = new Set(dbTaxonomies.results.map((taxonomy) => taxonomy.slug));
+  const configTaxonomies = configOnlyTypes(
+    Object.keys(config.taxonomies),
+    dbSlugs,
+    plugins,
+    (plugin) => plugin.manifest.contentTypes?.taxonomies,
+  ).map((taxonomy) => ({
+    id: `config:${taxonomy.slug}`,
+    name: config.taxonomies[taxonomy.slug] ?? taxonomy.name,
+    disabled: true,
+    sourceLabel: taxonomy.source === 'plugin'
+      ? `plugin${taxonomy.pluginName ? `: ${taxonomy.pluginName}` : ''}`
+      : 'config',
+  }));
+
+  return [
+    ...dbTaxonomies.results.map((taxonomy) => ({
+      id: String(taxonomy.id),
+      name: taxonomy.name,
+    })),
+    ...configTaxonomies,
+  ].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+}
+
 async function tagForm(c: AppContext, tag?: Tag) {
   const language = languageFromRequest(c);
   const [taxonomies, tags] = await Promise.all([
-    c.env.DB.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
-    c.env.DB.prepare('SELECT * FROM tags ORDER BY name ASC').all<Tag>(),
+    tagTaxonomyOptions(c),
+    c.env.DB.prepare('SELECT * FROM tags ORDER BY weight ASC, name ASC').all<Tag>(),
   ]);
   const lect = safeParseLect(tag?.lect);
   const rawTranslatedName = getLectLocalizedValue(lect, 'name', language);
@@ -210,7 +255,7 @@ async function tagForm(c: AppContext, tag?: Tag) {
     languages: cmsConfig.languages,
     translatedName,
     translatedPlaceholder,
-    taxonomies: taxonomies.results,
+    taxonomies,
     parentTags: tags.results,
   });
 }

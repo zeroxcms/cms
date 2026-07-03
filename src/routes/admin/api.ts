@@ -95,7 +95,7 @@ apiRoutes.get('/api/tags/:type', requirePermission('content:read'), async (c) =>
     .bind(type, type)
     .first<Taxonomy>();
   if (!taxonomy) return c.json([]);
-  const tags = await c.env.DB.prepare('SELECT * FROM tags WHERE taxonomy_id = ? ORDER BY name ASC')
+  const tags = await c.env.DB.prepare('SELECT * FROM tags WHERE taxonomy_id = ? ORDER BY weight ASC, name ASC')
     .bind(taxonomy.id)
     .all<Tag>();
   return c.json(tags.results.map((tag) => ({

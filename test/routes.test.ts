@@ -646,6 +646,59 @@ describe('admin routes', () => {
     await expectRoute(route);
   });
 
+  it('renders config-only taxonomies in the tag form as read-only options', async () => {
+    const response = await fetchWorker('/admin/tags/301/edit', { headers: { Cookie: await authCookie() } });
+    expect(response.status).toBe(200);
+    const data = bodyData(await response.text());
+
+    expect(data.taxonomyOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: '300', name: 'Categories', selected: true, disabled: false }),
+      expect.objectContaining({ id: 'config:years', name: 'Years (config)', disabled: true }),
+      expect.objectContaining({ id: 'config:topics', name: 'Topics (config)', disabled: true }),
+      expect.objectContaining({ id: 'config:collections', name: 'Collections (config)', disabled: true }),
+    ]));
+  });
+
+  it('persists tag weights and orders tag lists by weight', async () => {
+    const cookie = await authCookie();
+    const createResponse = await fetchWorker('/admin/tags', {
+      method: 'POST',
+      body: form({ name: 'Featured', slug: 'featured', taxonomy_id: '300', weight: '1' }),
+      headers: { Cookie: cookie },
+    });
+    expect(createResponse.status).toBe(302);
+
+    const updateResponse = await fetchWorker('/admin/tags/301', {
+      method: 'POST',
+      body: form({ name: 'News', slug: 'news', taxonomy_id: '300', weight: '20' }),
+      headers: { Cookie: cookie },
+    });
+    expect(updateResponse.status).toBe(302);
+
+    const row = await env.DB.prepare('SELECT weight FROM tags WHERE slug = ?')
+      .bind('featured')
+      .first<{ weight: number }>();
+    expect(row?.weight).toBe(1);
+
+    const editData = bodyData(await (await fetchWorker('/admin/tags/301/edit', { headers: { Cookie: cookie } })).text());
+    expect(editData.weight).toBe(20);
+
+    const listData = bodyData(await (await fetchWorker('/admin/tags', { headers: { Cookie: cookie } })).text());
+    expect((listData.tags as Array<{ slug: string; weight: number }>).map((tag) => [tag.slug, tag.weight])).toEqual([
+      ['featured', 1],
+      ['updates', 5],
+      ['news', 20],
+    ]);
+
+    const apiResponse = await fetchWorker('/admin/api/tags/categories', { headers: { Cookie: cookie } });
+    expect(apiResponse.status).toBe(200);
+    expect((await apiResponse.json() as Array<{ label: string }>).map((tag) => tag.label)).toEqual([
+      'Featured',
+      'Updates',
+      'News',
+    ]);
+  });
+
   it('renders the signed-in user profile with connected and available OAuth providers', async () => {
     await env.DB.prepare(
       `INSERT INTO user_oauth_identities (user_id, provider, provider_user_id, oauth_id)

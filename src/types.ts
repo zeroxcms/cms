@@ -139,6 +139,7 @@ export interface Tag {
   updated_at: string;
   name: string;
   slug: string;
+  weight: number;
   taxonomy_id: number | null;
   parent_tag: number | null;
   lect: string | null;

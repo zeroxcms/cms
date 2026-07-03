@@ -2,6 +2,13 @@ import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 import type { Tag, Taxonomy } from '../types';
 
+export interface TagTaxonomyOption {
+  id: string;
+  name: string;
+  disabled?: boolean;
+  sourceLabel?: string;
+}
+
 export async function tagsPage(views: Fetcher, opts: BaseTemplateProps & {
   taxonomies: Taxonomy[];
   tags: Tag[];
@@ -20,6 +27,7 @@ export async function tagsPage(views: Fetcher, opts: BaseTemplateProps & {
       id: tag.id,
       name: tag.name,
       slug: tag.slug,
+      weight: tag.weight ?? 5,
       taxonomyName: tag.taxonomy_id ? taxonomyMap.get(tag.taxonomy_id) ?? '' : '',
       editHref: `/admin/tags/${tag.id}/edit`,
     })),
@@ -34,7 +42,7 @@ export async function tagFormPage(views: Fetcher, opts: BaseTemplateProps & {
   languages: string[];
   translatedName: string;
   translatedPlaceholder: string;
-  taxonomies: Taxonomy[];
+  taxonomies: TagTaxonomyOption[];
   parentTags: Tag[];
 }): Promise<string> {
   const {
@@ -52,6 +60,7 @@ export async function tagFormPage(views: Fetcher, opts: BaseTemplateProps & {
     action: tag ? `/admin/tags/${tag.id}` : '/admin/tags',
     name: tag?.name ?? '',
     slug: tag?.slug ?? '',
+    weight: tag?.weight ?? 5,
     language,
     translatedFieldName: `.name|${language}`,
     translatedName,
@@ -62,8 +71,9 @@ export async function tagFormPage(views: Fetcher, opts: BaseTemplateProps & {
     })),
     taxonomyOptions: taxonomies.map((type) => ({
       id: type.id,
-      name: type.name,
-      selected: tag?.taxonomy_id === type.id,
+      name: type.sourceLabel ? `${type.name} (${type.sourceLabel})` : type.name,
+      selected: tag?.taxonomy_id != null && String(tag.taxonomy_id) === type.id,
+      disabled: type.disabled ?? false,
     })),
     parentOptions: parentTags
       .filter((candidate) => candidate.id !== tag?.id)
