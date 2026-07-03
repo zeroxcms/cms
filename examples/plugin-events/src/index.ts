@@ -33,6 +33,12 @@ const MANIFEST = {
     blueprint: {
       event: ['@date', 'venue', 'location:events-map', { speakers: ['name'] }],
     },
+    taxonomies: {
+      audience: 'Audience',
+    },
+    taxonomyLists: {
+      event: ['audience'],
+    },
   },
   fieldTypes: [{ type: 'events-map' }],
   // `event` pages render their edit/new form here (POST /__plugin/edit) instead

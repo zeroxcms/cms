@@ -599,6 +599,8 @@ describe('admin routes', () => {
     { name: 'POST /admin/upload', method: 'POST', path: '/admin/upload', body: form({ dir: 'uploads' }), authenticated: true, expectedStatus: 200, json: { success: true, files: [], errors: [] } },
     { name: 'GET /admin/taxonomies', path: '/admin/taxonomies', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/taxonomies/new', path: '/admin/taxonomies/new', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/taxonomies/view/:slug (config)', path: '/admin/taxonomies/view/years', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/taxonomies/view/:slug missing', path: '/admin/taxonomies/view/nope', authenticated: true, expectedStatus: 404 },
     { name: 'POST /admin/taxonomies', method: 'POST', path: '/admin/taxonomies', body: form({ name: 'Topics', slug: 'topics' }), authenticated: true, expectedStatus: 302, location: '/admin/taxonomies' },
     { name: 'GET /admin/taxonomies/:id/edit', path: '/admin/taxonomies/300/edit', authenticated: true, expectedStatus: 200 },
     { name: 'POST /admin/taxonomies/:id', method: 'POST', path: '/admin/taxonomies/300', body: form({ name: 'Categories', slug: 'categories' }), authenticated: true, expectedStatus: 302, location: '/admin/taxonomies' },

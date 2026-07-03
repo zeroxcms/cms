@@ -85,6 +85,7 @@ describe('lect utilities', () => {
       blueprint: { rsvp: ['*event:page/basic', 'name'] },
       blocks: {},
       blockLists: {},
+      taxonomies: {},
       taxonomyLists: {},
     };
     const existing = {

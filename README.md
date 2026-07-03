@@ -253,9 +253,9 @@ A plugin can add six things:
 - **Lifecycle hooks** – run on page `create`/`update`/`publish`/`unpublish`/`delete`
   (webhooks, external search indexing, cache purge, notifications). Hooks are
   best-effort and never block the editor.
-- **Content types** – register new `blueprint`/`blocks`/`blockLists`/`taxonomyLists`
-  that merge into the editor's config. Plugin-contributed page types and block
-  types appear (read-only) in **Admin → Page Types / Block Types**, badged with
+- **Content types** – register new `blueprint`/`blocks`/`blockLists`/`taxonomies`/`taxonomyLists`
+  that merge into the editor's config. Plugin-contributed page types, block
+  types, and taxonomies appear (read-only) in **Admin → Page Types / Block Types / Taxonomies**, badged with
   the contributing plugin's name. A companion plugin can also request delegated
   access with `readTypes`/`writeTypes` to use existing page types through the
   `/__cms` API without contributing their blueprints; an admin must approve

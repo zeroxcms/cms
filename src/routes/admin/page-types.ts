@@ -5,7 +5,7 @@
 import { Hono } from 'hono';
 import { pageTypeFormPage, pageTypesPage } from '../../templates/page-types';
 import type { PageTypeFormModel } from '../../templates/page-types';
-import { cmsConfig } from '../../cms-config';
+import { cmsConfig, type CmsConfig } from '../../cms-config';
 import type { Env, Variables, PageType } from '../../types';
 import { num, slugify, str } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
@@ -63,6 +63,12 @@ async function validate(c: AppContext, values: PageTypeFormValues, slug: string,
 
 function nullableJsonArray(values: string[]): string | null {
   return values.length ? JSON.stringify(values) : null;
+}
+
+function taxonomyOptions(config: CmsConfig, dbTaxonomies: Array<{ slug: string; name: string }>): Array<{ slug: string; name: string }> {
+  const bySlug = new Map(Object.entries(config.taxonomies).map(([slug, name]) => [slug, { slug, name }]));
+  for (const taxonomy of dbTaxonomies) bySlug.set(taxonomy.slug, taxonomy);
+  return [...bySlug.values()].sort((a, b) => a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug));
 }
 
 // ── List ────────────────────────────────────────────────────────────────────
@@ -241,6 +247,6 @@ async function renderForm(c: AppContext, model: FormModel): Promise<Response> {
   return renderPage(c, pageTypeFormPage, {
     ...model,
     availableBlocks: Object.keys(config.blocks),
-    availableTaxonomies: taxonomies.results,
+    availableTaxonomies: taxonomyOptions(config, taxonomies.results),
   });
 }

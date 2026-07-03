@@ -6,6 +6,7 @@ export interface CmsConfig {
   blueprint: Record<string, BlueprintEntry[]>;
   blocks: Record<string, BlueprintEntry[]>;
   blockLists: Record<string, string[]>;
+  taxonomies: Record<string, string>;
   taxonomyLists: Record<string, string[]>;
 }
 
@@ -23,6 +24,12 @@ export const cmsConfig: CmsConfig = {
   },
   blockLists: {
     default: ['default', 'label', 'logos', 'paragraphs'],
+  },
+  taxonomies: {
+    years: 'Years',
+    categories: 'Categories',
+    topics: 'Topics',
+    collections: 'Collections',
   },
   taxonomyLists: {
     default: ['years', 'categories', 'topics', 'collections'],

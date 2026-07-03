@@ -2,6 +2,7 @@
 
 import { Hono } from 'hono';
 import { taxonomyFormPage, taxonomiesPage } from '../../templates/taxonomies';
+import type { TaxonomyFormData } from '../../templates/taxonomies';
 import { tagFormPage, tagsPage } from '../../templates/tags';
 import { cmsConfig } from '../../cms-config';
 import {
@@ -24,6 +25,9 @@ import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 import { removeTagFromTargets } from '../../publish';
 import { renderPage, userCan } from '../../utils/admin-render';
+import { resolveCmsConfig } from '../../plugins/config';
+import { getPlugins } from '../../plugins/registry';
+import { configOnlyTypes } from '../../utils/type-admin';
 import type { AppContext } from '../../utils/context';
 
 export const tagsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -31,10 +35,25 @@ export const tagsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 // ── Tag types ─────────────────────────────────────────────────────────────────
 
 tagsRoutes.get('/taxonomies', async (c) => {
-  const taxonomies = await c.env.DB.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>();
+  const [dbTaxonomies, plugins, config] = await Promise.all([
+    c.env.DB.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
+    getPlugins(c.env),
+    resolveCmsConfig(c.env),
+  ]);
+  const dbSlugs = new Set(dbTaxonomies.results.map((taxonomy) => taxonomy.slug));
+  const configTaxonomies = configOnlyTypes(
+    Object.keys(config.taxonomies),
+    dbSlugs,
+    plugins,
+    (plugin) => plugin.manifest.contentTypes?.taxonomies,
+  ).map((taxonomy) => ({
+    ...taxonomy,
+    name: config.taxonomies[taxonomy.slug] ?? taxonomy.name,
+  }));
 
   return renderPage(c, taxonomiesPage, {
-    taxonomies: taxonomies.results,
+    dbTaxonomies: dbTaxonomies.results,
+    configTaxonomies,
     canWrite: await userCan(c, 'taxonomy:write'),
   });
 });
@@ -42,6 +61,14 @@ tagsRoutes.get('/taxonomies', async (c) => {
 tagsRoutes.get('/taxonomies/new', async (c) => {
   if (!(await userCan(c, 'taxonomy:write'))) return c.redirect('/admin/taxonomies');
   return taxonomyForm(c);
+});
+
+tagsRoutes.get('/taxonomies/view/:slug', async (c) => {
+  const slug = c.req.param('slug');
+  const config = await resolveCmsConfig(c.env);
+  const name = config.taxonomies[slug];
+  if (!name) return c.notFound();
+  return taxonomyForm(c, { name, slug }, true);
 });
 
 tagsRoutes.post('/taxonomies', requirePermission('taxonomy:write'), async (c) => {
@@ -159,7 +186,7 @@ tagsRoutes.post('/tags/:id/delete', requirePermission('tag:write'), async (c) =>
   return c.redirect('/admin/tags');
 });
 
-async function taxonomyForm(c: AppContext, taxonomy?: Taxonomy, readOnly = false) {
+async function taxonomyForm(c: AppContext, taxonomy?: TaxonomyFormData, readOnly = false) {
   return renderPage(c, taxonomyFormPage, {
     taxonomy,
     readOnly,

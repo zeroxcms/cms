@@ -16,7 +16,11 @@ const EVENTS_MANIFEST = {
   version: '1.0.0',
   hooks: ['publish'],
   nav: [{ label: 'Events', href: 'dashboard' }],
-  contentTypes: { blueprint: { event: ['@date', 'venue'] } },
+  contentTypes: {
+    blueprint: { event: ['@date', 'venue'] },
+    taxonomies: { audience: 'Audience' },
+    taxonomyLists: { event: ['audience'] },
+  },
   fieldTypes: [{ type: 'events-map' }],
 };
 
@@ -97,12 +101,15 @@ describe('resolveCmsConfig', () => {
   it('merges plugin blueprints into the base config', async () => {
     const config = await resolveCmsConfig(await envWith(makePlugin(EVENTS_MANIFEST)));
     expect(config.blueprint.event).toEqual(['@date', 'venue']);
+    expect(config.taxonomies.audience).toBe('Audience');
+    expect(config.taxonomyLists.event).toEqual(['audience']);
     expect(config.blueprint.default).toBeDefined(); // base content types preserved
   });
 
   it('does not mutate the static base config', async () => {
     await resolveCmsConfig(await envWith(makePlugin(EVENTS_MANIFEST)));
     expect(cmsConfig.blueprint.event).toBeUndefined();
+    expect(cmsConfig.taxonomies.audience).toBeUndefined();
   });
 
   it('returns the base config when no plugins are configured', async () => {
@@ -903,6 +910,39 @@ describe('plugin admin proxy', () => {
     const data = bodyData(await response.text());
     expect(data.pageTypes).toEqual(expect.arrayContaining([
       expect.objectContaining({ slug: 'event', source: 'plugin', pluginName: 'Events' }),
+    ]));
+  });
+
+  it('shows plugin-contributed taxonomies and offers them on page types', async () => {
+    const url = 'https://plugin-taxonomies.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Event tools', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(href).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+    const headers = { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' };
+
+    const listResponse = await worker.fetch(new Request('http://localhost/admin/taxonomies', { headers }));
+    expect(listResponse.status).toBe(200);
+    const listData = bodyData(await listResponse.text());
+    expect(listData.taxonomies).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Audience', slug: 'audience', source: 'plugin', pluginName: 'Events', isDb: false }),
+    ]));
+
+    const formResponse = await worker.fetch(new Request('http://localhost/admin/page_types/new', { headers }));
+    expect(formResponse.status).toBe(200);
+    const formData = bodyData(await formResponse.text());
+    expect(formData.taxonomyOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: 'audience', label: 'Audience' }),
     ]));
   });
 

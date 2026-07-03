@@ -2,27 +2,60 @@ import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 import type { Taxonomy } from '../types';
 
+export interface TaxonomyListItem {
+  name: string;
+  slug: string;
+  source: string;
+  pluginName: string;
+  editHref: string;
+  viewHref: string;
+  isDb: boolean;
+}
+
+export interface TaxonomyFormData {
+  id?: number;
+  name: string;
+  slug: string;
+}
+
 export async function taxonomiesPage(views: Fetcher, opts: BaseTemplateProps & {
-  taxonomies: Taxonomy[];
+  dbTaxonomies: Taxonomy[];
+  configTaxonomies: Array<{ slug: string; name: string; source?: string; pluginName?: string }>;
   canWrite: boolean;
 }): Promise<string> {
-  const { taxonomies, canWrite } = opts;
+  const { dbTaxonomies, configTaxonomies, canWrite } = opts;
+  const taxonomies: TaxonomyListItem[] = [
+    ...dbTaxonomies.map((taxonomy) => ({
+      name: taxonomy.name,
+      slug: taxonomy.slug,
+      source: 'db',
+      pluginName: '',
+      editHref: `/admin/taxonomies/${taxonomy.id}/edit`,
+      viewHref: '',
+      isDb: true,
+    })),
+    ...configTaxonomies.map((taxonomy) => ({
+      name: taxonomy.name,
+      slug: taxonomy.slug,
+      source: taxonomy.source ?? 'config',
+      pluginName: taxonomy.pluginName ?? '',
+      editHref: '',
+      viewHref: `/admin/taxonomies/view/${encodeURIComponent(taxonomy.slug)}`,
+      isDb: false,
+    })),
+  ];
+
   const body = await renderView(views, '/templates/taxonomies.json', {
     hasTaxonomies: taxonomies.length > 0,
     canWrite,
-    taxonomies: taxonomies.map((taxonomy) => ({
-      id: taxonomy.id,
-      name: taxonomy.name,
-      slug: taxonomy.slug,
-      editHref: `/admin/taxonomies/${taxonomy.id}/edit`,
-    })),
+    taxonomies,
   });
 
   return adminLayout(views, opts, { title: 'Taxonomies', body });
 }
 
 export async function taxonomyFormPage(views: Fetcher, opts: BaseTemplateProps & {
-  taxonomy?: Taxonomy;
+  taxonomy?: TaxonomyFormData;
   readOnly?: boolean;
 }): Promise<string> {
   const { taxonomy, readOnly = false } = opts;

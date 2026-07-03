@@ -236,6 +236,8 @@ export interface PluginContentTypes {
   blueprint?: Record<string, BlueprintEntry[]>;
   blocks?: Record<string, BlueprintEntry[]>;
   blockLists?: Record<string, string[]>;
+  /** Taxonomy definitions keyed by slug; values are display names. */
+  taxonomies?: Record<string, string>;
   taxonomyLists?: Record<string, string[]>;
   /**
    * Page types this plugin may WRITE through the write-back API without
