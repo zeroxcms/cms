@@ -273,6 +273,7 @@ describe('role capabilities', () => {
   it('grants admins every capability including destructive/global ops', () => {
     expect(hasPermission('admin', 'trash:purge')).toBe(true);
     expect(hasPermission('admin', 'plugin:access')).toBe(true);
+    expect(hasPermission('admin', 'menu:manage')).toBe(true);
     expect(hasPermission('admin', 'content:write')).toBe(true);
   });
 

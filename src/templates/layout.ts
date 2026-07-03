@@ -6,13 +6,37 @@ export interface NavFlags {
   canManageUsers?: boolean;
   canManageRoles?: boolean;
   canManagePlugins?: boolean;
+  canManageMenu?: boolean;
+  showSidebarPages?: boolean;
+  showSidebarTags?: boolean;
+  showSidebarTaxonomies?: boolean;
+  showSidebarPageTypes?: boolean;
+  showSidebarBlockTypes?: boolean;
+  showSidebarUsers?: boolean;
+  showSidebarRoles?: boolean;
+  showSidebarPlugins?: boolean;
+  showSidebarTrash?: boolean;
 }
 
 /** Extracts the nav-gating flags from a page's props for forwarding to layout().
  *  Accepts any props object (the flags come from buildBaseProps at runtime). */
 export function navFlags(opts: unknown): NavFlags {
   const o = (opts ?? {}) as NavFlags;
-  return { canManageUsers: o.canManageUsers, canManageRoles: o.canManageRoles, canManagePlugins: o.canManagePlugins };
+  return {
+    canManageUsers: o.canManageUsers,
+    canManageRoles: o.canManageRoles,
+    canManagePlugins: o.canManagePlugins,
+    canManageMenu: o.canManageMenu,
+    showSidebarPages: o.showSidebarPages,
+    showSidebarTags: o.showSidebarTags,
+    showSidebarTaxonomies: o.showSidebarTaxonomies,
+    showSidebarPageTypes: o.showSidebarPageTypes,
+    showSidebarBlockTypes: o.showSidebarBlockTypes,
+    showSidebarUsers: o.showSidebarUsers,
+    showSidebarRoles: o.showSidebarRoles,
+    showSidebarPlugins: o.showSidebarPlugins,
+    showSidebarTrash: o.showSidebarTrash,
+  };
 }
 
 /**
@@ -34,6 +58,16 @@ export interface BaseTemplateProps extends NavFlags {
   canManageUsers: boolean;
   canManageRoles: boolean;
   canManagePlugins: boolean;
+  canManageMenu: boolean;
+  showSidebarPages: boolean;
+  showSidebarTags: boolean;
+  showSidebarTaxonomies: boolean;
+  showSidebarPageTypes: boolean;
+  showSidebarBlockTypes: boolean;
+  showSidebarUsers: boolean;
+  showSidebarRoles: boolean;
+  showSidebarPlugins: boolean;
+  showSidebarTrash: boolean;
 }
 
 /**
@@ -116,6 +150,16 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     canManageUsers: opts.canManageUsers ?? false,
     canManageRoles: opts.canManageRoles ?? false,
     canManagePlugins: opts.canManagePlugins ?? false,
+    canManageMenu: opts.canManageMenu ?? false,
+    showSidebarPages: opts.showSidebarPages ?? true,
+    showSidebarTags: opts.showSidebarTags ?? true,
+    showSidebarTaxonomies: opts.showSidebarTaxonomies ?? true,
+    showSidebarPageTypes: opts.showSidebarPageTypes ?? true,
+    showSidebarBlockTypes: opts.showSidebarBlockTypes ?? true,
+    showSidebarUsers: opts.showSidebarUsers ?? true,
+    showSidebarRoles: opts.showSidebarRoles ?? true,
+    showSidebarPlugins: opts.showSidebarPlugins ?? true,
+    showSidebarTrash: opts.showSidebarTrash ?? true,
     pluginNav: opts.pluginNav ?? [],
     pluginSettingsNav: opts.pluginSettingsNav ?? [],
     viewRevision: revision,

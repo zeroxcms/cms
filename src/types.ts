@@ -27,6 +27,7 @@ export const PERMISSIONS = [
   'media:upload',     // upload media to R2
   'plugin:access',    // reach the plugin admin proxy
   'plugin:manage',    // register / enable / disable / configure plugins
+  'menu:manage',      // configure admin sidebar menu visibility
   'pagetype:write',   // create / edit / delete database-defined page types
   'blocktype:write',  // create / edit / delete database-defined block types
   'users:manage',     // view users and assign their roles
@@ -49,6 +50,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   'media:upload': 'Upload media',
   'plugin:access': 'Reach the plugin admin',
   'plugin:manage': 'Register and configure plugins',
+  'menu:manage': 'Manage admin menu settings',
   'pagetype:write': 'Manage page types',
   'blocktype:write': 'Manage block types',
   'users:manage': 'Manage users and their roles',

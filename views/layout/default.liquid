@@ -294,16 +294,20 @@
         </button>
       </div>
       <nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-4 md:px-4 md:py-6" data-scroll-frame>
+        {% if showSidebarPages %}
         <a href="/admin"
            class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#menu"></use></svg>
           Pages
         </a>
+        {% endif %}
+        {% if showSidebarTags %}
         <a href="/admin/tags"
            class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#tag"></use></svg>
           Tags
         </a>
+        {% endif %}
         <details class="group overflow-hidden">
           <summary class="flex cursor-pointer list-none items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white [&::-webkit-details-marker]:hidden">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#settings"></use></svg>
@@ -311,40 +315,59 @@
             <svg class="ml-auto h-4 w-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#chevron-right"></use></svg>
           </summary>
           <div class="mt-1 ml-3 space-y-1 border-l border-gray-700 pl-3">
+            {% if showSidebarTaxonomies %}
             <a href="/admin/taxonomies"
                class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#list-filter"></use></svg>
               Taxonomies
             </a>
+            {% endif %}
+            {% if showSidebarPageTypes %}
             <a href="/admin/page_types"
                class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#list"></use></svg>
               Page Types
             </a>
+            {% endif %}
+            {% if showSidebarBlockTypes %}
             <a href="/admin/block_types"
                class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#blocks"></use></svg>
               Block Types
             </a>
+            {% endif %}
             {% if canManageUsers %}
-            <a href="/admin/users"
-               class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#users"></use></svg>
-              Users
-            </a>
+              {% if showSidebarUsers %}
+              <a href="/admin/users"
+                 class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#users"></use></svg>
+                Users
+              </a>
+              {% endif %}
             {% endif %}
             {% if canManageRoles %}
-            <a href="/admin/roles"
-               class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#shield-check"></use></svg>
-              Roles
-            </a>
+              {% if showSidebarRoles %}
+              <a href="/admin/roles"
+                 class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#shield-check"></use></svg>
+                Roles
+              </a>
+              {% endif %}
             {% endif %}
             {% if canManagePlugins %}
-            <a href="/admin/plugins-manage"
+              {% if showSidebarPlugins %}
+              <a href="/admin/plugins-manage"
+                 class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#beaker"></use></svg>
+                Plugins
+              </a>
+              {% endif %}
+            {% endif %}
+            {% if canManageMenu %}
+            <a href="/admin/settings/menu"
                class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#beaker"></use></svg>
-              Plugins
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#menu"></use></svg>
+              Menu
             </a>
             {% endif %}
             {% for item in pluginSettingsNav %}
@@ -356,11 +379,13 @@
             {% endfor %}
           </div>
         </details>
+        {% if showSidebarTrash %}
         <a href="/admin/trash"
            class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#trash"></use></svg>
           Trash
         </a>
+        {% endif %}
         {% for item in pluginNav %}
         <a href="{{ item.href | escape }}"
            class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">

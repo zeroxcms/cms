@@ -223,7 +223,15 @@ CREATE TABLE IF NOT EXISTS role_permissions(
     PRIMARY KEY (role, permission)
 );
 
--- 16. Trash Page Versions – mirrors page_versions for trashed pages so deleting
+-- 16. Admin settings – small key/value store for runtime CMS preferences.
+CREATE TABLE IF NOT EXISTS settings(
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- 17. Trash Page Versions – mirrors page_versions for trashed pages so deleting
 --     a page no longer loses its history and a restore brings every version back.
 CREATE TABLE IF NOT EXISTS trash_page_versions(
     id INTEGER UNIQUE DEFAULT ((( strftime('%s','now') - 1563741060 ) * 100000) + (RANDOM() & 65535)) NOT NULL,
@@ -237,7 +245,7 @@ CREATE TABLE IF NOT EXISTS trash_page_versions(
     FOREIGN KEY (page_id) REFERENCES trash_pages (id) ON DELETE CASCADE
 );
 
--- 17. Plugins – database-driven plugin registry (URL transport). Each row is a
+-- 18. Plugins – database-driven plugin registry (URL transport). Each row is a
 --     plugin reached over HTTPS at `{url}/__plugin/...`. The CMS forwards the
 --     plugin's own `secret` (falling back to env PLUGIN_SECRET when NULL).
 CREATE TABLE IF NOT EXISTS plugins(

@@ -677,6 +677,7 @@ async function resetData(): Promise<void> {
     'draft_pages',
     'trash_pages',
     'plugins',
+    'settings',
     'roles',
     'role_permissions',
     'sessions',

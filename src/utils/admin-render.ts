@@ -31,6 +31,7 @@ import { strParam } from './forms';
 import { effectivePermissions, resolveRolePermissions } from './roles';
 import type { Page, Permission } from '../types';
 import { viewRevision } from './view-revision';
+import { loadSidebarMenuSettings } from './settings';
 
 export type { BaseTemplateProps } from '../templates/layout';
 import type { BaseTemplateProps } from '../templates/layout';
@@ -59,6 +60,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     pluginNav(c.env),
     userPermissions(c),
   ]);
+  const menuSettings = await loadSidebarMenuSettings(c.env);
   const visible = navItems
     .filter((item) => !item.roles?.length || item.roles.some((role) => userRoles.includes(role)));
   const toLink = (item: { label: string; href: string }) => ({ label: item.label, href: item.href });
@@ -78,6 +80,16 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     canManageUsers: permissions.has('users:manage'),
     canManageRoles: permissions.has('roles:manage'),
     canManagePlugins: permissions.has('plugin:manage'),
+    canManageMenu: permissions.has('menu:manage'),
+    showSidebarPages: menuSettings.pages,
+    showSidebarTags: menuSettings.tags,
+    showSidebarTaxonomies: menuSettings.taxonomies,
+    showSidebarPageTypes: menuSettings.pageTypes,
+    showSidebarBlockTypes: menuSettings.blockTypes,
+    showSidebarUsers: menuSettings.users,
+    showSidebarRoles: menuSettings.roles,
+    showSidebarPlugins: menuSettings.plugins,
+    showSidebarTrash: menuSettings.trash,
   };
 }
 
