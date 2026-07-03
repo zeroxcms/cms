@@ -12,10 +12,20 @@ export function d1Adapter(publishedDb: D1Database): PublishAdapter {
 
     async publish(snapshot: PublishSnapshot): Promise<void> {
       const { page, tags } = snapshot;
+      const existingLivePage = await publishedDb.prepare('SELECT id FROM live_pages WHERE uuid = ?')
+        .bind(page.uuid)
+        .first<{ id: number }>();
+
+      if (existingLivePage) {
+        await publishedDb.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(existingLivePage.id).run();
+      }
+      await publishedDb.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(page.id).run();
+
       await publishedDb.prepare(
-        `INSERT INTO live_pages (uuid, name, slug, weight, start, end, timezone, page_type, lect, page_id, creator, editors)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO live_pages (id, uuid, name, slug, weight, start, end, timezone, page_type, lect, page_id, creator, editors)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(uuid) DO UPDATE SET
+           id = excluded.id,
            name = excluded.name,
            slug = excluded.slug,
            weight = excluded.weight,
@@ -29,6 +39,7 @@ export function d1Adapter(publishedDb: D1Database): PublishAdapter {
            editors = excluded.editors`,
       )
         .bind(
+          page.id,
           page.uuid,
           page.name,
           page.slug,
@@ -44,18 +55,11 @@ export function d1Adapter(publishedDb: D1Database): PublishAdapter {
         )
         .run();
 
-      const livePage = await publishedDb.prepare('SELECT id FROM live_pages WHERE uuid = ?')
-        .bind(page.uuid)
-        .first<{ id: number }>();
-      if (!livePage) return;
-
-      await publishedDb.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(livePage.id).run();
-
       for (const tag of tags) {
         await publishedDb.prepare(
           'INSERT INTO live_page_tags (uuid, page_id, tag_id, weight) VALUES (?, ?, ?, ?)',
         )
-          .bind(tag.uuid, livePage.id, tag.tag_id, tag.weight)
+          .bind(tag.uuid, page.id, tag.tag_id, tag.weight)
           .run();
       }
     },

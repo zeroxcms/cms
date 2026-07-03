@@ -71,15 +71,17 @@ describe('d1 adapter', () => {
     const live = await env.PUBLISHED_DB.prepare('SELECT * FROM live_pages WHERE uuid = ?')
       .bind(PAGE.uuid)
       .first<Page>();
+    expect(live?.id).toBe(PAGE.id);
     expect(live?.name).toBe('Hello');
     expect(live?.lect).toBe(PAGE.lect);
 
     const liveTags = await env.PUBLISHED_DB.prepare(
-      'SELECT tag_id FROM live_page_tags WHERE page_id = (SELECT id FROM live_pages WHERE uuid = ?)',
+      'SELECT page_id, tag_id FROM live_page_tags WHERE page_id = (SELECT id FROM live_pages WHERE uuid = ?)',
     )
       .bind(PAGE.uuid)
-      .all<{ tag_id: number }>();
+      .all<{ page_id: number; tag_id: number }>();
     expect(liveTags.results.map((row) => row.tag_id)).toEqual([42]);
+    expect(liveTags.results.map((row) => row.page_id)).toEqual([PAGE.id]);
 
     expect(await adapter.getLiveLect!(PAGE.uuid)).toBe(PAGE.lect);
     const map = await adapter.liveMap!([PAGE.uuid]);
@@ -94,6 +96,32 @@ describe('d1 adapter', () => {
 
     await adapter.unpublish(PAGE.uuid);
     expect(await adapter.getLiveLect!(PAGE.uuid)).toBeNull();
+  });
+
+  it('republishes older live rows using the draft page id', async () => {
+    const legacyLiveId = PAGE.id + 1;
+    await env.PUBLISHED_DB.prepare(
+      `INSERT INTO live_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(legacyLiveId, PAGE.uuid, 'Old', 'old', 9, PAGE.page_type, '{}', PAGE.creator, PAGE.editors)
+      .run();
+    await env.PUBLISHED_DB.prepare('INSERT INTO live_page_tags (uuid, page_id, tag_id, weight) VALUES (?, ?, ?, ?)')
+      .bind('legacy-tag-link', legacyLiveId, 99, 1)
+      .run();
+
+    const adapter = d1Adapter(env.PUBLISHED_DB);
+    await adapter.publish(snapshotFor(PAGE));
+
+    const live = await env.PUBLISHED_DB.prepare('SELECT id, name FROM live_pages WHERE uuid = ?')
+      .bind(PAGE.uuid)
+      .first<{ id: number; name: string }>();
+    expect(live).toEqual({ id: PAGE.id, name: PAGE.name });
+
+    const liveTags = await env.PUBLISHED_DB.prepare('SELECT page_id, tag_id FROM live_page_tags WHERE uuid IN (?, ?)')
+      .bind('legacy-tag-link', 'tag-link-uuid')
+      .all<{ page_id: number; tag_id: number }>();
+    expect(liveTags.results).toEqual([{ page_id: PAGE.id, tag_id: 42 }]);
   });
 });
 

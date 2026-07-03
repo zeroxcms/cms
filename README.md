@@ -451,7 +451,8 @@ page deletion remove the page from every target the same way. See
 [Publish targets](#publish-targets).
 
 The default `d1` target upserts the snapshot into `PUBLISHED_DB.live_pages` by
-`uuid` and replaces its `live_page_tags` links; un-publish deletes both.
+`uuid`, preserving the draft page's numeric `id`, and replaces its
+`live_page_tags` links; un-publish deletes both.
 
 ## Publish targets
 
