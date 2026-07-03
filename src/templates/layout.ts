@@ -1,12 +1,21 @@
 import { currentCspNonce } from '../utils/request-context';
 import { isClientView, type RenderedView } from './liquid';
 
+export interface SidebarNavItem {
+  label: string;
+  href: string;
+  icon: string;
+  isSettingsGroup?: boolean;
+}
+
 /** Nav-gating flags forwarded into the sidebar; default false (hidden). */
 export interface NavFlags {
   canManageUsers?: boolean;
   canManageRoles?: boolean;
   canManagePlugins?: boolean;
   canManageMenu?: boolean;
+  sidebarNav?: SidebarNavItem[];
+  sidebarSettingsNav?: SidebarNavItem[];
   showSidebarPages?: boolean;
   showSidebarTags?: boolean;
   showSidebarTaxonomies?: boolean;
@@ -15,6 +24,7 @@ export interface NavFlags {
   showSidebarUsers?: boolean;
   showSidebarRoles?: boolean;
   showSidebarPlugins?: boolean;
+  showSidebarMenu?: boolean;
   showSidebarTrash?: boolean;
 }
 
@@ -27,6 +37,8 @@ export function navFlags(opts: unknown): NavFlags {
     canManageRoles: o.canManageRoles,
     canManagePlugins: o.canManagePlugins,
     canManageMenu: o.canManageMenu,
+    sidebarNav: o.sidebarNav,
+    sidebarSettingsNav: o.sidebarSettingsNav,
     showSidebarPages: o.showSidebarPages,
     showSidebarTags: o.showSidebarTags,
     showSidebarTaxonomies: o.showSidebarTaxonomies,
@@ -35,6 +47,7 @@ export function navFlags(opts: unknown): NavFlags {
     showSidebarUsers: o.showSidebarUsers,
     showSidebarRoles: o.showSidebarRoles,
     showSidebarPlugins: o.showSidebarPlugins,
+    showSidebarMenu: o.showSidebarMenu,
     showSidebarTrash: o.showSidebarTrash,
   };
 }
@@ -45,6 +58,7 @@ export function navFlags(opts: unknown): NavFlags {
  */
 export interface BaseTemplateProps extends NavFlags {
   siteTitle: string;
+  appIcon: string;
   userName: string;
   userRole: string;
   userAvatar: string;
@@ -59,6 +73,8 @@ export interface BaseTemplateProps extends NavFlags {
   canManageRoles: boolean;
   canManagePlugins: boolean;
   canManageMenu: boolean;
+  sidebarNav: SidebarNavItem[];
+  sidebarSettingsNav: SidebarNavItem[];
   showSidebarPages: boolean;
   showSidebarTags: boolean;
   showSidebarTaxonomies: boolean;
@@ -67,6 +83,7 @@ export interface BaseTemplateProps extends NavFlags {
   showSidebarUsers: boolean;
   showSidebarRoles: boolean;
   showSidebarPlugins: boolean;
+  showSidebarMenu: boolean;
   showSidebarTrash: boolean;
 }
 
@@ -84,6 +101,7 @@ export async function adminLayout(
     ...navFlags(base),
     title: opts.title,
     siteTitle: base.siteTitle,
+    appIcon: base.appIcon,
     body: opts.body,
     admin: true,
     userName: base.userName,
@@ -110,6 +128,7 @@ export type ApprovedPluginAssets = Record<string, ApprovedPluginAsset[]>;
 export interface LayoutOptions extends NavFlags {
   title: string;
   siteTitle: string;
+  appIcon?: string;
   body: RenderedView;
   /** Include the admin sidebar? */
   admin?: boolean;
@@ -146,11 +165,14 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     hasUserAvatar,
     userRoleLabel,
     userInitial: userName.trim().charAt(0).toUpperCase() || '?',
+    appIcon: opts.appIcon || 'document',
     contentClass: admin ? 'md:ml-64' : '',
     canManageUsers: opts.canManageUsers ?? false,
     canManageRoles: opts.canManageRoles ?? false,
     canManagePlugins: opts.canManagePlugins ?? false,
     canManageMenu: opts.canManageMenu ?? false,
+    sidebarNav: opts.sidebarNav ?? [],
+    sidebarSettingsNav: opts.sidebarSettingsNav ?? [],
     showSidebarPages: opts.showSidebarPages ?? true,
     showSidebarTags: opts.showSidebarTags ?? true,
     showSidebarTaxonomies: opts.showSidebarTaxonomies ?? true,
@@ -159,6 +181,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     showSidebarUsers: opts.showSidebarUsers ?? true,
     showSidebarRoles: opts.showSidebarRoles ?? true,
     showSidebarPlugins: opts.showSidebarPlugins ?? true,
+    showSidebarMenu: opts.showSidebarMenu ?? true,
     showSidebarTrash: opts.showSidebarTrash ?? true,
     pluginNav: opts.pluginNav ?? [],
     pluginSettingsNav: opts.pluginSettingsNav ?? [],

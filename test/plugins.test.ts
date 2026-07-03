@@ -93,6 +93,7 @@ beforeEach(async () => {
   __clearInjectedFetchers();
   await env.DB.prepare('DELETE FROM plugins').run();
   await env.DB.prepare('DELETE FROM admin_jobs').run();
+  await env.DB.prepare('DELETE FROM settings').run();
   await env.DB.prepare('DELETE FROM plugin_asset_approvals').run();
   await env.DB.prepare('DELETE FROM plugin_page_type_approvals').run();
 });
@@ -1053,6 +1054,16 @@ describe('plugin admin proxy', () => {
         return new Response('nf', { status: 404 });
       },
     } as unknown as Fetcher);
+    await env.DB.prepare('INSERT INTO settings (key, value) VALUES (?, ?)')
+      .bind('admin.sidebar_menu.hidden_items', JSON.stringify({
+        hidden: [],
+        groupWeights: { settings: 5 },
+        pluginWeights: {
+          'plugin:events:main:/admin/plugins/events/dashboard': 1,
+          'plugin:events:settings:/admin/plugins/events/mail-settings': 1,
+        },
+      }))
+      .run();
 
     const now = Math.floor(Date.now() / 1000);
     const token = await signJWT({
@@ -1071,6 +1082,63 @@ describe('plugin admin proxy', () => {
     expect(payload.layoutData.pluginNav).toEqual([
       { label: 'Events', href: '/admin/plugins/events/dashboard' },
     ]);
+    expect(payload.layoutData.sidebarNav).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Events', href: '/admin/plugins/events/dashboard' }),
+      expect.objectContaining({ label: 'Settings', isSettingsGroup: true }),
+    ]));
+    expect((payload.layoutData.sidebarNav as Array<{ label: string }>).slice(0, 2).map((item) => item.label)).toEqual([
+      'Events',
+      'Settings',
+    ]);
+    expect((payload.layoutData.sidebarSettingsNav as Array<{ label: string }>).slice(0, 2).map((item) => item.label)).toEqual([
+      'Mail Settings',
+      'Taxonomies',
+    ]);
+
+    const settingsResponse = await worker.fetch(new Request('http://localhost/admin/settings/system', {
+      headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    expect(settingsResponse.status).toBe(200);
+    const settingsData = bodyData(await settingsResponse.text());
+    expect(settingsData.settingsGroupWeight).toBe(5);
+    expect(settingsData.pluginOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Events', groupLabel: 'Main', checked: true, weight: 1 }),
+      expect.objectContaining({ label: 'Mail Settings', groupLabel: 'Settings', checked: true, weight: 1 }),
+    ]));
+
+    const mainPluginKey = 'plugin:events:main:/admin/plugins/events/dashboard';
+    const settingsPluginKey = 'plugin:events:settings:/admin/plugins/events/mail-settings';
+    const saveResponse = await worker.fetch(new Request('http://localhost/admin/settings/system', {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        Cookie: `access_token=${token}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Sec-Fetch-Site': 'same-origin',
+      },
+      body: new URLSearchParams([
+        ['app_name', '0xCMS'],
+        ['app_icon', 'document'],
+        ...['pages', 'tags', 'taxonomies', 'pageTypes', 'blockTypes', 'users', 'roles', 'plugins', 'system', 'trash']
+          .map((key) => ['visible_items', key] as [string, string]),
+        ['settings_group_weight', '5'],
+        [`plugin_weight_${encodeURIComponent(mainPluginKey)}`, '1'],
+        [`plugin_weight_${encodeURIComponent(settingsPluginKey)}`, '1'],
+        ['plugin_visible_items', mainPluginKey],
+      ]),
+    }));
+    expect(saveResponse.status).toBe(302);
+
+    const afterHide = await worker.fetch(new Request('http://localhost/admin/page_types', {
+      headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    const afterPayload = renderPayload(await afterHide.text());
+    expect(afterPayload.layoutData.sidebarNav).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Events', href: '/admin/plugins/events/dashboard' }),
+    ]));
+    expect(afterPayload.layoutData.sidebarSettingsNav).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Mail Settings' }),
+    ]));
   });
 });
 

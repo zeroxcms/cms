@@ -639,8 +639,9 @@ describe('admin routes', () => {
     { name: 'POST /admin/roles/:name', method: 'POST', path: '/admin/roles/editor', body: form({ permissions: 'content:write' }), authenticated: true, expectedStatus: 302, location: '/admin/roles' },
     { name: 'POST /admin/roles/admin (locked)', method: 'POST', path: '/admin/roles/admin', body: form({ permissions: 'content:write' }), authenticated: true, expectedStatus: 403 },
     { name: 'POST /admin/roles/:name/delete (custom)', method: 'POST', path: '/admin/roles/authors/delete', authenticated: true, expectedStatus: 302, location: '/admin/roles' },
-    { name: 'GET /admin/settings/menu', path: '/admin/settings/menu', authenticated: true, expectedStatus: 200 },
-    { name: 'POST /admin/settings/menu', method: 'POST', path: '/admin/settings/menu', body: form({ visible_items: 'pages' }), authenticated: true, expectedStatus: 302, location: '/admin/settings/menu?flash=saved' },
+    { name: 'GET /admin/settings/system', path: '/admin/settings/system', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/settings/menu (legacy redirect)', path: '/admin/settings/menu', authenticated: true, expectedStatus: 302, location: '/admin/settings/system' },
+    { name: 'POST /admin/settings/system', method: 'POST', path: '/admin/settings/system', body: form({ visible_items: 'pages' }), authenticated: true, expectedStatus: 302, location: '/admin/settings/system?flash=saved' },
   ])('$name', async (route) => {
     await expectRoute(route);
   });
@@ -1847,24 +1848,36 @@ describe('capability enforcement', () => {
 });
 
 describe('permission-aware admin UI', () => {
-  it('shows Users/Roles/Menu nav links only to users who can manage them', async () => {
+  it('shows Users/Roles/System nav links only to users who can manage them', async () => {
     const adminPayload = renderPayload(await (await fetchWorker('/admin', { headers: { Cookie: await authCookie() } })).text());
     expect(adminPayload.layoutData.canManageUsers).toBe(true);
     expect(adminPayload.layoutData.canManageRoles).toBe(true);
     expect(adminPayload.layoutData.canManageMenu).toBe(true);
+    expect(adminPayload.layoutData.sidebarSettingsNav).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Users' }),
+      expect.objectContaining({ label: 'Roles' }),
+      expect.objectContaining({ label: 'System' }),
+    ]));
 
     const editorPayload = renderPayload(await (await fetchWorker('/admin', { headers: { Cookie: await authCookie('editor') } })).text());
     expect(editorPayload.layoutData.canManageUsers).toBe(false);
     expect(editorPayload.layoutData.canManageRoles).toBe(false);
     expect(editorPayload.layoutData.canManageMenu).toBe(false);
+    expect(editorPayload.layoutData.sidebarSettingsNav).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'System' }),
+    ]));
   });
 
-  it('persists sidebar menu visibility settings', async () => {
-    const response = await fetchWorker('/admin/settings/menu', {
+  it('persists system branding, sidebar visibility, and weight settings', async () => {
+    const response = await fetchWorker('/admin/settings/system', {
       method: 'POST',
       body: new URLSearchParams([
+        ['app_name', 'Control Room'],
+        ['app_icon', 'settings'],
         ['visible_items', 'pages'],
         ['visible_items', 'trash'],
+        ['weight_pages', '50'],
+        ['weight_trash', '5'],
       ]),
       headers: { Cookie: await authCookie() },
     });
@@ -1875,17 +1888,32 @@ describe('permission-aware admin UI', () => {
     expect(dashboardPayload.layoutData.showSidebarTrash).toBe(true);
     expect(dashboardPayload.layoutData.showSidebarTags).toBe(false);
     expect(dashboardPayload.layoutData.showSidebarUsers).toBe(false);
+    expect(dashboardPayload.layoutData.showSidebarMenu).toBe(true);
+    expect(dashboardPayload.layoutData.siteTitle).toBe('Control Room');
+    expect(dashboardPayload.layoutData.appIcon).toBe('settings');
+    expect((dashboardPayload.layoutData.sidebarNav as Array<{ label: string }>).map((item) => item.label)).toEqual([
+      'Trash',
+      'Settings',
+      'Pages',
+    ]);
 
-    const settingsData = bodyData(await (await fetchWorker('/admin/settings/menu', { headers: { Cookie: await authCookie() } })).text());
+    const settingsData = bodyData(await (await fetchWorker('/admin/settings/system', { headers: { Cookie: await authCookie() } })).text());
+    expect(settingsData.appName).toBe('Control Room');
+    expect(settingsData.appIcon).toBe('settings');
+    expect(settingsData.iconOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: 'settings', selected: true }),
+    ]));
     expect(settingsData.options).toEqual(expect.arrayContaining([
-      expect.objectContaining({ value: 'pages', checked: true }),
+      expect.objectContaining({ value: 'pages', checked: true, weight: 50 }),
       expect.objectContaining({ value: 'tags', checked: false }),
+      expect.objectContaining({ value: 'system', checked: true, locked: true }),
+      expect.objectContaining({ value: 'trash', checked: true, weight: 5 }),
     ]));
   });
 
-  it('requires menu:manage for the menu settings page', async () => {
-    expect((await fetchWorker('/admin/settings/menu', { headers: { Cookie: await authCookie('editor') } })).status).toBe(403);
-    expect((await fetchWorker('/admin/settings/menu', {
+  it('requires menu:manage for the system settings page', async () => {
+    expect((await fetchWorker('/admin/settings/system', { headers: { Cookie: await authCookie('editor') } })).status).toBe(403);
+    expect((await fetchWorker('/admin/settings/system', {
       method: 'POST',
       body: form({ visible_items: 'pages' }),
       headers: { Cookie: await authCookie('editor') },

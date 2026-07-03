@@ -31,10 +31,17 @@ import { strParam } from './forms';
 import { effectivePermissions, resolveRolePermissions } from './roles';
 import type { Page, Permission } from '../types';
 import { viewRevision } from './view-revision';
-import { loadSidebarMenuSettings } from './settings';
+import {
+  SIDEBAR_MENU_ITEMS,
+  defaultPluginNavWeight,
+  loadAppBrandingSettings,
+  loadSidebarChromeSettings,
+  pluginSidebarKey,
+  type SidebarMenuItemKey,
+} from './settings';
 
 export type { BaseTemplateProps } from '../templates/layout';
-import type { BaseTemplateProps } from '../templates/layout';
+import type { BaseTemplateProps, SidebarNavItem } from '../templates/layout';
 
 /** The signed-in user's effective permission set (built-in defaults + DB overrides). */
 export async function userPermissions(c: AppContext): Promise<Set<Permission>> {
@@ -55,12 +62,15 @@ export async function userCan(c: AppContext, permission: Permission): Promise<bo
 export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> {
   const user = c.get('user');
   const userRoles = user.role.split(',').map((role) => role.trim()).filter(Boolean);
-  const [userAvatar, navItems, permissions] = await Promise.all([
+  const fallbackSiteTitle = c.env.SITE_TITLE ?? '0xCMS';
+  const [userAvatar, navItems, permissions, branding] = await Promise.all([
     fetchUserAvatar(c.env.DB, userIdFromContext(c)),
     pluginNav(c.env),
     userPermissions(c),
+    loadAppBrandingSettings(c.env, fallbackSiteTitle),
   ]);
-  const menuSettings = await loadSidebarMenuSettings(c.env);
+  const sidebarSettings = await loadSidebarChromeSettings(c.env);
+  const menuSettings = sidebarSettings.items;
   const visible = navItems
     .filter((item) => !item.roles?.length || item.roles.some((role) => userRoles.includes(role)));
   const toLink = (item: { label: string; href: string }) => ({ label: item.label, href: item.href });
@@ -68,8 +78,75 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
   // sits at the top level of the sidebar.
   const nav = visible.filter((item) => item.group !== 'settings').map(toLink);
   const settingsNav = visible.filter((item) => item.group === 'settings').map(toLink);
+  const canSeeMenuItem = (key: SidebarMenuItemKey): boolean => {
+    if (key === 'users') return permissions.has('users:manage');
+    if (key === 'roles') return permissions.has('roles:manage');
+    if (key === 'plugins') return permissions.has('plugin:manage');
+    if (key === 'system') return permissions.has('menu:manage');
+    return true;
+  };
+  const orderedSidebarItems = SIDEBAR_MENU_ITEMS
+    .map((item, index) => ({ item, index, setting: menuSettings[item.key] }))
+    .filter((entry) => entry.setting.visible && canSeeMenuItem(entry.item.key))
+    .sort((a, b) => a.setting.weight - b.setting.weight || a.index - b.index);
+  const sidebarSettingsNavEntries: Array<{ item: SidebarNavItem; weight: number; index: number }> = orderedSidebarItems
+    .filter((entry) => entry.item.group === 'settings')
+    .map((entry) => ({
+      item: {
+        label: entry.item.label,
+        href: entry.item.href,
+        icon: entry.item.icon,
+      },
+      weight: entry.setting.weight,
+      index: entry.index,
+    }));
+  const sidebarNavEntries: Array<{ item: SidebarNavItem; weight: number; index: number }> = orderedSidebarItems
+    .filter((entry) => entry.item.group === 'main')
+    .map((entry) => ({
+      item: {
+        label: entry.item.label,
+        href: entry.item.href,
+        icon: entry.item.icon,
+      },
+      weight: entry.setting.weight,
+      index: entry.index,
+    }));
+  visible.forEach((item, index) => {
+    const key = pluginSidebarKey(item);
+    if (sidebarSettings.hiddenPluginKeys.has(key)) return;
+    const entry = {
+      item: {
+        label: item.label,
+        href: item.href,
+        icon: 'beaker',
+      },
+      weight: sidebarSettings.pluginWeights[key] ?? defaultPluginNavWeight(item.group),
+      index: SIDEBAR_MENU_ITEMS.length + index,
+    };
+    if (item.group === 'settings') sidebarSettingsNavEntries.push(entry);
+    else sidebarNavEntries.push(entry);
+  });
+  const sidebarSettingsNav = sidebarSettingsNavEntries
+    .sort((a, b) => a.weight - b.weight || a.index - b.index)
+    .map((entry) => entry.item);
+  if (sidebarSettingsNav.length > 0) {
+    sidebarNavEntries.push({
+      item: {
+        label: 'Settings',
+        href: '',
+        icon: 'settings',
+        isSettingsGroup: true,
+      },
+      weight: sidebarSettings.settingsGroupWeight,
+      index: SIDEBAR_MENU_ITEMS.length,
+    });
+  }
+  const sidebarNav = sidebarNavEntries
+    .sort((a, b) => a.weight - b.weight || a.index - b.index)
+    .map((entry) => entry.item);
   return {
-    siteTitle: c.env.SITE_TITLE ?? '0xCMS',
+    siteTitle: branding.appName,
+    appIcon: branding.appIcon,
     userName: user.name,
     userRole: user.role,
     userAvatar: userAvatar ?? '',
@@ -81,15 +158,18 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     canManageRoles: permissions.has('roles:manage'),
     canManagePlugins: permissions.has('plugin:manage'),
     canManageMenu: permissions.has('menu:manage'),
-    showSidebarPages: menuSettings.pages,
-    showSidebarTags: menuSettings.tags,
-    showSidebarTaxonomies: menuSettings.taxonomies,
-    showSidebarPageTypes: menuSettings.pageTypes,
-    showSidebarBlockTypes: menuSettings.blockTypes,
-    showSidebarUsers: menuSettings.users,
-    showSidebarRoles: menuSettings.roles,
-    showSidebarPlugins: menuSettings.plugins,
-    showSidebarTrash: menuSettings.trash,
+    sidebarNav,
+    sidebarSettingsNav,
+    showSidebarPages: menuSettings.pages.visible,
+    showSidebarTags: menuSettings.tags.visible,
+    showSidebarTaxonomies: menuSettings.taxonomies.visible,
+    showSidebarPageTypes: menuSettings.pageTypes.visible,
+    showSidebarBlockTypes: menuSettings.blockTypes.visible,
+    showSidebarUsers: menuSettings.users.visible,
+    showSidebarRoles: menuSettings.roles.visible,
+    showSidebarPlugins: menuSettings.plugins.visible,
+    showSidebarMenu: menuSettings.system.visible,
+    showSidebarTrash: menuSettings.trash.visible,
   };
 }
 
