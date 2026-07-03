@@ -543,10 +543,12 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
     ? renderLectDiff(opts.draftLect, page?.lect ?? '')
     : '';
   const versions = structured?.versions.map((version) => ({
-    label: `${version.created_at}${version.action ? ` - ${version.action}` : ''}`,
+    date: version.created_at,
+    description: version.action ?? '',
     href: `${versionHrefBase}?version=${version.id}`,
     active: selectedVersion?.id === version.id,
     live: version.id === liveVersionId,
+    removeAction: `delete-version:${version.id}`,
   })) ?? [];
 
   const body = await renderView(views, '/templates/editor.json', {

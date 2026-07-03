@@ -348,6 +348,32 @@ async function editorPageData(
   };
 }
 
+async function latestPageVersionId(db: D1Database, pageId: number): Promise<number | null> {
+  const latest = await db.prepare('SELECT id FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 1')
+    .bind(pageId)
+    .first<{ id: number }>();
+  return latest?.id ?? null;
+}
+
+async function deletePageVersion(db: D1Database, page: Page, versionId: number): Promise<boolean> {
+  const version = await db.prepare('SELECT id FROM page_versions WHERE page_id = ? AND id = ?')
+    .bind(page.id, versionId)
+    .first<{ id: number }>();
+  if (!version) return false;
+
+  await db.prepare('DELETE FROM page_versions WHERE page_id = ? AND id = ?')
+    .bind(page.id, versionId)
+    .run();
+
+  if (page.current_page_version_id === versionId) {
+    await db.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
+      .bind(await latestPageVersionId(db, page.id), page.id)
+      .run();
+  }
+
+  return true;
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 pagesRoutes.get('/', async (c) => {
@@ -808,6 +834,24 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
     .bind(pageId)
     .first<Page>();
   if (!page) return c.notFound();
+
+  if (action.startsWith('delete-version:')) {
+    const versionId = parseInt(action.split(':')[1], 10);
+    if (!Number.isFinite(versionId)) return c.notFound();
+    const deleted = await deletePageVersion(c.env.DB, page, versionId);
+    if (!deleted) return c.notFound();
+    return c.redirect(`/admin/pages/${pageId}/edit?flash=Version+removed`);
+  }
+
+  if (action === 'delete-versions') {
+    await c.env.DB.prepare('DELETE FROM page_versions WHERE page_id = ?')
+      .bind(pageId)
+      .run();
+    await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = NULL WHERE id = ?')
+      .bind(pageId)
+      .run();
+    return c.redirect(`/admin/pages/${pageId}/edit?flash=Versions+cleaned`);
+  }
 
   const config = await resolveCmsConfig(c.env);
 

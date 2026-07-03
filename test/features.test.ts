@@ -367,6 +367,83 @@ describe('version revert', () => {
 
     expect(response.status).toBe(404);
   });
+
+  it('removes one saved version and retargets the current version pointer', async () => {
+    await env.DB.prepare(
+      `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, current_page_version_id, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(114, 'version-delete-uuid-114', 'Changed', 'version-delete-page', 5, 'default', 522, lectWithName('Changed'), 1, '1')
+      .run();
+    await env.DB.prepare('INSERT INTO page_versions (id, page_id, lect, action) VALUES (?, ?, ?, ?)')
+      .bind(521, 114, lectWithName('Original'), 'create')
+      .run();
+    await env.DB.prepare('INSERT INTO page_versions (id, page_id, lect, action) VALUES (?, ?, ?, ?)')
+      .bind(522, 114, lectWithName('Changed'), 'update')
+      .run();
+
+    const editor = await fetchWorker('/admin/pages/114/edit', {
+      headers: { Cookie: await authCookie() },
+    });
+    const data = bodyData(await editor.text());
+    expect(data.versions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ removeAction: 'delete-version:522' }),
+    ]));
+    expect(data).toMatchObject({ hasVersions: true });
+
+    const response = await fetchWorker('/admin/pages/114', {
+      method: 'POST',
+      body: form({ action: 'delete-version:522', name: 'Changed', slug: 'version-delete-page' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/pages/114/edit?flash=Version+removed');
+
+    const page = await env.DB.prepare(
+      'SELECT current_page_version_id FROM draft_pages WHERE id = 114',
+    ).first<{ current_page_version_id: number | null }>();
+    expect(page?.current_page_version_id).toBe(521);
+
+    const versions = await env.DB.prepare(
+      'SELECT id FROM page_versions WHERE page_id = 114 ORDER BY id',
+    ).all<{ id: number }>();
+    expect(versions.results).toEqual([{ id: 521 }]);
+  });
+
+  it('cleans all saved versions and clears the current version pointer', async () => {
+    await env.DB.prepare(
+      `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, current_page_version_id, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(115, 'versions-clean-uuid-115', 'Clean Me', 'versions-clean-page', 5, 'default', 532, lectWithName('Clean Me'), 1, '1')
+      .run();
+    await env.DB.prepare('INSERT INTO page_versions (id, page_id, lect, action) VALUES (?, ?, ?, ?)')
+      .bind(531, 115, lectWithName('Original'), 'create')
+      .run();
+    await env.DB.prepare('INSERT INTO page_versions (id, page_id, lect, action) VALUES (?, ?, ?, ?)')
+      .bind(532, 115, lectWithName('Clean Me'), 'update')
+      .run();
+
+    const response = await fetchWorker('/admin/pages/115', {
+      method: 'POST',
+      body: form({ action: 'delete-versions', name: 'Clean Me', slug: 'versions-clean-page' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe('/admin/pages/115/edit?flash=Versions+cleaned');
+
+    const page = await env.DB.prepare(
+      'SELECT current_page_version_id FROM draft_pages WHERE id = 115',
+    ).first<{ current_page_version_id: number | null }>();
+    expect(page?.current_page_version_id).toBeNull();
+
+    const versions = await env.DB.prepare(
+      'SELECT COUNT(*) AS count FROM page_versions WHERE page_id = 115',
+    ).first<{ count: number }>();
+    expect(versions?.count).toBe(0);
+  });
 });
 
 // ── §13 · Trash browser counters + scoped empty ───────────────────────────────
