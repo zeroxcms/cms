@@ -28,6 +28,7 @@ function providerIcon(provider: string, revisionQuery: string): string {
 
 export async function loginPage(views: Fetcher, opts: {
   siteTitle: string;
+  appIcon: string;
   providers: string[];
   error?: string;
   viewRevision?: string;
@@ -37,6 +38,7 @@ export async function loginPage(views: Fetcher, opts: {
 
   const body = await renderView(views, '/templates/login.json', {
     siteTitle,
+    appIcon: opts.appIcon,
     error,
     isForbidden: error === 'forbidden',
     providers: providers.map((provider) => {
@@ -54,5 +56,5 @@ export async function loginPage(views: Fetcher, opts: {
     }),
   });
 
-  return layout(views, { title: 'Sign In', siteTitle, body, viewRevision: opts.viewRevision });
+  return layout(views, { title: 'Sign In', siteTitle, appIcon: opts.appIcon, body, viewRevision: opts.viewRevision });
 }

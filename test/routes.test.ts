@@ -2025,6 +2025,12 @@ describe('permission-aware admin UI', () => {
       'Pages',
     ]);
 
+    const loginPayload = renderPayload(await (await fetchWorker('/auth/login')).text());
+    expect(loginPayload.layoutData.siteTitle).toBe('Control Room');
+    expect(loginPayload.layoutData.appIcon).toBe('settings');
+    expect(loginPayload.bodyView?.data.siteTitle).toBe('Control Room');
+    expect(loginPayload.bodyView?.data.appIcon).toBe('settings');
+
     const settingsData = bodyData(await (await fetchWorker('/admin/settings/system', { headers: { Cookie: await authCookie() } })).text());
     expect(settingsData.appName).toBe('Control Room');
     expect(settingsData.appIcon).toBe('settings');

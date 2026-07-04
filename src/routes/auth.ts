@@ -22,6 +22,7 @@ import {
   setAuthCookie,
 } from '../security/cookies';
 import { normalizeRoles } from '../utils/roles';
+import { loadAppBrandingSettings } from '../utils/settings';
 import { viewRevision } from '../utils/view-revision';
 import { loginPage } from '../templates/login';
 import type { Env, Variables, JWTPayload } from '../types';
@@ -359,9 +360,11 @@ authRoutes.use('/refresh', authRateLimit);
 authRoutes.get('/login', async (c) => {
   const providers = getEnabledProviders(c.env);
   const error = c.req.query('error');
+  const branding = await loadAppBrandingSettings(c.env, c.env.SITE_TITLE ?? '0xCMS');
   return c.html(
     await loginPage(c.env.VIEWS, {
-      siteTitle: c.env.SITE_TITLE ?? '0xCMS',
+      siteTitle: branding.appName,
+      appIcon: branding.appIcon,
       providers: providers.length > 0 ? providers : ['github'],
       error,
       viewRevision: viewRevision(c.env),
