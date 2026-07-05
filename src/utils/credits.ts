@@ -214,7 +214,10 @@ export async function chargeCredits(env: Env, input: CreditChargeInput): Promise
   const amount = Math.trunc(input.amount);
   if (amount <= 0) throw new Error(`chargeCredits amount must be > 0, got ${input.amount}`);
 
-  const results = await env.DB.batch([
+  // Success is detected via RETURNING, not meta.changes: production D1
+  // reports `changes` from internal row writes (indexes included), so a
+  // one-row UPDATE can report changes > 1 there while local D1 reports 1.
+  const results = await env.DB.batch<{ credits: number }>([
     env.DB.prepare(
       `INSERT INTO credit_ledger (user_id, delta, balance_after, action, entity_type, entity_id, plugin_id, note, created_by)
        SELECT id, ?, credits - ?, ?, ?, ?, ?, ?, ?
@@ -223,13 +226,13 @@ export async function chargeCredits(env: Env, input: CreditChargeInput): Promise
       -amount, amount, input.action, input.entityType ?? null, input.entityId ?? null,
       input.pluginId ?? null, input.note ?? null, input.createdBy, input.userId, amount,
     ),
-    env.DB.prepare('UPDATE users SET credits = credits - ? WHERE id = ? AND credits >= ?')
+    env.DB.prepare('UPDATE users SET credits = credits - ? WHERE id = ? AND credits >= ? RETURNING credits')
       .bind(amount, input.userId, amount),
   ]);
 
-  if ((results[1].meta.changes ?? 0) === 1) {
-    const balance = await getCreditBalance(env, input.userId);
-    return { ok: true, balanceAfter: balance ?? 0 };
+  const updated = results[1].results;
+  if (updated.length === 1) {
+    return { ok: true, balanceAfter: updated[0].credits };
   }
   const balance = await getCreditBalance(env, input.userId);
   if (balance === null) return { ok: false, error: 'unknown_user', balance: 0, required: amount };
@@ -260,7 +263,8 @@ export async function adjustCredits(
     });
   }
 
-  const results = await env.DB.batch([
+  // RETURNING instead of meta.changes for the same reason as chargeCredits.
+  const results = await env.DB.batch<{ credits: number }>([
     env.DB.prepare(
       `INSERT INTO credit_ledger (user_id, delta, balance_after, action, entity_type, entity_id, plugin_id, note, created_by)
        SELECT id, ?, credits + ?, ?, ?, ?, ?, ?, ?
@@ -269,14 +273,15 @@ export async function adjustCredits(
       delta, delta, input.action, input.entityType ?? null, input.entityId ?? null,
       input.pluginId ?? null, input.note ?? null, input.createdBy, input.userId,
     ),
-    env.DB.prepare('UPDATE users SET credits = credits + ? WHERE id = ?').bind(delta, input.userId),
+    env.DB.prepare('UPDATE users SET credits = credits + ? WHERE id = ? RETURNING credits')
+      .bind(delta, input.userId),
   ]);
 
-  if ((results[1].meta.changes ?? 0) !== 1) {
+  const updated = results[1].results;
+  if (updated.length !== 1) {
     return { ok: false, error: 'unknown_user', balance: 0, required: 0 };
   }
-  const balance = await getCreditBalance(env, input.userId);
-  return { ok: true, balanceAfter: balance ?? 0 };
+  return { ok: true, balanceAfter: updated[0].credits };
 }
 
 /**

@@ -212,6 +212,26 @@ describe('chargeCredits / adjustCredits', () => {
     expect(overdraw).toMatchObject({ ok: false, error: 'insufficient_credits' });
     expect(await balance(PAYER_ID)).toBe(55);
   });
+
+  // Regression: the users_updated_at AFTER UPDATE trigger fires when the row's
+  // updated_at is in the past, and D1's meta.changes counts the trigger's write
+  // too — so a one-row credit UPDATE reports changes: 2 on production. The old
+  // `meta.changes === 1` guard then wrongly reported unknown_user even though
+  // the write succeeded. Detection now uses RETURNING, which is trigger-immune.
+  it('succeeds when the updated_at trigger fires (production changes > 1)', async () => {
+    await seedUser(PAYER_ID, 100);
+    await env.DB.prepare("UPDATE users SET updated_at = '2000-01-01 00:00:00' WHERE id = ?")
+      .bind(PAYER_ID).run();
+
+    const grant = await adjustCredits(env, { userId: PAYER_ID, delta: 50, action: 'admin:adjust', createdBy: '1' });
+    expect(grant).toMatchObject({ ok: true, balanceAfter: 150 });
+
+    await env.DB.prepare("UPDATE users SET updated_at = '2000-01-01 00:00:00' WHERE id = ?")
+      .bind(PAYER_ID).run();
+    const spend = await chargeCredits(env, { userId: PAYER_ID, amount: 30, action: 'test:spend', createdBy: 'test' });
+    expect(spend).toMatchObject({ ok: true, balanceAfter: 120 });
+    expect(await balance(PAYER_ID)).toBe(120);
+  });
 });
 
 describe('/__cms page-create charging', () => {
