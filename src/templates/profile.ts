@@ -1,5 +1,6 @@
 import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
+import type { UserCreditLedgerRow } from './users';
 
 export interface ProfileIdentity {
   id: string;
@@ -27,6 +28,8 @@ export async function profilePage(views: Fetcher, opts: BaseTemplateProps & {
   error?: string;
   identities: ProfileIdentity[];
   providers: ProfileProvider[];
+  creditBalance: number;
+  creditLedger: UserCreditLedgerRow[];
 }): Promise<string> {
   const body = await renderView(views, '/templates/profile.json', {
     name: opts.name,
@@ -43,6 +46,9 @@ export async function profilePage(views: Fetcher, opts: BaseTemplateProps & {
     identities: opts.identities,
     hasProviders: opts.providers.length > 0,
     providers: opts.providers,
+    creditBalance: opts.creditBalance,
+    hasCreditLedger: opts.creditLedger.length > 0,
+    creditLedger: opts.creditLedger,
   });
   return adminLayout(views, opts, { title: 'Profile', body });
 }

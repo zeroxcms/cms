@@ -49,6 +49,14 @@ import {
   effectiveLimitsForPlugin,
   type LimitViolation,
 } from '../utils/plugin-limits';
+import {
+  chargeCredits,
+  effectiveCreditsForPlugin,
+  getCreditBalance,
+  pageCreateAction,
+  pageCreateCostForType,
+  refundCredits,
+} from '../utils/credits';
 
 export const cmsApiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -288,7 +296,18 @@ function emitPluginHooks(c: AppContext, event: HookEvent, pages: HookPage[], plu
 
 // ── Create (shared by POST /pages and POST /pages/batch) ──────────────────────
 
-type CreateResult = { ok: true; page: ApiPage } | { ok: false; status: number; error: string; violation?: LimitViolation };
+type CreateResult =
+  | { ok: true; page: ApiPage }
+  | { ok: false; status: number; error: string; violation?: LimitViolation; credit?: { required: number; balance: number } };
+
+/**
+ * The user a plugin acts on behalf of, echoed back from the `x-cms-user`
+ * summary the admin proxy forwards. Absent on flows with no signed-in user
+ * (public RSVP submit, kiosk check-in) — those are uncharged in v1.
+ */
+function actingUserId(c: AppContext): number | null {
+  return asFiniteNumber((c.req.header('x-acting-user-id') ?? '').trim() || null);
+}
 type PrepareCreateResult = { ok: true; input: PreparedCreate } | { ok: false; status: number; error: string };
 
 function prepareCreateInput(
@@ -356,38 +375,77 @@ async function createPage(
   ]);
   if (violation) return { ok: false, status: 409, error: 'limit_exceeded', violation };
 
-  const slug = await ensureUniqueDraftSlug(c.env.DB, preparedInput.baseSlug);
+  // Charge the acting user before inserting (deduct-then-create keeps the
+  // balance authoritative); a downstream failure refunds via the catch below.
+  const cost = await pageCreateCostForType(c.env, preparedInput.pageType);
+  const payer = actingUserId(c);
+  const chargeAction = pageCreateAction(preparedInput.pageType, cost);
+  let charged = 0;
+  if (cost.total > 0 && payer !== null) {
+    const charge = await chargeCredits(c.env, {
+      userId: payer,
+      amount: cost.total,
+      action: chargeAction,
+      entityType: preparedInput.pageType,
+      pluginId: auth.pluginId,
+      createdBy: `plugin:${auth.pluginId}`,
+    });
+    if (!charge.ok) {
+      if (charge.error === 'unknown_user') return { ok: false, status: 400, error: 'unknown_acting_user' };
+      return {
+        ok: false,
+        status: 402,
+        error: 'insufficient_credits',
+        credit: { required: charge.required, balance: charge.balance },
+      };
+    }
+    charged = cost.total;
+  }
 
-  const explicitId = preparedInput.id ?? cmsId(new Set<number>());
-  await c.env.DB.prepare(
-    `INSERT INTO draft_pages (id, name, slug, weight, start, end, timezone, page_type, lect, page_id, creator)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(
-      explicitId,
-      preparedInput.name,
-      slug,
-      preparedInput.weight,
-      preparedInput.start,
-      preparedInput.end,
-      preparedInput.timezone,
-      preparedInput.pageType,
-      preparedInput.lect,
-      preparedInput.parentId,
-      null,
+  try {
+    const slug = await ensureUniqueDraftSlug(c.env.DB, preparedInput.baseSlug);
+
+    const explicitId = preparedInput.id ?? cmsId(new Set<number>());
+    await c.env.DB.prepare(
+      `INSERT INTO draft_pages (id, name, slug, weight, start, end, timezone, page_type, lect, page_id, creator)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run();
+      .bind(
+        explicitId,
+        preparedInput.name,
+        slug,
+        preparedInput.weight,
+        preparedInput.start,
+        preparedInput.end,
+        preparedInput.timezone,
+        preparedInput.pageType,
+        preparedInput.lect,
+        preparedInput.parentId,
+        null,
+      )
+      .run();
 
-  const row = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
-    .bind(explicitId)
-    .first<Page>();
-  if (!row) return { ok: false, status: 500, error: 'create_failed' };
+    const row = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
+      .bind(explicitId)
+      .first<Page>();
+    if (!row) {
+      if (charged && payer !== null) {
+        await refundCredits(c.env, { userId: payer, amount: charged, action: chargeAction, pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
+      }
+      return { ok: false, status: 500, error: 'create_failed' };
+    }
 
-  await savePageVersionAndSetCurrent(c.env.DB, row.id, preparedInput.lect, 'create');
-  await setDraftPageTags(c.env.DB, row.id, preparedInput.tags, false);
+    await savePageVersionAndSetCurrent(c.env.DB, row.id, preparedInput.lect, 'create');
+    await setDraftPageTags(c.env.DB, row.id, preparedInput.tags, false);
 
-  emitPluginHook(c, 'create', { id: row.id, uuid: row.uuid, page_type: preparedInput.pageType, name: preparedInput.name, slug }, auth.pluginId);
-  return { ok: true, page: serializePage(row) };
+    emitPluginHook(c, 'create', { id: row.id, uuid: row.uuid, page_type: preparedInput.pageType, name: preparedInput.name, slug }, auth.pluginId);
+    return { ok: true, page: serializePage(row) };
+  } catch (error) {
+    if (charged && payer !== null) {
+      await refundCredits(c.env, { userId: payer, amount: charged, action: chargeAction, pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
+    }
+    throw error;
+  }
 }
 
 async function existingSlugSet(db: D1Database, baseSlugs: string[]): Promise<Set<string>> {
@@ -510,6 +568,109 @@ cmsApiRoutes.get('/limits', async (c) => {
   return c.json({ limits: out });
 });
 
+// ── Credits ───────────────────────────────────────────────────────────────────
+// The calling plugin's declared costs with effective prices, plus the acting
+// user's balance when x-acting-user-id is sent. Read-only, for plugin UIs
+// ("Creating this list costs 25 credits — you have 320").
+cmsApiRoutes.get('/credits', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const payer = actingUserId(c);
+  const credits = await effectiveCreditsForPlugin(c.env, auth.plugin);
+  return c.json({
+    balance: payer !== null ? await getCreditBalance(c.env, payer) : null,
+    credits: credits.map((credit) => ({
+      key: credit.def.key,
+      label: credit.def.label,
+      description: credit.def.description,
+      charge: credit.def.charge,
+      page_type: credit.def.pageType,
+      unit: credit.def.unit,
+      value: credit.value,
+      configured: credit.configured,
+    })),
+  });
+});
+
+// Affordability pre-check for a declared cost — lets a plugin verify a long
+// job (an EDM blast, a big import) fits the balance BEFORE starting it.
+// Nothing is deducted here.
+cmsApiRoutes.get('/credits/quote', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const key = (c.req.query('key') ?? '').trim();
+  const quantity = Math.trunc(asFiniteNumber(c.req.query('quantity')) ?? 1);
+  if (!key) return c.json({ error: 'key_required' }, 400);
+  if (quantity < 1 || quantity > 1_000_000) return c.json({ error: 'invalid_quantity' }, 400);
+
+  const credit = (await effectiveCreditsForPlugin(c.env, auth.plugin)).find((entry) => entry.def.key === key);
+  if (!credit) return c.json({ error: 'unknown_credit_key' }, 400);
+
+  const payer = actingUserId(c);
+  const balance = payer !== null ? await getCreditBalance(c.env, payer) : null;
+  const total = credit.value * quantity;
+  return c.json({
+    key,
+    unit_cost: credit.value,
+    quantity,
+    total,
+    balance,
+    affordable: total === 0 || (balance !== null && balance >= total),
+  });
+});
+
+// Plugin-reported usage for metered costs the host can't observe (e.g. one
+// EDM send per recipient). Only keys the calling plugin's manifest declares
+// as metered are accepted — a plugin cannot invent ad-hoc charges — and the
+// price still comes from the host-side configuration, never the request.
+cmsApiRoutes.post('/credits/charge', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const body = await c.req.json().catch(() => null) as {
+    key?: unknown; quantity?: unknown; entity_type?: unknown; entity_id?: unknown; note?: unknown;
+  } | null;
+  if (!body || typeof body !== 'object') return c.json({ error: 'invalid_body' }, 400);
+
+  const key = typeof body.key === 'string' ? body.key.trim() : '';
+  if (!key) return c.json({ error: 'key_required' }, 400);
+  const quantity = Math.trunc(asFiniteNumber(body.quantity) ?? 1);
+  if (quantity < 1 || quantity > 1_000_000) return c.json({ error: 'invalid_quantity' }, 400);
+
+  const credit = (await effectiveCreditsForPlugin(c.env, auth.plugin)).find((entry) => entry.def.key === key);
+  if (!credit) return c.json({ error: 'unknown_credit_key' }, 400);
+  if (credit.def.charge !== 'metered') return c.json({ error: 'not_metered' }, 400);
+
+  const payer = actingUserId(c);
+  if (payer === null) return c.json({ error: 'acting_user_required' }, 400);
+
+  const total = credit.value * quantity;
+  if (total === 0) {
+    return c.json({ ok: true, charged: 0, balance: await getCreditBalance(c.env, payer) });
+  }
+
+  const charge = await chargeCredits(c.env, {
+    userId: payer,
+    amount: total,
+    action: `${auth.pluginId}:${key}`,
+    entityType: typeof body.entity_type === 'string' ? body.entity_type.slice(0, 60) : undefined,
+    entityId: typeof body.entity_id === 'string' || typeof body.entity_id === 'number' ? String(body.entity_id).slice(0, 60) : undefined,
+    note: typeof body.note === 'string' ? body.note.slice(0, 300) : undefined,
+    pluginId: auth.pluginId,
+    createdBy: `plugin:${auth.pluginId}`,
+  });
+  if (!charge.ok) {
+    if (charge.error === 'unknown_user') return c.json({ error: 'unknown_acting_user' }, 400);
+    return c.json(
+      { error: 'insufficient_credits', credit: { required: charge.required, balance: charge.balance } },
+      402,
+    );
+  }
+  return c.json({ ok: true, charged: total, balance: charge.balanceAfter });
+});
+
 // List pages of a content type the plugin owns.
 cmsApiRoutes.get('/pages', async (c) => {
   const auth = await authenticatePlugin(c);
@@ -610,7 +771,10 @@ cmsApiRoutes.post('/pages', async (c) => {
 
   const result = await createPage(c, auth, body);
   if (!result.ok) {
-    return c.json({ error: result.error, violation: result.violation }, result.status as 400 | 403 | 409 | 500);
+    return c.json(
+      { error: result.error, violation: result.violation, credit: result.credit },
+      result.status as 400 | 402 | 403 | 409 | 500,
+    );
   }
   return c.json({ page: result.page }, 201);
 });
@@ -644,6 +808,41 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
       prepared.map((item) => createCandidate(item.pageType, item.parentId, item.lect)),
     );
     if (violation) return c.json({ error: 'limit_exceeded', violation }, 409);
+
+    // Total page-create cost across the batch, charged once up front —
+    // all-or-nothing like the limit check, so an import either fully fits the
+    // payer's balance or writes nothing.
+    const typeCounts = new Map<string, number>();
+    for (const item of prepared) typeCounts.set(item.pageType, (typeCounts.get(item.pageType) ?? 0) + 1);
+    let totalCost = 0;
+    const breakdown: Record<string, number> = {};
+    for (const [type, count] of typeCounts) {
+      const cost = await pageCreateCostForType(c.env, type);
+      if (cost.total > 0) {
+        totalCost += cost.total * count;
+        breakdown[type] = cost.total * count;
+      }
+    }
+    const payer = actingUserId(c);
+    let charged = 0;
+    if (totalCost > 0 && payer !== null) {
+      const charge = await chargeCredits(c.env, {
+        userId: payer,
+        amount: totalCost,
+        action: 'page_create:batch',
+        pluginId: auth.pluginId,
+        note: JSON.stringify(breakdown),
+        createdBy: `plugin:${auth.pluginId}`,
+      });
+      if (!charge.ok) {
+        if (charge.error === 'unknown_user') return c.json({ error: 'unknown_acting_user' }, 400);
+        return c.json(
+          { error: 'insufficient_credits', credit: { required: charge.required, balance: charge.balance } },
+          402,
+        );
+      }
+      charged = totalCost;
+    }
 
     const usedSlugs = await existingSlugSet(c.env.DB, prepared.map((item) => item.baseSlug));
     const usedIds = new Set<number>();
@@ -687,7 +886,14 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
       hookPages.push({ id, uuid, page_type: item.pageType, name: item.name, slug });
     }
 
-    await c.env.DB.batch(statements);
+    try {
+      await c.env.DB.batch(statements);
+    } catch (error) {
+      if (charged && payer !== null) {
+        await refundCredits(c.env, { userId: payer, amount: charged, action: 'page_create:batch', pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
+      }
+      throw error;
+    }
     emitPluginHooks(c, 'create', hookPages, auth.pluginId);
   }
 
@@ -753,8 +959,36 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
     const violation = await checkCreateLimits(c.env, Array.from({ length: remaining }, () => candidate));
     if (violation) return c.json({ error: 'limit_exceeded', violation }, 409);
   }
+
+  // Charge for every clone this call will make; if the loop clones fewer
+  // (failure mid-way, or sources trashed concurrently) the difference is
+  // refunded below.
+  const cloneCost = await pageCreateCostForType(c.env, pageType);
+  const payer = actingUserId(c);
+  const cloneAction = pageCreateAction(pageType, cloneCost);
+  let chargedClones = 0;
+  if (remaining > 0 && cloneCost.total > 0 && payer !== null) {
+    const charge = await chargeCredits(c.env, {
+      userId: payer,
+      amount: cloneCost.total * remaining,
+      action: cloneAction,
+      entityType: pageType,
+      pluginId: auth.pluginId,
+      note: `duplicate x${remaining}`,
+      createdBy: `plugin:${auth.pluginId}`,
+    });
+    if (!charge.ok) {
+      if (charge.error === 'unknown_user') return c.json({ error: 'unknown_acting_user' }, 400);
+      return c.json(
+        { error: 'insufficient_credits', credit: { required: charge.required, balance: charge.balance } },
+        402,
+      );
+    }
+    chargedClones = remaining;
+  }
   let copied = 0;
   let done = false;
+  try {
   // Loop internally in DB.batch chunks up to the per-request cap. Each chunk
   // commits on its own, so a copied row is never lost if a later chunk fails.
   while (copied < DUPLICATE_MAX_PER_CALL) {
@@ -801,6 +1035,29 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
     copied += chunk.length;
     cursor = chunk[chunk.length - 1].id;
     if (!hasMore) { done = true; break; }
+  }
+  } catch (error) {
+    if (chargedClones > copied && payer !== null) {
+      await refundCredits(c.env, {
+        userId: payer,
+        amount: cloneCost.total * (chargedClones - copied),
+        action: cloneAction,
+        pluginId: auth.pluginId,
+        createdBy: `plugin:${auth.pluginId}`,
+      });
+    }
+    throw error;
+  }
+
+  // Sources trashed concurrently → fewer clones than were charged for.
+  if (chargedClones > copied && payer !== null) {
+    await refundCredits(c.env, {
+      userId: payer,
+      amount: cloneCost.total * (chargedClones - copied),
+      action: cloneAction,
+      pluginId: auth.pluginId,
+      createdBy: `plugin:${auth.pluginId}`,
+    });
   }
 
   return c.json({ count: copied, next_cursor: done ? null : cursor, done });

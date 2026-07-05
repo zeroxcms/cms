@@ -17,6 +17,8 @@ export interface PluginListItem {
   hasPageTypes?: boolean;
   /** True when the manifest declares configurable quota limits. */
   hasLimits?: boolean;
+  /** True when the manifest declares configurable credit costs. */
+  hasCredits?: boolean;
 }
 
 const STATUS_BADGE: Record<PluginListItem['status'], string> = {
@@ -47,6 +49,8 @@ export async function pluginsManagePage(views: Fetcher, opts: BaseTemplateProps 
       pageTypesHref: `/admin/plugins-manage/${plugin.id}/page-types`,
       hasLimits: !!plugin.hasLimits,
       limitsHref: `/admin/plugins-manage/${plugin.id}/limits`,
+      hasCredits: !!plugin.hasCredits,
+      creditsHref: `/admin/plugins-manage/${plugin.id}/credits`,
     })),
   });
 
@@ -179,6 +183,44 @@ export async function pluginLimitsPage(views: Fetcher, opts: BaseTemplateProps &
   });
 
   return adminLayout(views, opts, { title: `${pluginLabel} · Limits`, body });
+}
+
+export interface PluginCreditRow {
+  key: string;
+  label: string;
+  description: string;
+  chargeLabel: string;
+  defaultLabel: string;
+  effectiveLabel: string;
+  /** Configured price as a string, or '' when unset (default applies). */
+  value: string;
+}
+
+export async function pluginCreditsPage(views: Fetcher, opts: BaseTemplateProps & {
+  pluginId: number;
+  pluginLabel: string;
+  unreachable: boolean;
+  credits: PluginCreditRow[];
+  saveAction: string;
+  flash?: string;
+}): Promise<string> {
+  const { pluginLabel, unreachable, credits, saveAction, flash } = opts;
+  const flashMessage = flash === 'saved'
+    ? 'Credit costs saved. New charges use these prices immediately.'
+    : '';
+
+  const body = await renderView(views, '/templates/plugin-credits.json', {
+    pluginLabel,
+    unreachable,
+    hasCredits: credits.length > 0,
+    credits,
+    saveAction,
+    hasFlash: !!flashMessage,
+    flashMessage,
+    backHref: '/admin/plugins-manage',
+  });
+
+  return adminLayout(views, opts, { title: `${pluginLabel} · Credits`, body });
 }
 
 export interface PluginPageTypeRow {

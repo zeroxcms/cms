@@ -73,6 +73,8 @@ export interface User {
   name: string;
   avatar_url: string | null;
   role: string;
+  /** Credit balance (see utils/credits.ts). Optional on partial SELECTs. */
+  credits?: number;
 }
 
 // Access token – short-lived (15 min)
@@ -332,6 +334,14 @@ export interface PluginManifest {
    * write-back API and the built-in admin editor. See utils/plugin-limits.ts.
    */
   limits?: PluginLimitDef[];
+  /**
+   * Credit costs this plugin exposes for admin configuration. Like limits, the
+   * plugin only *declares* which chargeable actions exist; the CMS stores the
+   * configured prices in the `settings` table, deducts from the acting user's
+   * balance, and records every change in the credit ledger. See
+   * utils/credits.ts.
+   */
+  credits?: PluginCreditDef[];
 }
 
 /** How a declared plugin limit counts existing pages. */
@@ -357,6 +367,34 @@ export interface PluginLimitDef {
   /** Required when scope is 'per_pointer': the `_pointers` key pages group by. */
   pointer_key?: string;
   /** Limit applied until an admin configures a value. Omitted → unlimited. */
+  default?: number;
+}
+
+/**
+ * How a declared credit cost is charged: 'page_create' costs are observed and
+ * charged by the host at every page-create path; 'metered' costs are reported
+ * by the plugin via POST /__cms/credits/charge for actions the host can't see
+ * (e.g. sending an EDM blast).
+ */
+export type PluginCreditCharge = 'page_create' | 'metered';
+
+/** A credit cost declared in a plugin manifest (see PluginManifest.credits). */
+export interface PluginCreditDef {
+  /** Identifier unique within the plugin, e.g. "create_guest_list". */
+  key: string;
+  /** Human label shown in the credits admin and the ledger. */
+  label?: string;
+  /** Optional longer description shown in the credits admin. */
+  description?: string;
+  charge: PluginCreditCharge;
+  /** Required when charge is 'page_create': the page type whose creation is
+   *  charged. Must be a type the plugin owns or may write via an approved
+   *  writeType. */
+  page_type?: string;
+  /** Display unit for metered costs (e.g. "recipient"); defaults to "action". */
+  unit?: string;
+  /** Cost in credits until an admin configures a value. Omitted or 0 = free —
+   *  a freshly deployed manifest never silently starts charging. */
   default?: number;
 }
 

@@ -4,6 +4,8 @@ import type { Env, Variables, User } from '../../types';
 import { renderPage } from '../../utils/admin-render';
 import { ROLE_LABELS } from '../../utils/roles';
 import { allRoleOptions } from '../../utils/role-store';
+import { listCreditLedger } from '../../utils/credits';
+import { creditLedgerRowForView } from '../../templates/users';
 
 export const profileRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -53,8 +55,8 @@ profileRoutes.get('/profile', async (c) => {
   const userId = Number(c.get('user').sub);
   const flash = c.req.query('flash') ?? '';
   const error = c.req.query('error') ?? '';
-  const [user, identityRows, roleOptions] = await Promise.all([
-    c.env.DB.prepare('SELECT id, oauth_id, email, name, avatar_url, role FROM users WHERE id = ?')
+  const [user, identityRows, roleOptions, creditLedger] = await Promise.all([
+    c.env.DB.prepare('SELECT id, oauth_id, email, name, avatar_url, role, credits FROM users WHERE id = ?')
       .bind(userId)
       .first<User>(),
     c.env.DB.prepare(
@@ -66,6 +68,7 @@ profileRoutes.get('/profile', async (c) => {
       .bind(userId)
       .all<OAuthIdentityRow>(),
     allRoleOptions(c.env),
+    listCreditLedger(c.env, userId, { limit: 20 }),
   ]);
   if (!user) return c.notFound();
 
@@ -110,6 +113,8 @@ profileRoutes.get('/profile', async (c) => {
     error,
     identities,
     providers,
+    creditBalance: user.credits ?? 0,
+    creditLedger: creditLedger.map(creditLedgerRowForView),
   });
 });
 

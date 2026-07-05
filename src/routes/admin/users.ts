@@ -9,6 +9,8 @@ import { requirePermission } from '../../middleware/auth';
 import { renderPage } from '../../utils/admin-render';
 import { allRoleOptions } from '../../utils/role-store';
 import { ROLE_LABELS } from '../../utils/roles';
+import { adjustCredits, listCreditLedger } from '../../utils/credits';
+import { creditLedgerRowForView } from '../../templates/users';
 import type { AppContext } from '../../utils/context';
 
 export const usersRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -97,16 +99,53 @@ usersRoutes.get('/users', async (c) => {
 
 usersRoutes.get('/users/:id/edit', async (c) => {
   const id = parseInt(c.req.param('id'), 10);
+  const user = await c.env.DB.prepare('SELECT id, name, email, role, credits FROM users WHERE id = ?')
+    .bind(id)
+    .first<User>();
+  if (!user) return c.notFound();
+  return userForm(c, user, c.req.query('error') || undefined, c.req.query('flash') || undefined);
+});
+
+// Grant or deduct credits with a mandatory note. Deductions use the same
+// overdraft guard as spends — a balance can never be adjusted below zero.
+usersRoutes.post('/users/:id/credits', requirePermission('users:manage'), async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
   const user = await c.env.DB.prepare('SELECT id, name, email, role FROM users WHERE id = ?')
     .bind(id)
     .first<User>();
   if (!user) return c.notFound();
-  return userForm(c, user);
+
+  const form = await c.req.formData();
+  const amount = Math.trunc(Number(form.get('amount')));
+  const note = String(form.get('note') ?? '').trim().slice(0, 300);
+  const back = `/admin/users/${id}/edit`;
+  if (!Number.isFinite(amount) || amount === 0) {
+    return c.redirect(`${back}?error=Enter+a+non-zero+amount`);
+  }
+  if (!note) {
+    return c.redirect(`${back}?error=A+note+is+required+for+credit+adjustments`);
+  }
+
+  const result = await adjustCredits(c.env, {
+    userId: id,
+    delta: amount,
+    action: 'admin:adjust',
+    note,
+    createdBy: c.get('user').sub,
+  });
+  if (!result.ok) {
+    return c.redirect(result.error === 'insufficient_credits'
+      ? `${back}?error=Cannot+deduct+below+zero+(balance+${result.balance})`
+      : `${back}?error=User+not+found`);
+  }
+
+  logAudit(c, 'user.credits.adjust', 'user', id, { amount, note, balance_after: result.balanceAfter });
+  return c.redirect(`${back}?flash=Credits+updated+(balance+${result.balanceAfter})`);
 });
 
 usersRoutes.post('/users/:id', requirePermission('users:manage'), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
-  const user = await c.env.DB.prepare('SELECT id, name, email, role FROM users WHERE id = ?')
+  const user = await c.env.DB.prepare('SELECT id, name, email, role, credits FROM users WHERE id = ?')
     .bind(id)
     .first<User>();
   if (!user) return c.notFound();
@@ -164,14 +203,21 @@ usersRoutes.post('/users/:id/delete', requirePermission('users:manage'), async (
   return c.redirect('/admin/users?flash=User+removed');
 });
 
-async function userForm(c: AppContext, user: User, error?: string): Promise<Response> {
-  const options = await allRoleOptions(c.env);
+async function userForm(c: AppContext, user: User, error?: string, flash?: string): Promise<Response> {
+  const [options, ledger] = await Promise.all([
+    allRoleOptions(c.env),
+    listCreditLedger(c.env, user.id, { limit: 10 }),
+  ]);
   const held = new Set(user.role.split(',').map((role) => role.trim()).filter(Boolean));
   return renderPage(c, userFormPage, {
     id: user.id,
     name: user.name,
     email: user.email,
     error,
+    flash,
     roleOptions: options.map((option) => ({ value: option.name, label: option.label, checked: held.has(option.name) })),
+    creditBalance: user.credits ?? 0,
+    creditAdjustAction: `/admin/users/${user.id}/credits`,
+    creditLedger: ledger.map(creditLedgerRowForView),
   });
 }

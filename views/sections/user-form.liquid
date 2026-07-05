@@ -4,6 +4,9 @@
   {% if hasError %}
     <div class="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{{ error | escape }}</div>
   {% endif %}
+  {% if hasFlash %}
+    <div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">{{ flash | escape }}</div>
+  {% endif %}
   <form method="POST" action="{{ action | escape }}" class="min-w-0 space-y-4">
     <fieldset class="min-w-0">
       <legend class="block text-sm font-medium text-gray-700 mb-1">Roles</legend>
@@ -22,4 +25,53 @@
       <a href="/admin/users" class="w-full px-6 py-2 text-center bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors sm:w-auto">Cancel</a>
     </div>
   </form>
+
+  <section class="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 p-5 sm:p-6">
+    <h3 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Credits</h3>
+    <p class="mt-2 text-2xl font-bold text-gray-900">{{ creditBalance }}</p>
+    <form method="POST" action="{{ creditAdjustAction | escape }}" class="mt-4 space-y-3">
+      <label class="block">
+        <span class="block text-sm font-medium text-gray-700 mb-1">Adjustment</span>
+        <input name="amount" type="number" step="1" required placeholder="e.g. 500 or -100"
+               class="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+        <span class="block text-xs text-gray-500 mt-1">Positive grants credits, negative deducts. The balance can never go below zero.</span>
+      </label>
+      <label class="block">
+        <span class="block text-sm font-medium text-gray-700 mb-1">Note</span>
+        <input name="note" type="text" required maxlength="300" placeholder="Why this adjustment is made"
+               class="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+      </label>
+      <button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Apply adjustment</button>
+    </form>
+
+    {% if hasCreditLedger %}
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[560px] text-left text-sm">
+          <thead class="bg-gray-50 text-left text-xs uppercase text-gray-500">
+            <tr>
+              <th class="px-4 py-2">When</th>
+              <th class="px-4 py-2">Action</th>
+              <th class="px-4 py-2">Change</th>
+              <th class="px-4 py-2">Balance</th>
+              <th class="px-4 py-2">By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in creditLedger %}
+              <tr class="border-t border-gray-100">
+                <td class="px-4 py-3 text-xs text-gray-500">{{ entry.createdAt | escape }}</td>
+                <td class="px-4 py-3">
+                  <span class="font-mono text-xs">{{ entry.action | escape }}</span>
+                  {% if entry.note != '' %}<div class="text-xs text-gray-500 mt-0.5">{{ entry.note | escape }}</div>{% endif %}
+                </td>
+                <td class="px-4 py-3 text-sm {% if entry.isSpend %}text-red-700{% else %}text-green-700{% endif %}">{{ entry.delta | escape }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700">{{ entry.balanceAfter }}</td>
+                <td class="px-4 py-3 text-xs text-gray-500">{{ entry.createdBy | escape }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </section>
 </div>

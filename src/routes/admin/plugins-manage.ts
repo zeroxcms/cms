@@ -44,11 +44,20 @@ import {
   type PluginLimitValues,
 } from '../../utils/plugin-limits';
 import {
+  declaredCredits,
+  loadCreditValues,
+  saveCreditValues,
+  type NormalizedCreditDef,
+  type PluginCreditValues,
+} from '../../utils/credits';
+import {
   pluginsManagePage,
   pluginFormPage,
   pluginAssetsPage,
+  pluginCreditsPage,
   pluginLimitsPage,
   pluginPageTypesPage,
+  type PluginCreditRow,
   type PluginLimitRow,
   type PluginListItem,
 } from '../../templates/plugins-manage';
@@ -160,6 +169,7 @@ pluginsManageRoutes.get('/plugins-manage', async (c) => {
       hasAssets: !!manifest?.assets?.length,
       hasPageTypes: !!((manifest?.contentTypes?.readTypes?.length ?? 0) + (manifest?.contentTypes?.writeTypes?.length ?? 0)),
       hasLimits: !!manifest?.limits?.length,
+      hasCredits: !!manifest?.credits?.length,
     };
   });
 
@@ -454,6 +464,90 @@ pluginsManageRoutes.post('/plugins-manage/:id/limits', async (c) => {
   await saveLimitValues(c.env, resolved.manifest.id, values);
   logAudit(c, 'plugin.limits.update', 'plugin', resolved.manifest.id, values);
   return c.redirect(`/admin/plugins-manage/${id}/limits?flash=saved`);
+});
+
+// ── Credit costs ───────────────────────────────────────────────────────────
+// A plugin's manifest only *declares* which chargeable actions exist
+// (PluginManifest.credits). Prices configured here are stored in the settings
+// table; the host deducts from the acting user's balance on each action and
+// logs every change in credit_ledger. See utils/credits.ts.
+
+function creditChargeLabel(def: NormalizedCreditDef): string {
+  return def.charge === 'page_create'
+    ? `On create: ${def.pageType}`
+    : `Metered per ${def.unit}`;
+}
+
+function priceLabel(value: number): string {
+  return value === 0 ? 'Free' : String(value);
+}
+
+pluginsManageRoutes.get('/plugins-manage/:id/credits', async (c) => {
+  const id = Number(c.req.param('id'));
+  const found = await resolvedPluginFor(c.env, id);
+  if (!found) return c.notFound();
+  const { row, resolved } = found;
+  if (!resolved) {
+    return renderPage(c, pluginCreditsPage, {
+      pluginId: id,
+      pluginLabel: row.label || row.url,
+      unreachable: true,
+      credits: [],
+      saveAction: `/admin/plugins-manage/${id}/credits`,
+      flash: c.req.query('flash') ?? undefined,
+    });
+  }
+
+  const allowed = await limitScopeTypes(c.env.DB, resolved.manifest);
+  const defs = declaredCredits(resolved.manifest, allowed);
+  const values = await loadCreditValues(c.env, resolved.manifest.id);
+
+  const credits: PluginCreditRow[] = defs.map((def) => {
+    const configured = def.key in values;
+    const effective = configured ? values[def.key] : def.defaultValue;
+    return {
+      key: def.key,
+      label: def.label,
+      description: def.description,
+      chargeLabel: creditChargeLabel(def),
+      defaultLabel: priceLabel(def.defaultValue),
+      effectiveLabel: priceLabel(effective) + (configured ? '' : ' (default)'),
+      value: configured ? String(values[def.key]) : '',
+    };
+  });
+
+  return renderPage(c, pluginCreditsPage, {
+    pluginId: id,
+    pluginLabel: resolved.manifest.name || row.label || row.url,
+    unreachable: false,
+    credits,
+    saveAction: `/admin/plugins-manage/${id}/credits`,
+    flash: c.req.query('flash') ?? undefined,
+  });
+});
+
+pluginsManageRoutes.post('/plugins-manage/:id/credits', async (c) => {
+  const id = Number(c.req.param('id'));
+  const found = await resolvedPluginFor(c.env, id);
+  if (!found?.resolved) return c.notFound();
+  const { resolved } = found;
+
+  const allowed = await limitScopeTypes(c.env.DB, resolved.manifest);
+  const defs = declaredCredits(resolved.manifest, allowed);
+  const form = await c.req.formData();
+
+  // Only manifest-declared keys are saved; blank = unset (default applies).
+  const values: PluginCreditValues = {};
+  for (const def of defs) {
+    const raw = str(form.get(`value_${def.key}`));
+    if (!raw) continue;
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed >= 0) values[def.key] = Math.trunc(parsed);
+  }
+
+  await saveCreditValues(c.env, resolved.manifest.id, values);
+  logAudit(c, 'plugin.credits.update', 'plugin', resolved.manifest.id, values);
+  return c.redirect(`/admin/plugins-manage/${id}/credits?flash=saved`);
 });
 
 // ── Page type access approvals ─────────────────────────────────────────────

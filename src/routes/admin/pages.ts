@@ -30,6 +30,7 @@ import {
 } from '../../utils/forms';
 import { validatePageBasics } from '../../utils/validation';
 import { checkCreateLimits, createCandidate, limitViolationMessage } from '../../utils/plugin-limits';
+import { chargeCredits, pageCreateAction, pageCreateCostForType, refundCredits } from '../../utils/credits';
 import {
   applyStructuredAction,
   blockNamesFor,
@@ -513,22 +514,48 @@ pagesRoutes.post('/pages/new_post/:pageType', requirePermission('content:write')
   const violation = await checkCreateLimits(c.env, [createCandidate(pageType, null, lect)]);
   if (violation) return c.text(limitViolationMessage(violation), 422);
 
-  const result = await c.env.DB.prepare(
-    `INSERT INTO draft_pages (name, slug, weight, page_type, lect, creator, editors)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(name, slug, num(form.get('weight')), pageType, lect, creator || null, editorsFromForm(form))
-    .run();
-  const page = await c.env.DB.prepare('SELECT id FROM draft_pages WHERE rowid = ?')
-    .bind(result.meta.last_row_id)
-    .first<{ id: number }>();
-  if (!page) return c.notFound();
+  const cost = await pageCreateCostForType(c.env, pageType);
+  let creditCharge: { userId: number; amount: number; action: string } | null = null;
+  if (cost.total > 0) {
+    const userId = Number(c.get('user').sub);
+    const action = pageCreateAction(pageType, cost);
+    const charge = await chargeCredits(c.env, {
+      userId, amount: cost.total, action, entityType: pageType, createdBy: String(userId),
+    });
+    if (!charge.ok) {
+      return c.text(`Not enough credits: creating this needs ${charge.required} credits and you have ${charge.balance}.`, 402);
+    }
+    creditCharge = { userId, amount: cost.total, action };
+  }
 
-  await savePageVersionAndSetCurrent(c.env.DB, page.id, lect, 'create');
+  try {
+    const result = await c.env.DB.prepare(
+      `INSERT INTO draft_pages (name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(name, slug, num(form.get('weight')), pageType, lect, creator || null, editorsFromForm(form))
+      .run();
+    const page = await c.env.DB.prepare('SELECT id FROM draft_pages WHERE rowid = ?')
+      .bind(result.meta.last_row_id)
+      .first<{ id: number }>();
+    if (!page) return c.notFound();
 
-  dispatchHook(c, 'create', { id: page.id, page_type: pageType, name, slug });
+    await savePageVersionAndSetCurrent(c.env.DB, page.id, lect, 'create');
 
-  return c.redirect(`/admin/pages/${page.id}/edit`);
+    dispatchHook(c, 'create', { id: page.id, page_type: pageType, name, slug });
+
+    return c.redirect(`/admin/pages/${page.id}/edit`);
+  } catch (error) {
+    if (creditCharge) {
+      await refundCredits(c.env, {
+        userId: creditCharge.userId,
+        amount: creditCharge.amount,
+        action: creditCharge.action,
+        createdBy: String(creditCharge.userId),
+      });
+    }
+    throw error;
+  }
 });
 
 // ── New page form ─────────────────────────────────────────────────────────────
@@ -606,6 +633,33 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
     if (violation) errors.push(limitViolationMessage(violation));
   }
 
+  // Plugin-declared page-create costs charge the signed-in editor. Deducted
+  // only when the request is otherwise valid (a validation re-render must
+  // never cost credits); a failed insert below refunds.
+  let creditCharge: { userId: number; amount: number; action: string } | null = null;
+  if (!errors.length) {
+    const pageType = nullableStr(form.get('page_type')) ?? 'default';
+    const cost = await pageCreateCostForType(c.env, pageType);
+    if (cost.total > 0) {
+      const userId = Number(c.get('user').sub);
+      const action = pageCreateAction(pageType, cost);
+      const charge = await chargeCredits(c.env, {
+        userId,
+        amount: cost.total,
+        action,
+        entityType: pageType,
+        createdBy: String(userId),
+      });
+      if (!charge.ok) {
+        errors.push(charge.error === 'unknown_user'
+          ? 'Your user account could not be charged credits.'
+          : `Not enough credits: creating this needs ${charge.required} credits and you have ${charge.balance}.`);
+      } else {
+        creditCharge = { userId, amount: cost.total, action };
+      }
+    }
+  }
+
   if (errors.length) {
     const pageType = nullableStr(form.get('page_type')) ?? 'default';
     const lect = lectFromForm(
@@ -666,6 +720,7 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
     ),
   );
 
+  try {
   // Insert page
   const uniqueSlug = await ensureUniqueDraftSlug(c.env.DB, slug);
   const pageResult = await c.env.DB.prepare(
@@ -701,6 +756,17 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
   dispatchHook(c, 'create', { id: pageId, page_type: pageTypeVal, name, slug: uniqueSlug });
 
   return c.redirect(appendQuery(backHref, 'flash=Page+created+successfully'));
+  } catch (error) {
+    if (creditCharge) {
+      await refundCredits(c.env, {
+        userId: creditCharge.userId,
+        amount: creditCharge.amount,
+        action: creditCharge.action,
+        createdBy: String(creditCharge.userId),
+      });
+    }
+    throw error;
+  }
 });
 
 pagesRoutes.post('/pages/batch-weight', requirePermission('content:write'), async (c) => {
