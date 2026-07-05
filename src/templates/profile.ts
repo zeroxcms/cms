@@ -19,6 +19,18 @@ export interface ProfileProvider {
   connectHref: string;
 }
 
+export interface ProfileCreditLedgerPagination {
+  page: number;
+  pageCount: number;
+  total: number;
+  from: number;
+  to: number;
+  hasPrevious: boolean;
+  previousHref: string;
+  hasNext: boolean;
+  nextHref: string;
+}
+
 export async function profilePage(views: Fetcher, opts: BaseTemplateProps & {
   email: string;
   name: string;
@@ -30,6 +42,7 @@ export async function profilePage(views: Fetcher, opts: BaseTemplateProps & {
   providers: ProfileProvider[];
   creditBalance: number;
   creditLedger: UserCreditLedgerRow[];
+  creditLedgerPagination: ProfileCreditLedgerPagination;
 }): Promise<string> {
   const body = await renderView(views, '/templates/profile.json', {
     name: opts.name,
@@ -49,6 +62,8 @@ export async function profilePage(views: Fetcher, opts: BaseTemplateProps & {
     creditBalance: opts.creditBalance,
     hasCreditLedger: opts.creditLedger.length > 0,
     creditLedger: opts.creditLedger,
+    creditLedgerPagination: opts.creditLedgerPagination,
+    showCreditLedgerPagination: opts.creditLedgerPagination.pageCount > 1,
   });
   return adminLayout(views, opts, { title: 'Profile', body });
 }

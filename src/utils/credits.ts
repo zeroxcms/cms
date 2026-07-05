@@ -321,3 +321,10 @@ export async function listCreditLedger(
   ).bind(userId, limit, offset).all<CreditLedgerRow>();
   return rows.results;
 }
+
+export async function countCreditLedger(env: Env, userId: number): Promise<number> {
+  const row = await env.DB.prepare(
+    'SELECT COUNT(*) AS total FROM credit_ledger WHERE user_id = ?',
+  ).bind(userId).first<{ total: number }>();
+  return Math.max(0, row?.total ?? 0);
+}

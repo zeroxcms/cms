@@ -441,6 +441,34 @@ describe('profile and plugins-manage pages', () => {
     expect(html).toContain('events:create_event');
   });
 
+  it('paginates credit history on the profile', async () => {
+    await seedUser(ADMIN_ID, 0);
+    for (let i = 1; i <= 25; i += 1) {
+      await adjustCredits(env, { userId: ADMIN_ID, delta: 1, action: `profile:entry-${i}`, createdBy: '1' });
+    }
+
+    const firstPage = await adminFetch('/admin/profile');
+    expect(firstPage.status).toBe(200);
+    const firstHtml = await firstPage.text();
+    expect(firstHtml).toContain('profile:entry-25');
+    expect(firstHtml).toContain('profile:entry-6');
+    expect(firstHtml).not.toContain('profile:entry-5');
+    expect(firstHtml).toContain('"showCreditLedgerPagination":true');
+    expect(firstHtml).toContain('"nextHref":"/admin/profile?credit_page=2"');
+    expect(firstHtml).toContain('"from":1');
+    expect(firstHtml).toContain('"to":20');
+
+    const secondPage = await adminFetch('/admin/profile?credit_page=2');
+    expect(secondPage.status).toBe(200);
+    const secondHtml = await secondPage.text();
+    expect(secondHtml).toContain('profile:entry-5');
+    expect(secondHtml).toContain('profile:entry-1');
+    expect(secondHtml).not.toContain('profile:entry-6');
+    expect(secondHtml).toContain('"previousHref":"/admin/profile"');
+    expect(secondHtml).toContain('"from":21');
+    expect(secondHtml).toContain('"to":25');
+  });
+
   it('lists and saves declared prices on the plugin credits page', async () => {
     const row = await env.DB.prepare('SELECT id FROM plugins WHERE url = ?').bind(pluginUrl).first<{ id: number }>();
     const page = await adminFetch(`/admin/plugins-manage/${row!.id}/credits`);

@@ -4,10 +4,12 @@ import type { Env, Variables, User } from '../../types';
 import { renderPage } from '../../utils/admin-render';
 import { ROLE_LABELS } from '../../utils/roles';
 import { allRoleOptions } from '../../utils/role-store';
-import { listCreditLedger } from '../../utils/credits';
+import { countCreditLedger, listCreditLedger } from '../../utils/credits';
 import { creditLedgerRowForView } from '../../templates/users';
 
 export const profileRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+const CREDIT_LEDGER_PAGE_SIZE = 20;
 
 interface OAuthIdentityRow {
   id: number;
@@ -51,11 +53,22 @@ function roleLabel(role: string, options: Array<{ name: string; label: string }>
     .join(', ');
 }
 
+function positivePage(value: string | undefined): number {
+  const page = Number(value ?? '1');
+  return Number.isInteger(page) && page > 0 ? page : 1;
+}
+
+function profileCreditPageHref(page: number): string {
+  if (page <= 1) return '/admin/profile';
+  return `/admin/profile?credit_page=${page}`;
+}
+
 profileRoutes.get('/profile', async (c) => {
   const userId = Number(c.get('user').sub);
   const flash = c.req.query('flash') ?? '';
   const error = c.req.query('error') ?? '';
-  const [user, identityRows, roleOptions, creditLedger] = await Promise.all([
+  const requestedCreditPage = positivePage(c.req.query('credit_page'));
+  const [user, identityRows, roleOptions, creditLedgerTotal] = await Promise.all([
     c.env.DB.prepare('SELECT id, oauth_id, email, name, avatar_url, role, credits FROM users WHERE id = ?')
       .bind(userId)
       .first<User>(),
@@ -68,9 +81,15 @@ profileRoutes.get('/profile', async (c) => {
       .bind(userId)
       .all<OAuthIdentityRow>(),
     allRoleOptions(c.env),
-    listCreditLedger(c.env, userId, { limit: 20 }),
+    countCreditLedger(c.env, userId),
   ]);
   if (!user) return c.notFound();
+  const creditPageCount = Math.max(1, Math.ceil(creditLedgerTotal / CREDIT_LEDGER_PAGE_SIZE));
+  const creditPage = Math.min(requestedCreditPage, creditPageCount);
+  const creditLedger = await listCreditLedger(c.env, userId, {
+    limit: CREDIT_LEDGER_PAGE_SIZE,
+    offset: (creditPage - 1) * CREDIT_LEDGER_PAGE_SIZE,
+  });
 
   const byOAuthId = new Map<string, OAuthIdentityRow>();
   for (const identity of identityRows.results) {
@@ -115,6 +134,17 @@ profileRoutes.get('/profile', async (c) => {
     providers,
     creditBalance: user.credits ?? 0,
     creditLedger: creditLedger.map(creditLedgerRowForView),
+    creditLedgerPagination: {
+      page: creditPage,
+      pageCount: creditPageCount,
+      total: creditLedgerTotal,
+      from: creditLedgerTotal === 0 ? 0 : ((creditPage - 1) * CREDIT_LEDGER_PAGE_SIZE) + 1,
+      to: Math.min(creditPage * CREDIT_LEDGER_PAGE_SIZE, creditLedgerTotal),
+      hasPrevious: creditPage > 1,
+      previousHref: profileCreditPageHref(creditPage - 1),
+      hasNext: creditPage < creditPageCount,
+      nextHref: profileCreditPageHref(creditPage + 1),
+    },
   });
 });
 
