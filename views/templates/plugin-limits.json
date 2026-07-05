@@ -1,0 +1,10 @@
+{
+  "sections": {
+    "main": {
+      "type": "plugin-limits"
+    }
+  },
+  "order": [
+    "main"
+  ]
+}

@@ -15,6 +15,8 @@ export interface PluginListItem {
   hasAssets?: boolean;
   /** True when the manifest declares delegated read/write page-type access. */
   hasPageTypes?: boolean;
+  /** True when the manifest declares configurable quota limits. */
+  hasLimits?: boolean;
 }
 
 const STATUS_BADGE: Record<PluginListItem['status'], string> = {
@@ -43,6 +45,8 @@ export async function pluginsManagePage(views: Fetcher, opts: BaseTemplateProps 
       assetsHref: `/admin/plugins-manage/${plugin.id}/assets`,
       hasPageTypes: !!plugin.hasPageTypes,
       pageTypesHref: `/admin/plugins-manage/${plugin.id}/page-types`,
+      hasLimits: !!plugin.hasLimits,
+      limitsHref: `/admin/plugins-manage/${plugin.id}/limits`,
     })),
   });
 
@@ -134,6 +138,47 @@ export async function pluginAssetsPage(views: Fetcher, opts: BaseTemplateProps &
   });
 
   return adminLayout(views, opts, { title: `${pluginLabel} · Assets`, body });
+}
+
+export interface PluginLimitRow {
+  key: string;
+  label: string;
+  description: string;
+  pageType: string;
+  scopeLabel: string;
+  defaultLabel: string;
+  effectiveLabel: string;
+  usageLabel: string;
+  /** Configured numeric value as a string, or '' when unset/unlimited. */
+  value: string;
+  unlimited: boolean;
+}
+
+export async function pluginLimitsPage(views: Fetcher, opts: BaseTemplateProps & {
+  pluginId: number;
+  pluginLabel: string;
+  unreachable: boolean;
+  limits: PluginLimitRow[];
+  saveAction: string;
+  flash?: string;
+}): Promise<string> {
+  const { pluginLabel, unreachable, limits, saveAction, flash } = opts;
+  const flashMessage = flash === 'saved'
+    ? 'Limits saved. They now apply to every create path, including the admin editor.'
+    : '';
+
+  const body = await renderView(views, '/templates/plugin-limits.json', {
+    pluginLabel,
+    unreachable,
+    hasLimits: limits.length > 0,
+    limits,
+    saveAction,
+    hasFlash: !!flashMessage,
+    flashMessage,
+    backHref: '/admin/plugins-manage',
+  });
+
+  return adminLayout(views, opts, { title: `${pluginLabel} · Limits`, body });
 }
 
 export interface PluginPageTypeRow {

@@ -29,6 +29,7 @@ import {
   userIdFromContext,
 } from '../../utils/forms';
 import { validatePageBasics } from '../../utils/validation';
+import { checkCreateLimits, createCandidate, limitViolationMessage } from '../../utils/plugin-limits';
 import {
   applyStructuredAction,
   blockNamesFor,
@@ -509,6 +510,9 @@ pagesRoutes.post('/pages/new_post/:pageType', requirePermission('content:write')
     ),
   );
 
+  const violation = await checkCreateLimits(c.env, [createCandidate(pageType, null, lect)]);
+  if (violation) return c.text(limitViolationMessage(violation), 422);
+
   const result = await c.env.DB.prepare(
     `INSERT INTO draft_pages (name, slug, weight, page_type, lect, creator, editors)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -582,6 +586,25 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
   const errors = validatePageBasics(name, slug);
   const config = await resolveCmsConfig(c.env);
   const backHref = safeAdminReturnPath(form.get('return_to'));
+
+  // Plugin-declared quotas bind the admin editor too — otherwise a "max
+  // events" limit would only gate the /__cms API while the built-in create
+  // form (which plugin newViews post to) walked straight past it.
+  {
+    const pageType = nullableStr(form.get('page_type')) ?? 'default';
+    const parentRaw = nullableStr(form.get('page_id'));
+    const lect = lectFromForm(
+      config,
+      pageType,
+      blueprintToLect(pageType, config.blueprint, config.defaultLanguage),
+      form,
+      language,
+    );
+    const violation = await checkCreateLimits(c.env, [
+      createCandidate(pageType, parentRaw ? parseInt(parentRaw, 10) : null, lect),
+    ]);
+    if (violation) errors.push(limitViolationMessage(violation));
+  }
 
   if (errors.length) {
     const pageType = nullableStr(form.get('page_type')) ?? 'default';

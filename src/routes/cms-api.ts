@@ -42,6 +42,13 @@ import { chineseSearchVariants } from '../utils/chinese';
 import { unpublishPageFromTargets } from '../publish';
 import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../utils/page-store';
 import { listPageTypeApprovals } from '../utils/plugin-page-types';
+import {
+  checkCreateLimits,
+  countLimitUsage,
+  createCandidate,
+  effectiveLimitsForPlugin,
+  type LimitViolation,
+} from '../utils/plugin-limits';
 
 export const cmsApiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -281,7 +288,7 @@ function emitPluginHooks(c: AppContext, event: HookEvent, pages: HookPage[], plu
 
 // ── Create (shared by POST /pages and POST /pages/batch) ──────────────────────
 
-type CreateResult = { ok: true; page: ApiPage } | { ok: false; status: number; error: string };
+type CreateResult = { ok: true; page: ApiPage } | { ok: false; status: number; error: string; violation?: LimitViolation };
 type PrepareCreateResult = { ok: true; input: PreparedCreate } | { ok: false; status: number; error: string };
 
 function prepareCreateInput(
@@ -343,6 +350,12 @@ async function createPage(
   const prepared = prepareCreateInput(c, auth, config, input);
   if (!prepared.ok) return prepared;
   const preparedInput = prepared.input;
+
+  const violation = await checkCreateLimits(c.env, [
+    createCandidate(preparedInput.pageType, preparedInput.parentId, preparedInput.lect),
+  ]);
+  if (violation) return { ok: false, status: 409, error: 'limit_exceeded', violation };
+
   const slug = await ensureUniqueDraftSlug(c.env.DB, preparedInput.baseSlug);
 
   const explicitId = preparedInput.id ?? cmsId(new Set<number>());
@@ -457,6 +470,46 @@ function bulkPageInsertStatements(db: D1Database, row: BulkPageRow): D1PreparedS
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
+// The calling plugin's declared limits with effective values and current
+// usage — read-only, for plugin UIs to show quotas ("1,240 / 2,000 guests")
+// and pre-warn before bulk actions. Scoped usage needs the scope value:
+// pass ?page_id= for per_parent limits and ?pointer_value= for per_pointer
+// limits; without it those report usage: null. Enforcement stays host-side
+// regardless of what a plugin does with this data.
+cmsApiRoutes.get('/limits', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const limits = await effectiveLimitsForPlugin(c.env, auth.plugin);
+  const pointerValue = (c.req.query('pointer_value') ?? '').trim();
+  const parentId = asFiniteNumber(c.req.query('page_id'));
+
+  const out = [];
+  for (const limit of limits) {
+    let usage: number | null = null;
+    if (limit.def.scope === 'total') {
+      usage = await countLimitUsage(c.env.DB, limit.def, null);
+    } else if (limit.def.scope === 'per_parent' && parentId !== null) {
+      usage = await countLimitUsage(c.env.DB, limit.def, parentId);
+    } else if (limit.def.scope === 'per_pointer' && pointerValue) {
+      usage = await countLimitUsage(c.env.DB, limit.def, pointerValue);
+    }
+    out.push({
+      key: limit.def.key,
+      label: limit.def.label,
+      description: limit.def.description,
+      page_type: limit.def.pageType,
+      scope: limit.def.scope,
+      pointer_key: limit.def.pointerKey,
+      value: limit.value,
+      configured: limit.configured,
+      usage,
+    });
+  }
+
+  return c.json({ limits: out });
+});
+
 // List pages of a content type the plugin owns.
 cmsApiRoutes.get('/pages', async (c) => {
   const auth = await authenticatePlugin(c);
@@ -556,7 +609,9 @@ cmsApiRoutes.post('/pages', async (c) => {
   if (!body || typeof body !== 'object') return c.json({ error: 'invalid_body' }, 400);
 
   const result = await createPage(c, auth, body);
-  if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 403 | 500);
+  if (!result.ok) {
+    return c.json({ error: result.error, violation: result.violation }, result.status as 400 | 403 | 409 | 500);
+  }
   return c.json({ page: result.page }, 201);
 });
 
@@ -582,6 +637,14 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
   }
 
   if (prepared.length) {
+    // Reject the whole batch on any quota violation, so a bulk import never
+    // half-applies against a limit.
+    const violation = await checkCreateLimits(
+      c.env,
+      prepared.map((item) => createCandidate(item.pageType, item.parentId, item.lect)),
+    );
+    if (violation) return c.json({ error: 'limit_exceeded', violation }, 409);
+
     const usedSlugs = await existingSlugSet(c.env.DB, prepared.map((item) => item.baseSlug));
     const usedIds = new Set<number>();
     const statements: D1PreparedStatement[] = [];
@@ -675,6 +738,21 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
   const usedIds = new Set<number>();
 
   let cursor = Math.max(asFiniteNumber(body.cursor) ?? 0, 0);
+
+  // Quota pre-check for everything this request could still clone. All clones
+  // share the target parent and any pointer overrides, so one candidate shape
+  // covers the set. Per-pointer limits are only checkable when the override
+  // lect repoints the pointer (the normal "duplicate into a new list" flow);
+  // clones that inherit per-row source pointers are not gated here.
+  const remainingRow = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS total FROM draft_pages WHERE ${selector.sql} AND page_type = ? AND id > ?`,
+  ).bind(...selector.params, pageType, cursor).first<{ total: number }>();
+  const remaining = Math.min(remainingRow?.total ?? 0, DUPLICATE_MAX_PER_CALL);
+  if (remaining > 0) {
+    const candidate = createCandidate(pageType, targetParentId, overrideLect);
+    const violation = await checkCreateLimits(c.env, Array.from({ length: remaining }, () => candidate));
+    if (violation) return c.json({ error: 'limit_exceeded', violation }, 409);
+  }
   let copied = 0;
   let done = false;
   // Loop internally in DB.batch chunks up to the per-request cap. Each chunk

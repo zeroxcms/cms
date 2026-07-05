@@ -35,10 +35,21 @@ import {
 } from '../../utils/plugin-page-types';
 import { PLUGIN_ORIGIN } from '../../plugins/registry';
 import {
+  countLimitUsage,
+  declaredLimits,
+  limitScopeTypes,
+  loadLimitValues,
+  saveLimitValues,
+  type NormalizedLimitDef,
+  type PluginLimitValues,
+} from '../../utils/plugin-limits';
+import {
   pluginsManagePage,
   pluginFormPage,
   pluginAssetsPage,
+  pluginLimitsPage,
   pluginPageTypesPage,
+  type PluginLimitRow,
   type PluginListItem,
 } from '../../templates/plugins-manage';
 import type { PluginManifest, PluginPageTypeAccess } from '../../types';
@@ -148,6 +159,7 @@ pluginsManageRoutes.get('/plugins-manage', async (c) => {
       version: manifest?.version,
       hasAssets: !!manifest?.assets?.length,
       hasPageTypes: !!((manifest?.contentTypes?.readTypes?.length ?? 0) + (manifest?.contentTypes?.writeTypes?.length ?? 0)),
+      hasLimits: !!manifest?.limits?.length,
     };
   });
 
@@ -348,6 +360,100 @@ pluginsManageRoutes.post('/plugins-manage/:id/assets/revoke', async (c) => {
     logAudit(c, 'plugin.asset.revoke', 'plugin', resolved.manifest.id, { path });
   }
   return c.redirect(`/admin/plugins-manage/${id}/assets?flash=revoked`);
+});
+
+// ── Quota limits ───────────────────────────────────────────────────────────
+// A plugin's manifest only *declares* which limits exist (PluginManifest.
+// limits). The values configured here are stored in the settings table and
+// enforced by the host on every page-create path. See utils/plugin-limits.ts.
+
+function scopeLabel(def: NormalizedLimitDef): string {
+  if (def.scope === 'per_parent') return 'Per parent page';
+  if (def.scope === 'per_pointer') return `Per ${def.pointerKey}`;
+  return 'Total';
+}
+
+function limitLabel(value: number | null): string {
+  return value === null ? 'Unlimited' : String(value);
+}
+
+pluginsManageRoutes.get('/plugins-manage/:id/limits', async (c) => {
+  const id = Number(c.req.param('id'));
+  const found = await resolvedPluginFor(c.env, id);
+  if (!found) return c.notFound();
+  const { row, resolved } = found;
+  if (!resolved) {
+    return renderPage(c, pluginLimitsPage, {
+      pluginId: id,
+      pluginLabel: row.label || row.url,
+      unreachable: true,
+      limits: [],
+      saveAction: `/admin/plugins-manage/${id}/limits`,
+      flash: c.req.query('flash') ?? undefined,
+    });
+  }
+
+  const allowed = await limitScopeTypes(c.env.DB, resolved.manifest);
+  const defs = declaredLimits(resolved.manifest, allowed);
+  const values = await loadLimitValues(c.env, resolved.manifest.id);
+
+  const limits: PluginLimitRow[] = await Promise.all(defs.map(async (def) => {
+    const configured = def.key in values;
+    const effective = configured ? values[def.key] : def.defaultValue;
+    // Scoped usage varies per parent/collection, so only totals are shown here.
+    const usageLabel = def.scope === 'total'
+      ? String(await countLimitUsage(c.env.DB, def, null))
+      : 'varies by group';
+    return {
+      key: def.key,
+      label: def.label,
+      description: def.description,
+      pageType: def.pageType,
+      scopeLabel: scopeLabel(def),
+      defaultLabel: limitLabel(def.defaultValue),
+      effectiveLabel: limitLabel(effective) + (configured ? '' : ' (default)'),
+      usageLabel,
+      value: configured && values[def.key] !== null ? String(values[def.key]) : '',
+      unlimited: configured && values[def.key] === null,
+    };
+  }));
+
+  return renderPage(c, pluginLimitsPage, {
+    pluginId: id,
+    pluginLabel: resolved.manifest.name || row.label || row.url,
+    unreachable: false,
+    limits,
+    saveAction: `/admin/plugins-manage/${id}/limits`,
+    flash: c.req.query('flash') ?? undefined,
+  });
+});
+
+pluginsManageRoutes.post('/plugins-manage/:id/limits', async (c) => {
+  const id = Number(c.req.param('id'));
+  const found = await resolvedPluginFor(c.env, id);
+  if (!found?.resolved) return c.notFound();
+  const { resolved } = found;
+
+  const allowed = await limitScopeTypes(c.env.DB, resolved.manifest);
+  const defs = declaredLimits(resolved.manifest, allowed);
+  const form = await c.req.formData();
+
+  // Only manifest-declared keys are saved; anything stale simply drops out.
+  const values: PluginLimitValues = {};
+  for (const def of defs) {
+    if (form.get(`unlimited_${def.key}`) != null) {
+      values[def.key] = null;
+      continue;
+    }
+    const raw = str(form.get(`value_${def.key}`));
+    if (!raw) continue; // unset — the manifest default (or unlimited) applies
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed >= 0) values[def.key] = Math.trunc(parsed);
+  }
+
+  await saveLimitValues(c.env, resolved.manifest.id, values);
+  logAudit(c, 'plugin.limits.update', 'plugin', resolved.manifest.id, values);
+  return c.redirect(`/admin/plugins-manage/${id}/limits?flash=saved`);
 });
 
 // ── Page type access approvals ─────────────────────────────────────────────

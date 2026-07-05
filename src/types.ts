@@ -324,6 +324,40 @@ export interface PluginManifest {
    * plugin's own origin, e.g. "/assets/js/kiosk.js". See utils/plugin-assets.ts.
    */
   assets?: Array<{ path: string; label?: string }>;
+  /**
+   * Quota definitions this plugin exposes for admin configuration. The plugin
+   * only *declares* which limits exist (key, target page type, counting scope,
+   * optional default); the CMS stores the configured values in the `settings`
+   * table and enforces them on every page-create path — both the /__cms
+   * write-back API and the built-in admin editor. See utils/plugin-limits.ts.
+   */
+  limits?: PluginLimitDef[];
+}
+
+/** How a declared plugin limit counts existing pages. */
+export type PluginLimitScope = 'total' | 'per_parent' | 'per_pointer';
+
+/** A quota declared in a plugin manifest (see PluginManifest.limits). */
+export interface PluginLimitDef {
+  /** Identifier unique within the plugin, e.g. "max_guests_per_list". */
+  key: string;
+  /** Human label shown in the limits admin. */
+  label?: string;
+  /** Optional longer description shown in the limits admin. */
+  description?: string;
+  /** Page type whose creation this limit bounds. Must be a type the plugin owns
+   *  via its blueprint or may write via an approved writeType. */
+  page_type: string;
+  /**
+   * Counting scope: 'total' counts all pages of the type; 'per_parent' counts
+   * siblings under one parent page (page_id); 'per_pointer' counts pages
+   * sharing one `_pointers.<pointer_key>` value (e.g. guests in a guest list).
+   */
+  scope: PluginLimitScope;
+  /** Required when scope is 'per_pointer': the `_pointers` key pages group by. */
+  pointer_key?: string;
+  /** Limit applied until an admin configures a value. Omitted → unlimited. */
+  default?: number;
 }
 
 /** An admin-approved plugin asset (see PluginManifest.assets), stored in the
