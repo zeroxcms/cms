@@ -339,6 +339,13 @@
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-white truncate">{{ userName | escape }}</p>
             <p class="text-xs text-gray-400 capitalize">{{ userRoleLabel | escape }}</p>
+            <p class="mt-1 flex items-center gap-1 text-xs font-medium text-amber-400">
+              <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="8" stroke-width="2"></circle>
+                <path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 8.5v7M10 10.5h2.5a1.5 1.5 0 010 3H10m0 0h3"></path>
+              </svg>
+              <span>{{ userCredits }} credit{% unless userCredits == 1 %}s{% endunless %}</span>
+            </p>
           </div>
           <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#chevron-right"></use></svg>
         </a>
