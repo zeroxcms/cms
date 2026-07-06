@@ -134,6 +134,7 @@ interface PageInput {
   timezone?: unknown;
   page_id?: unknown;
   tags?: unknown;
+  version_action?: unknown;
 }
 
 interface PreparedCreate {
@@ -225,6 +226,12 @@ function asFiniteNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const n = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function versionAction(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, 120) : fallback;
 }
 
 /**
@@ -1111,7 +1118,7 @@ async function updatePage(c: AppContext): Promise<Response> {
     .bind(name, slug, weight, start, end, timezone, lectVal, parentId, id)
     .run();
 
-  await savePageVersionAndSetCurrent(c.env.DB, id, lectVal, 'update');
+  await savePageVersionAndSetCurrent(c.env.DB, id, lectVal, versionAction(body.version_action, 'update'));
   if ('tags' in body) await setDraftPageTags(c.env.DB, id, body.tags, true);
 
   await notifyPageSaved(c.env, id);

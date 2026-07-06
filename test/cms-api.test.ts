@@ -392,6 +392,7 @@ describe('F1 create / read / list / update / delete', () => {
 
     const updateRes = await cmsApi('PUT', `/__cms/pages/${created.id}`, {
       lect: { '@status': 'confirmed' },
+      version_action: 'update from google sheet',
     });
     expect(updateRes.status).toBe(200);
     const updated = (await updateRes.json() as { page: { lect: Record<string, unknown> } }).page;
@@ -403,7 +404,7 @@ describe('F1 create / read / list / update / delete', () => {
     // version id has a random component, so same-second inserts aren't ordered).
     const versions = await env.DB.prepare('SELECT action FROM page_versions WHERE page_id = ?')
       .bind(created.id).all<{ action: string }>();
-    expect(versions.results.map((v) => v.action).sort()).toEqual(['create', 'update']);
+    expect(versions.results.map((v) => v.action).sort()).toEqual(['create', 'update from google sheet']);
   });
 
   it('soft-deletes a page to trash', async () => {
