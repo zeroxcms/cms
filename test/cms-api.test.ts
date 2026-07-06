@@ -334,6 +334,55 @@ describe('F1 create / read / list / update / delete', () => {
     expect(body.pages.map((page) => page.name).sort()).toEqual(['陳家豪', '陳美玲']);
   });
 
+  it('advanced-searches plugin pages by wildcard lect path criteria', async () => {
+    await cmsApi('POST', '/__cms/pages', {
+      page_type: 'guest',
+      name: 'Corporate Guest',
+      lect: { affiliations: [{ company: 'Acme Labs' }] },
+    });
+    await cmsApi('POST', '/__cms/pages', {
+      page_type: 'guest',
+      name: 'Community Guest',
+      lect: { affiliations: [{ company: 'Open Guild' }] },
+    });
+
+    const res = await cmsApi('POST', '/__cms/pages/search', {
+      page_type: 'guest',
+      criteria: [{ term: 'Acme', path: 'affiliations[*].company' }],
+      sort: 'name',
+      order: 'ASC',
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { total: number; pages: Array<{ name: string }>; page_types: string[] };
+    expect(body.total).toBe(1);
+    expect(body.page_types).toEqual(['guest']);
+    expect(body.pages[0].name).toBe('Corporate Guest');
+  });
+
+  it('advanced-searches plugin pages by criteria that combine tags and lect paths', async () => {
+    await cmsApi('POST', '/__cms/pages', {
+      page_type: 'guest',
+      name: 'Tagged Confirmed',
+      lect: { status: 'confirmed' },
+      tags: [777],
+    });
+    await cmsApi('POST', '/__cms/pages', {
+      page_type: 'guest',
+      name: 'Tagged Invited',
+      lect: { status: 'invited' },
+      tags: [777],
+    });
+
+    const res = await cmsApi('POST', '/__cms/pages/search', {
+      page_type: 'guest',
+      criteria: [{ term: 'confirmed', path: 'status', tags: ['777'] }],
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { total: number; pages: Array<{ name: string }> };
+    expect(body.total).toBe(1);
+    expect(body.pages[0].name).toBe('Tagged Confirmed');
+  });
+
   it('rejects listing a type the plugin neither owns nor may read', async () => {
     const res = await cmsApi('GET', '/__cms/pages?page_type=article');
     expect(res.status).toBe(403);
@@ -383,6 +432,29 @@ describe('F1 create / read / list / update / delete', () => {
     expect(createRes.status).toBe(403);
     const updateRes = await cmsApi('PUT', `/__cms/pages/${contact!.id}`, { name: 'Hacked' });
     expect(updateRes.status).toBe(403);
+  });
+
+  it('scopes plugin advanced search to approved readable page types', async () => {
+    await env.DB.prepare(
+      "INSERT INTO draft_pages (name, slug, page_type, lect) VALUES (?, ?, 'contact', ?)",
+    ).bind('Ada Lovelace', 'ada-lovelace', JSON.stringify({ first_name: { en: 'Ada' } })).run();
+
+    const blocked = await cmsApi('POST', '/__cms/pages/search', {
+      page_type: 'contact',
+      criteria: [{ term: 'Ada', path: 'first_name.en' }],
+    });
+    expect(blocked.status).toBe(403);
+
+    await approvePageTypeAccess(env.DB, PLUGIN_ID, 'contact', 'read', 'admin@example.com');
+
+    const allowed = await cmsApi('POST', '/__cms/pages/search', {
+      page_types: ['contact'],
+      criteria: [{ term: 'Ada', path: 'first_name.en' }],
+    });
+    expect(allowed.status).toBe(200);
+    const body = await allowed.json() as { total: number; pages: Array<{ name: string }> };
+    expect(body.total).toBe(1);
+    expect(body.pages[0].name).toBe('Ada Lovelace');
   });
 
   it('partial-updates a page and mints an update version', async () => {

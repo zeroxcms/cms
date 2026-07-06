@@ -39,6 +39,13 @@ import { withDraftMetadata } from '../utils/page-logic';
 import { ensureUniqueDraftSlug, trashDraftPage, trashDraftPages } from '../utils/admin-queries';
 import { slugify } from '../utils/forms';
 import { chineseSearchVariants } from '../utils/chinese';
+import {
+  advancedSearchOperator,
+  advancedSearchOrder,
+  advancedSearchSort,
+  performAdvancedSearch,
+  type AdvancedSearchCriterion,
+} from '../utils/search';
 import { unpublishPageFromTargets } from '../publish';
 import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../utils/page-store';
 import { listPageTypeApprovals, pageTypeScopeAllows } from '../utils/plugin-page-types';
@@ -135,6 +142,18 @@ interface PageInput {
   page_id?: unknown;
   tags?: unknown;
   version_action?: unknown;
+}
+
+interface AdvancedSearchInput {
+  page_type?: unknown;
+  page_types?: unknown;
+  criteria?: unknown;
+  operator?: unknown;
+  limit?: unknown;
+  page?: unknown;
+  pagesize?: unknown;
+  sort?: unknown;
+  order?: unknown;
 }
 
 interface PreparedCreate {
@@ -257,6 +276,54 @@ function collectionWhere(
     return { ok: true, sql: 'json_extract(lect, ?) = ?', params: [`$._pointers.${pointerKey}`, pointerValue] };
   }
   return { ok: true, sql: 'page_id = ?', params: [parentId] };
+}
+
+function stringList(value: unknown): string[] {
+  if (typeof value === 'string') return value.split(',').map((item) => item.trim()).filter(Boolean);
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function searchTags(value: unknown): string[] {
+  const raw = Array.isArray(value)
+    ? value.flatMap((item) => typeof item === 'string' ? item.split(',') : [String(item)])
+    : typeof value === 'string'
+      ? value.split(',')
+      : [];
+  return Array.from(new Set(raw.map((tag) => tag.trim()).filter((tag) => /^\d+$/.test(tag))));
+}
+
+function parseApiSearchCriteria(value: unknown): AdvancedSearchCriterion[] | null {
+  if (!Array.isArray(value)) return null;
+  const criteria: AdvancedSearchCriterion[] = [];
+  for (let position = 0; position < value.length; position += 1) {
+    const raw = value[position];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const item = raw as Record<string, unknown>;
+    const term = typeof item.term === 'string'
+      ? item.term.trim()
+      : typeof item.search === 'string'
+        ? item.search.trim()
+        : '';
+    const path = typeof item.path === 'string' ? item.path.trim() : '';
+    const tags = searchTags(item.tags);
+    if (!term && tags.length === 0) continue;
+    criteria.push({
+      index: asFiniteNumber(item.index) ?? position + 1,
+      term,
+      path,
+      tags,
+    });
+  }
+  return criteria;
+}
+
+function requestedSearchPageTypes(input: AdvancedSearchInput): string[] {
+  const pageTypes = stringList(input.page_types);
+  if (typeof input.page_type === 'string' && input.page_type.trim()) pageTypes.push(input.page_type.trim());
+  return Array.from(new Set(pageTypes));
 }
 
 // ── Lifecycle hook + audit (plugin actor, no signed-in user) ──────────────────
@@ -746,6 +813,53 @@ cmsApiRoutes.get('/pages', async (c) => {
     total: totalRow?.total ?? 0,
     limit,
     offset,
+  });
+});
+
+// Advanced page search for plugins. Unlike GET /pages?q=..., this accepts
+// multiple criteria with field paths and tag filters, matching the admin
+// advanced-search semantics while staying scoped to the caller's read access.
+cmsApiRoutes.post('/pages/search', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const body = await c.req.json().catch(() => null) as AdvancedSearchInput | null;
+  if (!body || typeof body !== 'object') return c.json({ error: 'invalid_body' }, 400);
+
+  const criteria = parseApiSearchCriteria(body.criteria);
+  if (!criteria) return c.json({ error: 'invalid_criteria' }, 400);
+
+  const config = await resolveCmsConfig(c.env);
+  const requestedPageTypes = requestedSearchPageTypes(body);
+  const pageTypes = requestedPageTypes.length === 0 || requestedPageTypes.includes('all')
+    ? Object.keys(config.blueprint).filter((pageType) => pageTypeScopeAllows(auth.readableTypes, pageType))
+    : requestedPageTypes;
+
+  if (!pageTypes.length) return c.json({ error: 'page_type_required' }, 400);
+  for (const pageType of pageTypes) {
+    if (!pageTypeScopeAllows(auth.readableTypes, pageType)) return c.json({ error: 'forbidden_page_type' }, 403);
+  }
+
+  const limit = Math.min(Math.max(Math.trunc(asFiniteNumber(body.limit ?? body.pagesize) ?? 20), 1), 500);
+  const page = Math.max(Math.trunc(asFiniteNumber(body.page) ?? 1), 1);
+  const sort = advancedSearchSort(typeof body.sort === 'string' ? body.sort : undefined);
+  const order = advancedSearchOrder(typeof body.order === 'string' ? body.order : undefined);
+  const operator = advancedSearchOperator(typeof body.operator === 'string' ? body.operator : undefined);
+
+  const result = await performAdvancedSearch(c.env.DB, pageTypes, criteria, operator, {
+    limit,
+    page,
+    sort,
+    order,
+  });
+
+  return c.json({
+    pages: result.results.map(serializePage),
+    total: result.pagination.total,
+    limit: result.pagination.limit,
+    offset: (result.pagination.currentPage - 1) * result.pagination.limit,
+    pagination: result.pagination,
+    page_types: pageTypes,
   });
 });
 
