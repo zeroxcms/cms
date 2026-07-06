@@ -225,6 +225,7 @@ export async function pluginCreditsPage(views: Fetcher, opts: BaseTemplateProps 
 
 export interface PluginPageTypeRow {
   pageType: string;
+  pageTypeLabel: string;
   readDeclared: boolean;
   writeDeclared: boolean;
   readApproved: boolean;

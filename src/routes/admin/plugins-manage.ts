@@ -30,6 +30,7 @@ import { approveAsset, computeIntegrity, getAssetApproval, listApprovals, revoke
 import {
   approvePageTypeAccess,
   getPageTypeApproval,
+  isPageTypeWildcard,
   listPageTypeApprovals,
   revokePageTypeAccess,
 } from '../../utils/plugin-page-types';
@@ -595,6 +596,7 @@ pluginsManageRoutes.get('/plugins-manage/:id/page-types', async (c) => {
     const writeApproval = approvalByKey.get(`${pageType}:write`);
     return {
       pageType,
+      pageTypeLabel: isPageTypeWildcard(pageType) ? 'All page types' : pageType,
       readDeclared: readTypes.has(pageType),
       writeDeclared: writeTypes.has(pageType),
       readApproved: !!readApproval,

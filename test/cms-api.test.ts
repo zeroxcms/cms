@@ -67,8 +67,8 @@ beforeEach(async () => {
   __clearInjectedFetchers();
   await env.DB.prepare('DELETE FROM plugins').run();
   await env.DB.prepare('DELETE FROM plugin_page_type_approvals').run();
-  await env.DB.prepare("DELETE FROM draft_pages WHERE page_type IN ('event','guest','mail_list','contact')").run();
-  await env.DB.prepare("DELETE FROM trash_pages WHERE page_type IN ('event','guest','mail_list','contact')").run();
+  await env.DB.prepare("DELETE FROM draft_pages WHERE page_type IN ('event','guest','mail_list','contact','article')").run();
+  await env.DB.prepare("DELETE FROM trash_pages WHERE page_type IN ('event','guest','mail_list','contact','article')").run();
   savedSecret = testEnv.PLUGIN_SECRET;
   testEnv.PLUGIN_SECRET = PLUGIN_SECRET;
   await registerPlugin();
@@ -140,6 +140,92 @@ describe('F1 auth + scoping', () => {
 
     const readRes = await cmsApi('GET', `/__cms/pages/${created.id}`);
     expect(readRes.status).toBe(200);
+  });
+
+  it('allows a declared and approved writeTypes wildcard to write any concrete page type', async () => {
+    await env.DB.prepare('DELETE FROM plugins').run();
+    await env.DB.prepare('DELETE FROM plugin_page_type_approvals').run();
+    __clearInjectedFetchers();
+    clearManifestCache();
+    const url = `https://plugin-${crypto.randomUUID()}.local`;
+    const manifest = {
+      id: PLUGIN_ID,
+      name: 'Universal Importer',
+      version: '1.0.0',
+      contentTypes: {
+        blueprint: {
+          event: ['@start', '@end', 'name:text/title', 'location'],
+        },
+        writeTypes: ['*'],
+      },
+    };
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Importer', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(href).pathname === '/__plugin/manifest') return Response.json(manifest);
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    const blocked = await cmsApi('POST', '/__cms/pages', { page_type: 'contact', name: 'Blocked Contact' });
+    expect(blocked.status).toBe(403);
+
+    await approvePageTypeAccess(env.DB, PLUGIN_ID, '*', 'write', 'admin@example.com');
+
+    const createRes = await cmsApi('POST', '/__cms/pages', { page_type: 'contact', name: 'Delegated Contact' });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json() as { page: { id: number; page_type: string } }).page;
+    expect(created.page_type).toBe('contact');
+
+    const updateRes = await cmsApi('PUT', `/__cms/pages/${created.id}`, { name: 'Updated Contact' });
+    expect(updateRes.status).toBe(200);
+  });
+
+  it('allows a declared and approved readTypes wildcard to read any concrete page type', async () => {
+    await env.DB.prepare('DELETE FROM plugins').run();
+    await env.DB.prepare('DELETE FROM plugin_page_type_approvals').run();
+    __clearInjectedFetchers();
+    clearManifestCache();
+    const url = `https://plugin-${crypto.randomUUID()}.local`;
+    const manifest = {
+      id: PLUGIN_ID,
+      name: 'Universal Reader',
+      version: '1.0.0',
+      contentTypes: {
+        blueprint: {
+          event: ['@start', '@end', 'name:text/title', 'location'],
+        },
+        readTypes: ['*'],
+      },
+    };
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Reader', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(href).pathname === '/__plugin/manifest') return Response.json(manifest);
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+    await env.DB.prepare(
+      "INSERT INTO draft_pages (name, slug, page_type, lect) VALUES (?, ?, 'article', ?)",
+    ).bind('Launch Notes', 'launch-notes', JSON.stringify({ title: { en: 'Launch Notes' } })).run();
+    const article = await env.DB.prepare("SELECT id FROM draft_pages WHERE page_type = 'article' LIMIT 1")
+      .first<{ id: number }>();
+
+    expect((await cmsApi('GET', '/__cms/pages?page_type=article')).status).toBe(403);
+
+    await approvePageTypeAccess(env.DB, PLUGIN_ID, '*', 'read', 'admin@example.com');
+
+    const listRes = await cmsApi('GET', '/__cms/pages?page_type=article');
+    expect(listRes.status).toBe(200);
+    expect((await listRes.json() as { total: number }).total).toBe(1);
+
+    const readRes = await cmsApi('GET', `/__cms/pages/${article!.id}`);
+    expect(readRes.status).toBe(200);
+
+    const writeRes = await cmsApi('POST', '/__cms/pages', { page_type: 'article', name: 'Not allowed' });
+    expect(writeRes.status).toBe(403);
   });
 
   it('is not blocked by the cross-origin mutation guard (no Origin header)', async () => {

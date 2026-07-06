@@ -259,7 +259,8 @@ A plugin can add six things:
   the contributing plugin's name. A companion plugin can also request delegated
   access with `readTypes`/`writeTypes` to use existing page types through the
   `/__cms` API without contributing their blueprints; an admin must approve
-  those delegated scopes in plugin management before they are honored.
+  those delegated scopes in plugin management before they are honored. Use `"*"`
+  in `readTypes` or `writeTypes` to request access to all concrete page types.
 - **Fields & blocks** – register new pagefield types and serve their Liquid
   snippets, which render through the CMS editor.
 - **Edit, create & read views** – list page-type slugs in the manifest

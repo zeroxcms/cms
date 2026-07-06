@@ -248,7 +248,8 @@ export interface PluginContentTypes {
    * Page types this plugin may WRITE through the write-back API without
    * contributing/owning their blueprint. Use this for companion plugins that
    * mutate another plugin's pages by explicit delegation. Admin approval is
-   * required before the CMS honors each declared write scope.
+   * required before the CMS honors each declared write scope. Use `*` to request
+   * write access to every concrete page type.
    */
   writeTypes?: string[];
   /**
@@ -256,7 +257,8 @@ export interface PluginContentTypes {
    * in addition to the types it owns via `blueprint` or may write via
    * `writeTypes`. Lets a plugin pull data from pages another plugin owns —
    * e.g. the events suite reading `contact` pages to refresh a guest. Admin
-   * approval is required before the CMS honors each declared read scope.
+   * approval is required before the CMS honors each declared read scope. Use `*`
+   * to request read access to every concrete page type.
    */
   readTypes?: string[];
 }

@@ -41,7 +41,7 @@ import { slugify } from '../utils/forms';
 import { chineseSearchVariants } from '../utils/chinese';
 import { unpublishPageFromTargets } from '../publish';
 import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../utils/page-store';
-import { listPageTypeApprovals } from '../utils/plugin-page-types';
+import { listPageTypeApprovals, pageTypeScopeAllows } from '../utils/plugin-page-types';
 import {
   checkCreateLimits,
   countLimitUsage,
@@ -115,9 +115,9 @@ interface ApiPage {
 interface PluginAuth {
   plugin: ResolvedPlugin;
   pluginId: string;
-  /** Page types this plugin may write through its manifest-declared scope. */
+  /** Page types this plugin may write through its manifest-declared scope; `*` means any concrete page type. */
   allowedTypes: Set<string>;
-  /** Writable types plus any declared `readTypes` — the (wider) read scope. */
+  /** Writable types plus any declared `readTypes`; `*` means any concrete page type. */
   readableTypes: Set<string>;
 }
 
@@ -318,7 +318,7 @@ function prepareCreateInput(
 ): PrepareCreateResult {
   const pageType = typeof input.page_type === 'string' ? input.page_type : '';
   if (!pageType) return { ok: false, status: 400, error: 'page_type_required' };
-  if (!auth.allowedTypes.has(pageType)) return { ok: false, status: 403, error: 'forbidden_page_type' };
+  if (!pageTypeScopeAllows(auth.allowedTypes, pageType)) return { ok: false, status: 403, error: 'forbidden_page_type' };
 
   const name = typeof input.name === 'string' && input.name.trim()
     ? input.name.trim()
@@ -678,7 +678,7 @@ cmsApiRoutes.get('/pages', async (c) => {
 
   const pageType = (c.req.query('page_type') ?? '').trim();
   if (!pageType) return c.json({ error: 'page_type_required' }, 400);
-  if (!auth.readableTypes.has(pageType)) return c.json({ error: 'forbidden_page_type' }, 403);
+  if (!pageTypeScopeAllows(auth.readableTypes, pageType)) return c.json({ error: 'forbidden_page_type' }, 403);
 
   const limit = Math.min(Math.max(asFiniteNumber(c.req.query('limit')) ?? 50, 1), 500);
   const offset = Math.max(asFiniteNumber(c.req.query('offset')) ?? 0, 0);
@@ -752,7 +752,7 @@ cmsApiRoutes.get('/pages/:id', async (c) => {
 
   const page = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(id).first<Page>();
   if (!page) return c.json({ error: 'not_found' }, 404);
-  if (!auth.readableTypes.has(page.page_type ?? '')) return c.json({ error: 'forbidden_page_type' }, 403);
+  if (!pageTypeScopeAllows(auth.readableTypes, page.page_type ?? '')) return c.json({ error: 'forbidden_page_type' }, 403);
 
   const tags = await c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?')
     .bind(id)
@@ -923,7 +923,7 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
   const pageType = typeof body.source_page_type === 'string' ? body.source_page_type.trim() : '';
   if (!pageType) return c.json({ error: 'source_page_type_required' }, 400);
   // Cloning creates pages of this type, so it needs write scope, not just read.
-  if (!auth.allowedTypes.has(pageType)) return c.json({ error: 'forbidden_page_type' }, 403);
+  if (!pageTypeScopeAllows(auth.allowedTypes, pageType)) return c.json({ error: 'forbidden_page_type' }, 403);
 
   // Select the source pages by lect pointer (how guests etc. group) or parent id.
   const selector = collectionWhere(
@@ -1076,7 +1076,7 @@ async function updatePage(c: AppContext): Promise<Response> {
 
   const page = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(id).first<Page>();
   if (!page) return c.json({ error: 'not_found' }, 404);
-  if (!auth.allowedTypes.has(page.page_type ?? '')) return c.json({ error: 'forbidden_page_type' }, 403);
+  if (!pageTypeScopeAllows(auth.allowedTypes, page.page_type ?? '')) return c.json({ error: 'forbidden_page_type' }, 403);
 
   const body = await c.req.json().catch(() => null) as PageInput | null;
   if (!body || typeof body !== 'object') return c.json({ error: 'invalid_body' }, 400);
@@ -1143,7 +1143,7 @@ cmsApiRoutes.delete('/pages/batch', async (c) => {
   ).bind(...ids).all<{ id: number; page_type: string | null }>();
 
   for (const row of types) {
-    if (!auth.allowedTypes.has(row.page_type ?? '')) return c.json({ error: 'forbidden_page_type' }, 403);
+    if (!pageTypeScopeAllows(auth.allowedTypes, row.page_type ?? '')) return c.json({ error: 'forbidden_page_type' }, 403);
   }
 
   const pages = await trashDraftPages(c.env.DB, ids);
@@ -1189,7 +1189,7 @@ cmsApiRoutes.delete('/pages/children', async (c) => {
 
   const pageType = typeof body.page_type === 'string' ? body.page_type.trim() : '';
   if (!pageType) return c.json({ error: 'page_type_required' }, 400);
-  if (!auth.allowedTypes.has(pageType)) return c.json({ error: 'forbidden_page_type' }, 403);
+  if (!pageTypeScopeAllows(auth.allowedTypes, pageType)) return c.json({ error: 'forbidden_page_type' }, 403);
 
   // Select the pages by lect pointer (how guests group) or parent page id.
   const selector = collectionWhere(
@@ -1236,7 +1236,7 @@ cmsApiRoutes.delete('/pages/:id', async (c) => {
     .bind(id)
     .first<{ page_type: string | null }>();
   if (!existing) return c.json({ error: 'not_found' }, 404);
-  if (!auth.allowedTypes.has(existing.page_type ?? '')) return c.json({ error: 'forbidden_page_type' }, 403);
+  if (!pageTypeScopeAllows(auth.allowedTypes, existing.page_type ?? '')) return c.json({ error: 'forbidden_page_type' }, 403);
 
   const page = await trashDraftPage(c.env.DB, id);
   if (!page) return c.json({ error: 'not_found' }, 404);

@@ -30,14 +30,17 @@
             {% for pageType in pageTypes %}
               <tr class="border-t border-gray-100">
                 <td class="px-4 py-3">
-                  <div class="font-medium text-gray-900 font-mono">{{ pageType.pageType | escape }}</div>
+                  <div class="font-medium text-gray-900{% unless pageType.pageType == '*' %} font-mono{% endunless %}">{{ pageType.pageTypeLabel | escape }}</div>
+                  {% if pageType.pageType == '*' %}
+                    <div class="text-xs text-gray-400 mt-0.5">Wildcard scope</div>
+                  {% endif %}
                 </td>
                 <td class="px-4 py-3">
                   {% if pageType.readDeclared %}
                     <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold {{ pageType.readStatusClass | escape }}">{{ pageType.readStatusLabel | escape }}</span>
                     {% if pageType.readApproved %}
                       <div class="text-xs text-gray-400 mt-0.5">Approved by {{ pageType.readApprovedBy | escape }}</div>
-                      <form method="post" action="{{ pageType.revokeReadAction | escape }}" class="mt-2 inline" data-confirm="Revoke read access to {{ pageType.pageType | escape }}?">
+                      <form method="post" action="{{ pageType.revokeReadAction | escape }}" class="mt-2 inline" data-confirm="Revoke read access to {{ pageType.pageTypeLabel | escape }}?">
                         <input type="hidden" name="page_type" value="{{ pageType.pageType | escape }}">
                         <input type="hidden" name="access" value="read">
                         <button type="submit" class="px-3 py-1 rounded-lg border border-red-300 text-xs font-semibold text-red-700">Revoke</button>
@@ -58,7 +61,7 @@
                     <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold {{ pageType.writeStatusClass | escape }}">{{ pageType.writeStatusLabel | escape }}</span>
                     {% if pageType.writeApproved %}
                       <div class="text-xs text-gray-400 mt-0.5">Approved by {{ pageType.writeApprovedBy | escape }}</div>
-                      <form method="post" action="{{ pageType.revokeWriteAction | escape }}" class="mt-2 inline" data-confirm="Revoke write access to {{ pageType.pageType | escape }}?">
+                      <form method="post" action="{{ pageType.revokeWriteAction | escape }}" class="mt-2 inline" data-confirm="Revoke write access to {{ pageType.pageTypeLabel | escape }}?">
                         <input type="hidden" name="page_type" value="{{ pageType.pageType | escape }}">
                         <input type="hidden" name="access" value="write">
                         <button type="submit" class="px-3 py-1 rounded-lg border border-red-300 text-xs font-semibold text-red-700">Revoke</button>

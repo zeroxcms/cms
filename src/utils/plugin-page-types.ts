@@ -8,8 +8,20 @@
 
 import type { PluginPageTypeApproval, PluginPageTypeAccess } from '../types';
 
+export const PAGE_TYPE_WILDCARD = '*';
+
 function missingTable(error: unknown): boolean {
   return error instanceof Error && /no such table: plugin_page_type_approvals/i.test(error.message);
+}
+
+export function isPageTypeWildcard(value: string): boolean {
+  return value === PAGE_TYPE_WILDCARD;
+}
+
+export function pageTypeScopeAllows(scope: Set<string>, pageType: string): boolean {
+  return pageType.length > 0
+    && !isPageTypeWildcard(pageType)
+    && (scope.has(PAGE_TYPE_WILDCARD) || scope.has(pageType));
 }
 
 /** All delegated page-type approvals for a plugin, ordered for display. */
