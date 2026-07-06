@@ -409,6 +409,74 @@ function editorChips(editors: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
+function parseUtcTimestamp(value: string): Date | null {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2}))?/);
+  if (!match) return null;
+  const [, year, month, day, hour = '00', minute = '00', second = '00'] = match;
+  const date = new Date(Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+  ));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function parseUtcOffsetMinutes(timezone: string): number | null {
+  const match = timezone.trim().match(/^([+-])(\d{2})(?::?(\d{2}))?$/);
+  if (!match) return null;
+  const [, sign, hour, minute = '00'] = match;
+  const hours = Number(hour);
+  const minutes = Number(minute);
+  if (hours > 23 || minutes > 59) return null;
+  const offset = hours * 60 + minutes;
+  return sign === '-' ? -offset : offset;
+}
+
+function formatParts(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return [
+    date.getUTCFullYear(),
+    pad(date.getUTCMonth() + 1),
+    pad(date.getUTCDate()),
+  ].join('-') + ' ' + [
+    pad(date.getUTCHours()),
+    pad(date.getUTCMinutes()),
+    pad(date.getUTCSeconds()),
+  ].join(':');
+}
+
+function formatVersionDate(createdAt: string, timezone: string): string {
+  const date = parseUtcTimestamp(createdAt);
+  if (!date) return createdAt;
+
+  const offsetMinutes = parseUtcOffsetMinutes(timezone);
+  if (offsetMinutes !== null) {
+    return `${formatParts(new Date(date.getTime() + offsetMinutes * 60_000))} ${timezone}`;
+  }
+
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone || 'UTC',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+      hour12: false,
+    }).formatToParts(date);
+    const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? '';
+    const formatted = `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}:${part('second')}`;
+    return timezone ? `${formatted} ${timezone}` : formatted;
+  } catch {
+    return createdAt;
+  }
+}
+
 // ── Lect JSON version diff ──────────────────────────────────────────────────
 // When previewing a saved version, the raw-metadata panel shows a colour-coded
 // diff of that version's lect against the current draft instead of the editable
@@ -543,7 +611,7 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
     ? renderLectDiff(opts.draftLect, page?.lect ?? '')
     : '';
   const versions = structured?.versions.map((version) => ({
-    date: version.created_at,
+    date: formatVersionDate(version.created_at, defaultTimezone),
     description: version.action ?? '',
     href: `${versionHrefBase}?version=${version.id}`,
     active: selectedVersion?.id === version.id,
@@ -561,7 +629,7 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
     isVersionPreview: !!selectedVersion,
     selectedVersion: selectedVersion
       ? {
-          date: selectedVersion.created_at,
+          date: formatVersionDate(selectedVersion.created_at, defaultTimezone),
           restoreAction: `revert:${selectedVersion.id}`,
           currentHref: page ? `/admin/pages/${page.id}/edit` : action,
         }

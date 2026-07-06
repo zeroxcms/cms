@@ -2238,6 +2238,25 @@ describe('structured editor weights', () => {
 });
 
 describe('Lect JSON version diff', () => {
+  it('shows version timestamps in the CMS default timezone', async () => {
+    const changed = stringifyLect({ ...basePageLectObject, name: localizedFixture('About TZ') });
+    await env.DB.prepare(
+      `INSERT INTO page_versions (id, created_at, updated_at, page_id, lect, action)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(502, '2026-01-01 23:15:00', '2026-01-01 23:15:00', 101, changed, 'update')
+      .run();
+
+    const data = bodyData(await (await fetchWorker('/admin/pages/101/edit?version=502', {
+      headers: { Cookie: await authCookie() },
+    })).text());
+
+    expect(data.selectedVersion).toMatchObject({ date: '2026-01-02 07:15:00 +0800' });
+    expect(data.versions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ date: '2026-01-02 07:15:00 +0800' }),
+    ]));
+  });
+
   it('shows a colour-coded diff against the current draft when previewing a version', async () => {
     // A second version of page 101 whose lect differs from the current draft.
     const changed = stringifyLect({ ...basePageLectObject, name: localizedFixture('About — REVISED') });
