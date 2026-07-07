@@ -1068,6 +1068,103 @@ describe('admin routes', () => {
       .first<{ id: number }>()).toBeNull();
   });
 
+  it('POST /admin/advanced-search/:pageType/bulk publishes and unpublishes selected pages', async () => {
+    await env.PUBLISHED_DB.prepare('DELETE FROM live_page_tags').run();
+    await env.PUBLISHED_DB.prepare('DELETE FROM live_pages').run();
+    const query = 'operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=About&path1=';
+    const cookie = await authCookie();
+
+    const publishResponse = await fetchWorker(`/admin/advanced-search/default/bulk?${query}`, {
+      method: 'POST',
+      body: form({
+        bulk_action: 'publish',
+        scope: 'selected',
+        page_ids: '101',
+        return_to: `/admin/advanced-search/default?${query}`,
+      }),
+      headers: { Cookie: cookie },
+    });
+
+    expect(publishResponse.status).toBe(302);
+    expect(publishResponse.headers.get('Location')).toBe(`/admin/advanced-search/default?${query}&flash=1%20page%20published`);
+    expect(await env.PUBLISHED_DB.prepare('SELECT name FROM live_pages WHERE uuid = ?')
+      .bind('page-uuid-101')
+      .first<{ name: string }>()).toEqual({ name: 'About' });
+
+    const unpublishResponse = await fetchWorker(`/admin/advanced-search/default/bulk?${query}`, {
+      method: 'POST',
+      body: form({
+        bulk_action: 'unpublish',
+        scope: 'selected',
+        page_ids: '101',
+        return_to: `/admin/advanced-search/default?${query}`,
+      }),
+      headers: { Cookie: cookie },
+    });
+
+    expect(unpublishResponse.status).toBe(302);
+    expect(unpublishResponse.headers.get('Location')).toBe(`/admin/advanced-search/default?${query}&flash=1%20page%20unpublished`);
+    expect(await env.PUBLISHED_DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
+      .bind('page-uuid-101')
+      .first<{ id: number }>()).toBeNull();
+  });
+
+  it('POST /admin/advanced-search/:pageType/bulk moves all matching results to trash', async () => {
+    const firstLect = blueprintToLect('default', cmsConfig.blueprint, cmsConfig.defaultLanguage);
+    firstLect.name = localizedFixture('Bulk Match One');
+    const secondLect = blueprintToLect('default', cmsConfig.blueprint, cmsConfig.defaultLanguage);
+    secondLect.name = localizedFixture('Bulk Match Two');
+    await env.DB.prepare(
+      `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(103, 'bulk-match-uuid-103', 'Bulk Match One', 'bulk-match-one', 7, 'default', stringifyLect(firstLect), 1, '1')
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(104, 'bulk-match-uuid-104', 'Bulk Match Two', 'bulk-match-two', 8, 'default', stringifyLect(secondLect), 1, '1')
+      .run();
+
+    const query = 'operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=Bulk%20Match&path1=name';
+    const response = await fetchWorker(`/admin/advanced-search/default/bulk?${query}`, {
+      method: 'POST',
+      body: form({
+        bulk_action: 'delete',
+        scope: 'all',
+        return_to: `/admin/advanced-search/default?${query}`,
+      }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toBe(`/admin/advanced-search/default?${query}&flash=2%20pages%20moved%20to%20trash`);
+    expect(await env.DB.prepare('SELECT COUNT(*) AS total FROM draft_pages WHERE id IN (?, ?)')
+      .bind(103, 104)
+      .first<{ total: number }>()).toEqual({ total: 0 });
+    expect(await env.DB.prepare('SELECT COUNT(*) AS total FROM trash_pages WHERE id IN (?, ?)')
+      .bind(103, 104)
+      .first<{ total: number }>()).toEqual({ total: 2 });
+    expect(await env.DB.prepare('SELECT id FROM draft_pages WHERE id = ?')
+      .bind(101)
+      .first<{ id: number }>()).not.toBeNull();
+  });
+
+  it('GET /admin/advanced-search renders bulk controls for results', async () => {
+    const response = await fetchWorker('/admin/advanced-search/default?operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=About&path1=', {
+      headers: { Cookie: await authCookie() },
+    });
+    const html = await response.text();
+    const data = bodyData(html);
+    const section = await (await env.VIEWS.fetch('https://views.local/sections/advanced-search.liquid')).text();
+
+    expect(data.bulkAction).toBe('/admin/advanced-search/default/bulk?operator=AND&pagesize=20&search1=About&path1=&sort=updated_at&order=DESC');
+    expect(data.currentHref).toBe('/admin/advanced-search/default?operator=AND&pagesize=20&search1=About&path1=&sort=updated_at&order=DESC&page=1');
+    expect(section).toContain('data-bulk-form aria-hidden="true"');
+    expect(section).toContain('mb-3 hidden rounded-xl');
+  });
+
   it('POST /admin/pages/pull/:uuid recreates a missing draft from published content', async () => {
     await env.PUBLISHED_DB.prepare(
       `INSERT INTO live_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)

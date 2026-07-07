@@ -196,10 +196,50 @@
   </datalist>
   <script type="application/json" id="advanced-search-path-options-data">{{ pathOptionsByPageTypeJson }}</script>
 
+  {% if hasResults %}
+    <form id="advanced-search-bulk-form" method="POST" action="{{ bulkAction | escape }}" class="mb-3 hidden rounded-xl border border-gray-200 bg-white p-3 shadow-sm" data-bulk-form aria-hidden="true">
+      <input type="hidden" name="return_to" value="{{ currentHref | escape }}">
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div class="grid gap-3 sm:grid-cols-[minmax(9rem,12rem)_minmax(12rem,16rem)]">
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Bulk Action</span>
+            <select name="bulk_action" data-bulk-action class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="publish">Publish</option>
+              <option value="unpublish">Unpublish</option>
+              <option value="delete">Move to Trash</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Apply To</span>
+            <select name="scope" data-bulk-scope class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="selected">Selected items</option>
+              <option value="all">All {{ count }} results</option>
+            </select>
+          </label>
+        </div>
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div class="text-sm text-gray-500"><span data-selected-count>0</span> selected</div>
+          <button type="submit"
+                  title="Apply bulk action"
+                  aria-label="Apply bulk action"
+                  class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
+            Apply
+          </button>
+        </div>
+      </div>
+    </form>
+  {% endif %}
+
   <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-    <table class="relative w-full min-w-[760px] text-left">
+    <table class="relative w-full min-w-[840px] text-left">
       <thead class="border-b border-gray-200 bg-gray-50">
         <tr>
+          <th class="w-12 px-6 py-3">
+            {% if hasResults %}
+              <input type="checkbox" data-bulk-select-all title="Select all visible pages" aria-label="Select all visible pages"
+                     class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+            {% endif %}
+          </th>
           <th class="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Page</th>
           <th class="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Type</th>
           <th class="px-6 py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Weight</th>
@@ -211,6 +251,11 @@
         {% if hasResults %}
           {% for page in pages %}
             <tr class="transition-colors hover:bg-gray-50">
+              <td class="px-6 py-4 align-top">
+                <input type="checkbox" name="page_ids" value="{{ page.id }}" form="advanced-search-bulk-form"
+                       data-bulk-page-checkbox title="Select {{ page.name | escape }}" aria-label="Select {{ page.name | escape }}"
+                       class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+              </td>
               <td class="px-6 py-4">
                 <a href="{{ page.editHref | escape }}" class="flex flex-col gap-1">
                   <div class="font-medium text-gray-900">{{ page.name | escape }}</div>
@@ -292,7 +337,7 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="5" class="px-6 py-12 text-center text-gray-400">
+            <td colspan="6" class="px-6 py-12 text-center text-gray-400">
               {% if hasSearch %}
                 No matching pages.
               {% else %}
@@ -328,6 +373,12 @@
     const pageTypeSelect = document.getElementById('advanced_search_page_type');
     const pathOptionsList = document.getElementById('advanced-search-path-options');
     const pathOptionsData = document.getElementById('advanced-search-path-options-data');
+    const bulkForm = document.querySelector('[data-bulk-form]');
+    const bulkSelectAll = document.querySelector('[data-bulk-select-all]');
+    const bulkCheckboxes = Array.from(document.querySelectorAll('[data-bulk-page-checkbox]'));
+    const bulkSelectedCount = document.querySelector('[data-selected-count]');
+    const bulkScope = document.querySelector('[data-bulk-scope]');
+    const bulkAction = document.querySelector('[data-bulk-action]');
     let nextIndex = {{ nextCriterionIndex }};
 
     const pathOptionsByPageType = JSON.parse(pathOptionsData?.textContent || '{}');
@@ -351,6 +402,21 @@
       });
     };
 
+    const selectedBulkCount = () => bulkCheckboxes.filter((checkbox) => checkbox.checked).length;
+
+    const updateBulkSelection = () => {
+      const selected = selectedBulkCount();
+      if (bulkSelectedCount) bulkSelectedCount.textContent = String(selected);
+      if (bulkForm) {
+        bulkForm.classList.toggle('hidden', selected === 0);
+        bulkForm.setAttribute('aria-hidden', selected === 0 ? 'true' : 'false');
+      }
+      if (bulkSelectAll) {
+        bulkSelectAll.checked = selected > 0 && selected === bulkCheckboxes.length;
+        bulkSelectAll.indeterminate = selected > 0 && selected < bulkCheckboxes.length;
+      }
+    };
+
     addButton?.addEventListener('click', () => {
       const html = template.innerHTML.replaceAll('__INDEX__', String(nextIndex++));
       criteria.insertAdjacentHTML('beforeend', html);
@@ -371,6 +437,32 @@
       updateRemoveButtons();
     });
 
+    bulkSelectAll?.addEventListener('change', () => {
+      bulkCheckboxes.forEach((checkbox) => { checkbox.checked = bulkSelectAll.checked; });
+      updateBulkSelection();
+    });
+
+    bulkCheckboxes.forEach((checkbox) => {
+      checkbox.addEventListener('change', updateBulkSelection);
+    });
+
+    bulkForm?.addEventListener('submit', (event) => {
+      const scope = bulkScope?.value || 'selected';
+      const action = bulkAction?.value || 'publish';
+      const selected = selectedBulkCount();
+      if (scope === 'selected' && selected === 0) {
+        event.preventDefault();
+        alert('Select at least one page.');
+        return;
+      }
+      const actionLabel = action === 'delete' ? 'move to trash' : action;
+      const subject = scope === 'all' ? '{{ count }} matching pages' : selected + ' selected page' + (selected === 1 ? '' : 's');
+      if (!confirm('Bulk ' + actionLabel + ' ' + subject + '?')) {
+        event.preventDefault();
+      }
+    });
+
     updateRemoveButtons();
+    updateBulkSelection();
   })();
 </script>

@@ -26,6 +26,10 @@ export interface AdvancedSearchResult {
   };
 }
 
+export interface AdvancedSearchIdRow {
+  id: number;
+}
+
 export type BlueprintPathKind = 'scalar' | 'localized' | 'pointer';
 
 export interface BlueprintPathSpec {
@@ -271,6 +275,40 @@ export async function performAdvancedSearch(
     order: 'ASC' | 'DESC';
   },
 ): Promise<AdvancedSearchResult> {
+  const { whereSql, baseParams } = advancedSearchWhere(pageTypes, criteria, operator);
+  const countRow = await db.prepare(`SELECT COUNT(*) as total FROM draft_pages p WHERE ${whereSql}`)
+    .bind(...baseParams)
+    .first<{ total: number }>();
+  const total = countRow?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / options.limit));
+  const currentPage = Math.min(options.page, totalPages);
+  const currentOffset = (currentPage - 1) * options.limit;
+
+  const pages = await db.prepare(
+    `SELECT * FROM draft_pages p
+     WHERE ${whereSql}
+     ORDER BY ${options.sort} ${options.order}, id DESC
+     LIMIT ? OFFSET ?`,
+  )
+    .bind(...baseParams, options.limit, currentOffset)
+    .all<Page>();
+
+  return {
+    results: pages.results,
+    pagination: {
+      total,
+      totalPages,
+      currentPage,
+      limit: options.limit,
+    },
+  };
+}
+
+export function advancedSearchWhere(
+  pageTypes: string[],
+  criteria: AdvancedSearchCriterion[],
+  operator: AdvancedSearchOperator,
+): { whereSql: string; baseParams: unknown[] } {
   let searchCondition = '1=0';
   let searchParams: unknown[] = [];
   const pageTypePlaceholders = pageTypes.map(() => '?').join(',');
@@ -310,32 +348,26 @@ export async function performAdvancedSearch(
 
   const whereSql = `p.page_type IN (${pageTypePlaceholders}) AND ${searchCondition}`;
   const baseParams = [...pageTypes, ...searchParams];
-  const countRow = await db.prepare(`SELECT COUNT(*) as total FROM draft_pages p WHERE ${whereSql}`)
-    .bind(...baseParams)
-    .first<{ total: number }>();
-  const total = countRow?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / options.limit));
-  const currentPage = Math.min(options.page, totalPages);
-  const currentOffset = (currentPage - 1) * options.limit;
 
-  const pages = await db.prepare(
-    `SELECT * FROM draft_pages p
+  return { whereSql, baseParams };
+}
+
+export async function advancedSearchMatchingPageIds(
+  db: D1Database,
+  pageTypes: string[],
+  criteria: AdvancedSearchCriterion[],
+  operator: AdvancedSearchOperator,
+): Promise<number[]> {
+  const { whereSql, baseParams } = advancedSearchWhere(pageTypes, criteria, operator);
+  const rows = await db.prepare(
+    `SELECT p.id FROM draft_pages p
      WHERE ${whereSql}
-     ORDER BY ${options.sort} ${options.order}, id DESC
-     LIMIT ? OFFSET ?`,
+     ORDER BY p.id ASC`,
   )
-    .bind(...baseParams, options.limit, currentOffset)
-    .all<Page>();
+    .bind(...baseParams)
+    .all<AdvancedSearchIdRow>();
 
-  return {
-    results: pages.results,
-    pagination: {
-      total,
-      totalPages,
-      currentPage,
-      limit: options.limit,
-    },
-  };
+  return rows.results.map((row) => row.id);
 }
 
 export function advancedSearchFormCriteria(criteria: AdvancedSearchCriterion[], taxonomies: Taxonomy[], tags: Tag[]) {

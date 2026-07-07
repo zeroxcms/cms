@@ -350,6 +350,8 @@ export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all
       nextHref: result.pagination.currentPage < result.pagination.totalPages ? `${routeBase}?${pageQuery(result.pagination.currentPage + 1)}` : '',
       resetHref: routeBase,
       exportHref: `${exportBase}?${queryWithoutPage}`,
+      bulkAction: `${routeBase}/bulk?${queryWithoutPage}`,
+      currentHref: `${routeBase}?${pageQuery(result.pagination.currentPage)}`,
       queryWithoutPage,
       pages: withLiveStatus(result.results, liveMap),
   });

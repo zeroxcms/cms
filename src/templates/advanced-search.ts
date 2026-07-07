@@ -44,6 +44,8 @@ export async function advancedSearchPage(views: Fetcher, opts: BaseTemplateProps
   nextHref: string;
   resetHref: string;
   exportHref: string;
+  bulkAction: string;
+  currentHref: string;
   queryWithoutPage: string;
   pages: DashboardPage[];
 }): Promise<string> {
