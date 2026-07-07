@@ -79,7 +79,7 @@ app.route('/auth', authRoutes);
 // ── Admin UI (protected) ──────────────────────────────────────────────────────
 app.route('/admin', adminRoutes);
 
-// ── Plugin write-back API (F1, PLUGIN_SECRET-authenticated) ───────────────────
+// ── Plugin API — plugin page read/write, PLUGIN_SECRET-authenticated ──────────
 app.route('/__cms', cmsApiRoutes);
 
 // ── Media files from optional R2 binding ──────────────────────────────────────

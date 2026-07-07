@@ -1,5 +1,5 @@
 // ============================================================
-// F1 — Plugin → CMS page write-back / read API.
+// Plugin API — Plugin → CMS page write-back / read API.
 //
 // The standard plugin contract is CMS → plugin only (manifest, admin proxy,
 // hooks, publish snapshots). This router adds the reverse channel: a trusted

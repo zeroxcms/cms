@@ -5,7 +5,7 @@ import { clearConfigCache } from '../src/plugins/config';
 import { restoreTrashedPages } from '../src/utils/admin-queries';
 import { approvePageTypeAccess } from '../src/utils/plugin-page-types';
 
-// F1 — plugin write-back API (/__cms/*). Exercises the real Worker so the
+// Plugin API — plugin write-back API (/__cms/*). Exercises the real Worker so the
 // global middleware (canonical host, cross-origin exemption, auth) is in play.
 
 const worker = (exports as unknown as { default: Fetcher }).default;
@@ -14,7 +14,7 @@ const testEnv = env as unknown as Record<string, unknown>;
 const PLUGIN_ID = 'events';
 const PLUGIN_SECRET = 'test-plugin-secret-value';
 
-// Manifest the F1 scope derives from: this plugin owns the event RSVP types.
+// Manifest the Plugin API scope derives from: this plugin owns the event RSVP types.
 const MANIFEST = {
   id: PLUGIN_ID,
   name: 'Events Suite',
@@ -47,7 +47,7 @@ async function registerPlugin(): Promise<void> {
   } as unknown as Fetcher);
 }
 
-/** Issues an F1 request through the real Worker with plugin auth headers. */
+/** Issues a Plugin API request through the real Worker with plugin auth headers. */
 function cmsApi(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<Response> {
   return worker.fetch(new Request(`http://localhost${path}`, {
     method,
@@ -79,7 +79,7 @@ afterEach(() => {
   else testEnv.PLUGIN_SECRET = savedSecret;
 });
 
-describe('F1 auth + scoping', () => {
+describe('Plugin API auth + scoping', () => {
   it('rejects a wrong shared secret', async () => {
     const res = await cmsApi('POST', '/__cms/pages', { page_type: 'guest' }, { 'x-plugin-secret': 'wrong' });
     expect(res.status).toBe(403);
@@ -260,7 +260,7 @@ describe('F1 auth + scoping', () => {
   });
 });
 
-describe('F1 create / read / list / update / delete', () => {
+describe('Plugin API create / read / list / update / delete', () => {
   it('creates a guest page, versioned, and reads it back', async () => {
     const createRes = await cmsApi('POST', '/__cms/pages', {
       page_type: 'guest',
@@ -510,7 +510,7 @@ describe('F1 create / read / list / update / delete', () => {
   });
 });
 
-describe('F1 batch create', () => {
+describe('Plugin API batch create', () => {
   it('creates many pages and reports per-item errors', async () => {
     const res = await cmsApi('POST', '/__cms/pages/batch', {
       pages: [
