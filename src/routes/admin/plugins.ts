@@ -296,22 +296,10 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
 function shouldQueuePluginAdminAction(c: AppContext, pluginId: string, rest: string): boolean {
   if (c.req.method !== 'POST') return false;
   if (pluginId !== 'events') return false;
-  // The long-running event actions: cascade duplicate/delete, and the guest
-  // import *confirm* (bulk create/update). Run them in the background so a big
-  // CSV can't time out the request. The import preview stays synchronous — it
-  // renders the diff the user must see before confirming.
-  return /^\/events\/\d+\/(?:duplicate|delete)$/.test(rest)
-    || /^\/events\/\d+\/import\/confirm$/.test(rest);
+  return /^\/events\/\d+\/(?:duplicate|delete)$/.test(rest);
 }
 
 function queueRedirect(pluginId: string, rest: string): string {
-  const importMatch = rest.match(/^\/events\/(\d+)\/import\/confirm$/);
-  if (importMatch) {
-    return withFlash(
-      `/admin/plugins/${pluginId}/events/${importMatch[1]}/all-guests`,
-      'Guest import queued. It may take a moment to finish.',
-    );
-  }
   const action = rest.endsWith('/duplicate') ? 'duplication' : 'deletion';
   return withFlash(`/admin/plugins/${pluginId}/events`, `Event ${action} queued. It may take a moment to finish.`);
 }

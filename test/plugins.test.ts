@@ -370,61 +370,6 @@ describe('plugin admin proxy', () => {
     expect(JSON.parse(job?.user_json ?? '{}')).toMatchObject({ sub: '1', email: 'admin@example.com' });
   });
 
-  it('queues the guest-import confirm but proxies the import preview inline', async () => {
-    const { queue, sent } = queueStub<CmsAdminJobMessage>();
-    testEnv.ADMIN_JOBS_QUEUE = queue;
-    testEnv.PLUGIN_SECRET = 'server-secret';
-    const pluginUrl = 'https://plugin-events-import.local';
-    let inlineActionCalls = 0;
-    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Events', pluginUrl).run();
-    __injectPluginFetcher(pluginUrl, {
-      fetch: async (input: RequestInfo | URL): Promise<Response> => {
-        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-        if (new URL(url).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
-        inlineActionCalls += 1;
-        return new Response('preview', { status: 200 });
-      },
-    } as unknown as Fetcher);
-
-    const now = Math.floor(Date.now() / 1000);
-    const token = await signJWT({
-      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
-      type: 'access', exp: now + 900, iat: now,
-    }, env.JWT_SECRET);
-    const headers = {
-      Cookie: `access_token=${token}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Sec-Fetch-Site': 'same-origin',
-    };
-
-    const confirm = await worker.fetch(new Request('http://localhost/admin/plugins/events/events/21864157243758/import/confirm', {
-      method: 'POST', headers, body: 'mode=new_and_update&csv=name%2Cemail%0AAlice%2Calice%40example.com', redirect: 'manual',
-    }));
-
-    expect(confirm.status).toBe(302);
-    expect(confirm.headers.get('location')).toBe('/admin/plugins/events/events/21864157243758/all-guests?flash=Guest%20import%20queued.%20It%20may%20take%20a%20moment%20to%20finish.');
-    expect(inlineActionCalls).toBe(0);
-    expect(sent).toHaveLength(1);
-    const job = await env.DB.prepare('SELECT type, status, method, path, body FROM admin_jobs WHERE id = ?')
-      .bind(sent[0].jobId)
-      .first<{ type: string; status: string; method: string; path: string; body: string }>();
-    expect(job).toMatchObject({
-      type: 'plugin_admin_action',
-      status: 'queued',
-      method: 'POST',
-      path: '/__plugin/admin/events/21864157243758/import/confirm',
-      body: 'mode=new_and_update&csv=name%2Cemail%0AAlice%2Calice%40example.com',
-    });
-
-    // The preview POST is NOT queued — it must render the diff synchronously.
-    const preview = await worker.fetch(new Request('http://localhost/admin/plugins/events/events/21864157243758/import', {
-      method: 'POST', headers, body: 'csv=name%2Cemail%0AAlice%2Calice%40example.com', redirect: 'manual',
-    }));
-    expect(preview.status).toBe(200);
-    expect(inlineActionCalls).toBe(1);
-    expect(sent).toHaveLength(1);
-  });
-
   it('runs queued plugin admin jobs with the background-job header', async () => {
     const { queue, sent } = queueStub<CmsAdminJobMessage>();
     testEnv.ADMIN_JOBS_QUEUE = queue;
