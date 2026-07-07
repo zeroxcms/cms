@@ -248,6 +248,16 @@ function asFiniteNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function asPositiveSafeInteger(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+function hasSubmittedValue(value: unknown): boolean {
+  return value !== null && value !== undefined && value !== '';
+}
+
 function versionAction(value: unknown, fallback: string): string {
   if (typeof value !== 'string') return fallback;
   const trimmed = value.trim();
@@ -412,10 +422,15 @@ function prepareCreateInput(
     ),
   );
 
+  const id = asPositiveSafeInteger(input.id);
+  if (hasSubmittedValue(input.id) && id === null) return { ok: false, status: 400, error: 'invalid_id' };
+  const parentId = asPositiveSafeInteger(input.page_id);
+  if (hasSubmittedValue(input.page_id) && parentId === null) return { ok: false, status: 400, error: 'invalid_page_id' };
+
   return {
     ok: true,
     input: {
-      id: asFiniteNumber(input.id),
+      id,
       pageType,
       name,
       baseSlug,
@@ -424,7 +439,7 @@ function prepareCreateInput(
       start: typeof input.start === 'string' ? input.start : null,
       end: typeof input.end === 'string' ? input.end : null,
       timezone: typeof input.timezone === 'string' ? input.timezone : (c.env.DEFAULT_TIMEZONE ?? '+0800'),
-      parentId: asFiniteNumber(input.page_id),
+      parentId,
       tags: tagIds(input.tags),
     },
   };
@@ -433,6 +448,45 @@ function prepareCreateInput(
 function tagIds(tags: unknown): number[] {
   if (!Array.isArray(tags)) return [];
   return tags.map(asFiniteNumber).filter((tagId): tagId is number => tagId !== null);
+}
+
+async function draftPageIds(db: D1Database, ids: number[]): Promise<Set<number>> {
+  const unique = [...new Set(ids)];
+  const out = new Set<number>();
+  for (let index = 0; index < unique.length; index += 100) {
+    const chunk = unique.slice(index, index + 100);
+    if (!chunk.length) continue;
+    const rows = await db.prepare(`SELECT id FROM draft_pages WHERE id IN (${chunk.map(() => '?').join(',')})`)
+      .bind(...chunk)
+      .all<{ id: number }>();
+    for (const row of rows.results) out.add(row.id);
+  }
+  return out;
+}
+
+async function reservedPageIds(db: D1Database, ids: number[]): Promise<Set<number>> {
+  const unique = [...new Set(ids)];
+  const out = new Set<number>();
+  for (let index = 0; index < unique.length; index += 100) {
+    const chunk = unique.slice(index, index + 100);
+    if (!chunk.length) continue;
+    const placeholders = chunk.map(() => '?').join(',');
+    const rows = await db.prepare(
+      `SELECT id FROM draft_pages WHERE id IN (${placeholders})
+       UNION
+       SELECT id FROM trash_pages WHERE id IN (${placeholders})`,
+    )
+      .bind(...chunk, ...chunk)
+      .all<{ id: number }>();
+    for (const row of rows.results) out.add(row.id);
+  }
+  return out;
+}
+
+async function generatedPageId(db: D1Database, usedIds: Set<number>): Promise<number> {
+  let id = cmsId(usedIds);
+  while ((await reservedPageIds(db, [id])).has(id)) id = cmsId(usedIds);
+  return id;
 }
 
 async function createPage(
@@ -444,6 +498,15 @@ async function createPage(
   const prepared = prepareCreateInput(c, auth, config, input);
   if (!prepared.ok) return prepared;
   const preparedInput = prepared.input;
+
+  if (preparedInput.parentId !== null) {
+    const existingParents = await draftPageIds(c.env.DB, [preparedInput.parentId]);
+    if (!existingParents.has(preparedInput.parentId)) return { ok: false, status: 400, error: 'parent_not_found' };
+  }
+  if (preparedInput.id !== null) {
+    const reservedIds = await reservedPageIds(c.env.DB, [preparedInput.id]);
+    if (reservedIds.has(preparedInput.id)) return { ok: false, status: 409, error: 'id_conflict' };
+  }
 
   const violation = await checkCreateLimits(c.env, [
     createCandidate(preparedInput.pageType, preparedInput.parentId, preparedInput.lect),
@@ -480,7 +543,7 @@ async function createPage(
   try {
     const slug = await ensureUniqueDraftSlug(c.env.DB, preparedInput.baseSlug);
 
-    const explicitId = preparedInput.id ?? cmsId(new Set<number>());
+    const explicitId = preparedInput.id ?? await generatedPageId(c.env.DB, new Set<number>());
     await c.env.DB.prepare(
       `INSERT INTO draft_pages (id, name, slug, weight, start, end, timezone, page_type, lect, page_id, creator)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -519,7 +582,8 @@ async function createPage(
     if (charged && payer !== null) {
       await refundCredits(c.env, { userId: payer, amount: charged, action: chargeAction, pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
     }
-    throw error;
+    console.error('Plugin API create failed', error);
+    return { ok: false, status: 500, error: 'create_failed' };
   }
 }
 
@@ -914,20 +978,84 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
 
   const config = await resolveCmsConfig(c.env);
   const prepared: PreparedCreate[] = [];
+  const preparedIndexes: number[] = [];
   const created: ApiPage[] = [];
   const errors: Array<{ index: number; error: string }> = [];
   for (let i = 0; i < items.length; i++) {
     const result = prepareCreateInput(c, auth, config, (items[i] ?? {}) as PageInput);
-    if (result.ok) prepared.push(result.input);
+    if (result.ok) {
+      prepared.push(result.input);
+      preparedIndexes.push(i);
+    }
     else errors.push({ index: i, error: result.error });
   }
 
   if (prepared.length) {
+    const requestedIds = prepared.map((item) => item.id).filter((id): id is number => id !== null);
+    const reservedIds = await reservedPageIds(c.env.DB, requestedIds);
+    const usedIds = new Set<number>(requestedIds);
+    const seenRequestedIds = new Set<number>();
+    const actualIdByRequestedId = new Map<number, number>();
+    const finalized: PreparedCreate[] = [];
+    const finalizedIndexes: number[] = [];
+    const allocatedIds: number[] = [];
+    for (let i = 0; i < prepared.length; i++) {
+      const item = prepared[i];
+      if (item.id !== null) {
+        if (reservedIds.has(item.id) || seenRequestedIds.has(item.id)) {
+          errors.push({ index: preparedIndexes[i], error: 'id_conflict' });
+          continue;
+        }
+        seenRequestedIds.add(item.id);
+        usedIds.add(item.id);
+        actualIdByRequestedId.set(item.id, item.id);
+        finalized.push(item);
+        finalizedIndexes.push(preparedIndexes[i]);
+        allocatedIds.push(item.id);
+        continue;
+      }
+
+      const id = await generatedPageId(c.env.DB, usedIds);
+      finalized.push(item);
+      finalizedIndexes.push(preparedIndexes[i]);
+      allocatedIds.push(id);
+    }
+    for (let i = 0; i < finalized.length; i++) {
+      const item = finalized[i];
+      finalized[i] = {
+        ...item,
+        parentId: item.parentId !== null && actualIdByRequestedId.has(item.parentId)
+          ? actualIdByRequestedId.get(item.parentId)!
+          : item.parentId,
+      };
+    }
+
+    const parentIds = finalized.map((item) => item.parentId).filter((id): id is number => id !== null);
+    if (parentIds.length) {
+      const existingParents = await draftPageIds(c.env.DB, parentIds);
+      let removedInvalidParent = true;
+      while (removedInvalidParent) {
+        removedInvalidParent = false;
+        const allocatedIdSet = new Set(allocatedIds);
+        for (let i = finalized.length - 1; i >= 0; i--) {
+          const parentId = finalized[i].parentId;
+          if (parentId !== null && !existingParents.has(parentId) && !allocatedIdSet.has(parentId)) {
+            finalized.splice(i, 1);
+            allocatedIds.splice(i, 1);
+            errors.push({ index: finalizedIndexes[i], error: 'parent_not_found' });
+            finalizedIndexes.splice(i, 1);
+            removedInvalidParent = true;
+          }
+        }
+      }
+    }
+    if (!finalized.length) return c.json({ created, errors, count: 0 });
+
     // Reject the whole batch on any quota violation, so a bulk import never
     // half-applies against a limit.
     const violation = await checkCreateLimits(
       c.env,
-      prepared.map((item) => createCandidate(item.pageType, item.parentId, item.lect)),
+      finalized.map((item) => createCandidate(item.pageType, item.parentId, item.lect)),
     );
     if (violation) return c.json({ error: 'limit_exceeded', violation }, 409);
 
@@ -935,7 +1063,7 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
     // all-or-nothing like the limit check, so an import either fully fits the
     // payer's balance or writes nothing.
     const typeCounts = new Map<string, number>();
-    for (const item of prepared) typeCounts.set(item.pageType, (typeCounts.get(item.pageType) ?? 0) + 1);
+    for (const item of finalized) typeCounts.set(item.pageType, (typeCounts.get(item.pageType) ?? 0) + 1);
     let totalCost = 0;
     const breakdown: Record<string, number> = {};
     for (const [type, count] of typeCounts) {
@@ -966,15 +1094,14 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
       charged = totalCost;
     }
 
-    const usedSlugs = await existingSlugSet(c.env.DB, prepared.map((item) => item.baseSlug));
-    const usedIds = new Set<number>();
+    const usedSlugs = await existingSlugSet(c.env.DB, finalized.map((item) => item.baseSlug));
     const statements: D1PreparedStatement[] = [];
     const hookPages: HookPage[] = [];
     const createdAt = cmsTimestamp();
 
-    for (const item of prepared) {
-      const id = item.id ?? cmsId(usedIds);
-      usedIds.add(id);
+    for (let i = 0; i < finalized.length; i++) {
+      const item = finalized[i];
+      const id = allocatedIds[i];
       const uuid = crypto.randomUUID();
       const versionId = cmsId(usedIds);
       const slug = allocateSlug(item.baseSlug, usedSlugs);
@@ -1014,7 +1141,8 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
       if (charged && payer !== null) {
         await refundCredits(c.env, { userId: payer, amount: charged, action: 'page_create:batch', pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
       }
-      throw error;
+      console.error('Plugin API batch create failed', error);
+      return c.json({ error: 'create_failed' }, 500);
     }
     emitPluginHooks(c, 'create', hookPages, auth.pluginId);
   }

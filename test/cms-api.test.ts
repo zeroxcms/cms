@@ -288,6 +288,36 @@ describe('Plugin API create / read / list / update / delete', () => {
     expect(read.lect['@status']).toBe('confirmed');
   });
 
+  it('returns a JSON conflict when an imported explicit id is already used', async () => {
+    const legacyId = 710001;
+    const firstRes = await cmsApi('POST', '/__cms/pages', {
+      id: legacyId,
+      page_type: 'guest',
+      name: 'Imported Guest',
+    });
+    expect(firstRes.status).toBe(201);
+    const first = (await firstRes.json() as { page: { id: number } }).page;
+    expect(first.id).toBe(legacyId);
+
+    const secondRes = await cmsApi('POST', '/__cms/pages', {
+      id: legacyId,
+      page_type: 'guest',
+      name: 'Imported Guest Copy',
+    });
+    expect(secondRes.status).toBe(409);
+    expect(await secondRes.json()).toMatchObject({ error: 'id_conflict' });
+  });
+
+  it('returns a JSON error when a create references a missing parent page', async () => {
+    const res = await cmsApi('POST', '/__cms/pages', {
+      page_type: 'guest',
+      name: 'Orphan Guest',
+      page_id: 999999,
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'parent_not_found' });
+  });
+
   it('lists pages of an owned type with a search filter', async () => {
     await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Grace Hopper' });
     await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Alan Turing' });
@@ -547,6 +577,45 @@ describe('Plugin API batch create', () => {
       'SELECT COUNT(*) AS count FROM page_versions WHERE page_id IN (?, ?)',
     ).bind(body.created[0].id, body.created[1].id).first<{ count: number }>();
     expect(versions?.count).toBe(2);
+  });
+
+  it('reports explicit id conflicts as per-item JSON errors in batch imports', async () => {
+    const legacyId = 710002;
+    const existingRes = await cmsApi('POST', '/__cms/pages', {
+      id: legacyId,
+      page_type: 'guest',
+      name: 'Existing Imported Guest',
+    });
+    expect(existingRes.status).toBe(201);
+
+    const res = await cmsApi('POST', '/__cms/pages/batch', {
+      pages: [
+        { page_type: 'guest', name: 'Valid Guest' },
+        { id: legacyId, page_type: 'guest', name: 'Batch Guest A' },
+        { id: legacyId, page_type: 'guest', name: 'Batch Guest B' },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { count: number; created: Array<{ id: number }>; errors: Array<{ index: number; error: string }> };
+    expect(body.count).toBe(1);
+    expect(body.created.map((page) => page.id)).not.toContain(legacyId);
+    expect(body.errors).toEqual([
+      { index: 1, error: 'id_conflict' },
+      { index: 2, error: 'id_conflict' },
+    ]);
+  });
+
+  it('reports missing parents as per-item JSON errors in batch imports', async () => {
+    const res = await cmsApi('POST', '/__cms/pages/batch', {
+      pages: [
+        { page_type: 'guest', name: 'Valid Guest' },
+        { page_type: 'guest', name: 'Orphan Guest', page_id: 999999 },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { count: number; errors: Array<{ index: number; error: string }> };
+    expect(body.count).toBe(1);
+    expect(body.errors).toEqual([{ index: 1, error: 'parent_not_found' }]);
   });
 
   it('caps batch size to keep CMS work bounded', async () => {
