@@ -364,6 +364,29 @@ describe('Plugin API create / read / list / update / delete', () => {
     expect(body.pages.map((page) => page.name).sort()).toEqual(['陳家豪', '陳美玲']);
   });
 
+  it('skips the COUNT(*) when count=0 (paginating callers fetch the total once)', async () => {
+    await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Ada', lect: { _pointers: { mail_list: '12' } } });
+    await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Bob', lect: { _pointers: { mail_list: '12' } } });
+
+    const counted = await (await cmsApi('GET', '/__cms/pages?page_type=guest&pointer_key=mail_list&pointer_value=12')).json() as { total: number; pages: unknown[] };
+    expect(counted.total).toBe(2);
+
+    const uncounted = await (await cmsApi('GET', '/__cms/pages?page_type=guest&pointer_key=mail_list&pointer_value=12&count=0&limit=1&offset=1')).json() as { total: number; pages: unknown[] };
+    expect(uncounted.total).toBe(-1); // sentinel: not computed
+    expect(uncounted.pages).toHaveLength(1); // rows still paged normally
+  });
+
+  it('serves pointer filters from the expression index, not a full scan', async () => {
+    // The route inlines the JSON path as a literal for exactly this reason —
+    // a bound parameter in the indexed expression would force a table scan.
+    const plan = await env.DB.prepare(
+      "EXPLAIN QUERY PLAN SELECT * FROM draft_pages WHERE page_type = ? AND json_extract(lect, '$._pointers.mail_list') = ? ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
+    ).bind('guest', '12', 500, 0).all<{ detail: string }>();
+    const details = plan.results.map((row) => row.detail).join('\n');
+    expect(details).toContain('idx_draft_pages_pointer_mail_list');
+    expect(details).not.toContain('SCAN draft_pages');
+  });
+
   it('advanced-searches plugin pages by wildcard lect path criteria', async () => {
     await cmsApi('POST', '/__cms/pages', {
       page_type: 'guest',

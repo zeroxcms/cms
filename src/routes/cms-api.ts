@@ -851,12 +851,17 @@ cmsApiRoutes.get('/pages', async (c) => {
     params.push(parentId);
   }
   if (pointerKey && pointerValues.length > 0) {
+    // The JSON path is inlined as a literal (pointerKey is validated to
+    // [a-z0-9_-] above): SQLite only uses the expression indexes from
+    // migration 0011 when the indexed expression appears verbatim in the
+    // query — a bound parameter would force a full scan.
+    const pointerPath = `'$._pointers.${pointerKey}'`;
     if (pointerValues.length === 1) {
-      where += ' AND json_extract(lect, ?) = ?';
+      where += ` AND json_extract(lect, ${pointerPath}) = ?`;
     } else {
-      where += ` AND json_extract(lect, ?) IN (${pointerValues.map(() => '?').join(',')})`;
+      where += ` AND json_extract(lect, ${pointerPath}) IN (${pointerValues.map(() => '?').join(',')})`;
     }
-    params.push(`$._pointers.${pointerKey}`, ...pointerValues);
+    params.push(...pointerValues);
   }
   if (q) {
     const terms = chineseSearchVariants(q).map((variant) => `%${variant.replaceAll(' ', '%')}%`);
@@ -864,18 +869,24 @@ cmsApiRoutes.get('/pages', async (c) => {
     for (const term of terms) params.push(term, term, term);
   }
 
+  // count=0 skips the COUNT(*) (a scan of the whole filtered set) — callers
+  // paginating with offset only need the total once, on the first page.
+  const skipCount = c.req.query('count') === '0';
+
   const [rows, totalRow] = await Promise.all([
     c.env.DB.prepare(`SELECT * FROM draft_pages ${where} ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`)
       .bind(...params, limit, offset)
       .all<Page>(),
-    c.env.DB.prepare(`SELECT COUNT(*) AS total FROM draft_pages ${where}`)
-      .bind(...params)
-      .first<{ total: number }>(),
+    skipCount
+      ? Promise.resolve(null)
+      : c.env.DB.prepare(`SELECT COUNT(*) AS total FROM draft_pages ${where}`)
+          .bind(...params)
+          .first<{ total: number }>(),
   ]);
 
   return c.json({
     pages: rows.results.map(serializePage),
-    total: totalRow?.total ?? 0,
+    total: skipCount ? -1 : (totalRow?.total ?? 0),
     limit,
     offset,
   });
