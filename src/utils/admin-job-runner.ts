@@ -10,12 +10,15 @@ import {
   claimAdminJob,
   completeAdminJob,
   failAdminJob,
+  requeueAdminJob,
   type AdminJobRecord,
   type AdvancedSearchBulkAction,
-  type AdvancedSearchBulkActionInput,
+  type AdvancedSearchBulkActionPayload,
 } from './admin-jobs';
 import { appendQuery } from './forms';
 import { advancedSearchMatchingPageIds } from './search';
+
+const ADVANCED_SEARCH_BULK_JOB_PAGE_LIMIT = 100;
 
 export async function runCmsAdminJob(env: Env, jobId: string): Promise<void> {
   const job = await claimAdminJob(env.DB, jobId);
@@ -70,20 +73,48 @@ async function runPluginAdminActionJob(env: Env, job: AdminJobRecord): Promise<v
 
 async function runAdvancedSearchBulkActionJob(env: Env, job: AdminJobRecord): Promise<void> {
   if (!job.user) throw new Error('Admin job is missing user data');
-  const input = parseAdvancedSearchBulkActionJob(job.body);
-  const ids = input.scope === 'all'
-    ? await advancedSearchMatchingPageIds(env.DB, input.pageTypes, input.criteria, input.operator)
-    : input.ids;
+  let input = parseAdvancedSearchBulkActionJob(job.body);
+  if (input.scope === 'all' && !input.ids.length) {
+    input = {
+      ...input,
+      ids: await advancedSearchMatchingPageIds(env.DB, input.pageTypes, input.criteria, input.operator),
+      cursor: 0,
+    };
+  }
 
-  const outcome = await applyAdvancedSearchBulkAction(env, job.user, input.action, ids);
+  const cursor = Math.max(0, input.cursor ?? 0);
+  const pageIds = input.ids.slice(cursor, cursor + ADVANCED_SEARCH_BULK_JOB_PAGE_LIMIT);
+  const outcome = await applyAdvancedSearchBulkAction(env, job.user, input.action, pageIds);
+  const updated = (input.updated ?? 0) + outcome.updated;
+  const refused = (input.refused ?? 0) + outcome.refused;
+  const failedTargets = Array.from(new Set([...(input.failedTargets ?? []), ...outcome.failedTargets]));
+  const nextCursor = cursor + pageIds.length;
+
+  if (nextCursor < input.ids.length) {
+    const nextInput: AdvancedSearchBulkActionPayload = {
+      ...input,
+      cursor: nextCursor,
+      updated,
+      refused,
+      failedTargets,
+    };
+    await requeueAdminJob(env.DB, job.id, JSON.stringify(nextInput));
+    if (env.ADMIN_JOBS_QUEUE) {
+      await env.ADMIN_JOBS_QUEUE.send({ kind: 'cms_admin_job', jobId: job.id });
+    } else {
+      await runCmsAdminJob(env, job.id);
+    }
+    return;
+  }
+
   await completeAdminJob(env.DB, job.id, 200, appendQuery(
     input.returnTo,
-    `flash=${encodeURIComponent(bulkFlash(input.action, outcome.updated, outcome.refused, Array.from(outcome.failedTargets)))}`,
+    `flash=${encodeURIComponent(bulkFlash(input.action, updated, refused, failedTargets))}`,
   ));
 }
 
-function parseAdvancedSearchBulkActionJob(body: string | null): Omit<AdvancedSearchBulkActionInput, 'user'> {
-  const value = body ? JSON.parse(body) as Partial<AdvancedSearchBulkActionInput> : null;
+function parseAdvancedSearchBulkActionJob(body: string | null): AdvancedSearchBulkActionPayload {
+  const value = body ? JSON.parse(body) as Partial<AdvancedSearchBulkActionPayload> : null;
   if (!value || typeof value !== 'object') throw new Error('Admin job is missing bulk action payload');
   if (value.action !== 'publish' && value.action !== 'unpublish' && value.action !== 'delete') {
     throw new Error('Admin job has invalid bulk action');
@@ -100,8 +131,14 @@ function parseAdvancedSearchBulkActionJob(body: string | null): Omit<AdvancedSea
   const returnTo = typeof value.returnTo === 'string' && value.returnTo.startsWith('/admin')
     ? value.returnTo
     : '/admin/advanced-search';
+  const cursor = typeof value.cursor === 'number' && Number.isFinite(value.cursor) ? Math.max(0, value.cursor) : 0;
+  const updated = typeof value.updated === 'number' && Number.isFinite(value.updated) ? Math.max(0, value.updated) : 0;
+  const refused = typeof value.refused === 'number' && Number.isFinite(value.refused) ? Math.max(0, value.refused) : 0;
+  const failedTargets = Array.isArray(value.failedTargets)
+    ? value.failedTargets.filter((target): target is string => typeof target === 'string' && target.length > 0)
+    : [];
   if (scope === 'all' && !pageTypes.length) throw new Error('Admin job is missing page types');
-  return { action: value.action, scope, ids, pageTypes, criteria, operator, returnTo };
+  return { action: value.action, scope, ids, pageTypes, criteria, operator, returnTo, cursor, updated, refused, failedTargets };
 }
 
 async function applyAdvancedSearchBulkAction(

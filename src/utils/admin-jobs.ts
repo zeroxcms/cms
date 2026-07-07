@@ -33,6 +33,13 @@ export interface AdvancedSearchBulkActionInput {
   user: JWTPayload;
 }
 
+export interface AdvancedSearchBulkActionPayload extends Omit<AdvancedSearchBulkActionInput, 'user'> {
+  cursor?: number;
+  updated?: number;
+  refused?: number;
+  failedTargets?: string[];
+}
+
 interface AdminJobRow {
   id: string;
   type: AdminJobType;
@@ -162,6 +169,22 @@ export async function completeAdminJob(
          updated_at = ?
      WHERE id = ?`,
   ).bind(resultStatus, resultLocation, now, now, id).run();
+}
+
+export async function requeueAdminJob(
+  db: D1Database,
+  id: string,
+  body: string,
+): Promise<void> {
+  const now = jobTimestamp();
+  await db.prepare(
+    `UPDATE admin_jobs
+     SET status = 'queued',
+         body = ?,
+         error = NULL,
+         updated_at = ?
+     WHERE id = ?`,
+  ).bind(body, now, id).run();
 }
 
 export async function failAdminJob(db: D1Database, id: string, error: unknown): Promise<void> {

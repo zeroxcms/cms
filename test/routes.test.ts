@@ -90,6 +90,7 @@ const basePageLect = stringifyLect(basePageLectObject);
 beforeEach(async () => {
   vi.unstubAllGlobals();
   clearRolePermissionsCache();
+  delete (env as unknown as { ADMIN_JOBS_QUEUE?: Queue<CmsAdminJobMessage> }).ADMIN_JOBS_QUEUE;
   await resetData();
   await seedBaseData();
 });
@@ -1209,6 +1210,56 @@ describe('admin routes', () => {
     expect(await env.DB.prepare('SELECT id FROM draft_pages WHERE id = ?')
       .bind(101)
       .first<{ id: number }>()).not.toBeNull();
+  });
+
+  it('continues advanced-search bulk jobs across queue invocations', async () => {
+    const { queue, sent } = queueStub<CmsAdminJobMessage>();
+    (env as unknown as { ADMIN_JOBS_QUEUE?: Queue<CmsAdminJobMessage> }).ADMIN_JOBS_QUEUE = queue;
+    await seedDraftPages('default', 125, 3000, 'Chunked Bulk');
+    const query = 'operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=Chunked&path1=';
+    const body = new URLSearchParams({
+      bulk_action: 'delete',
+      scope: 'selected',
+      return_to: `/admin/advanced-search/default?${query}`,
+    });
+    for (let id = 3001; id <= 3125; id += 1) body.append('page_ids', String(id));
+
+    const response = await fetchWorker(`/admin/advanced-search/default/bulk?${query}`, {
+      method: 'POST',
+      body,
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(sent).toHaveLength(1);
+
+    await worker.queue(queueBatch([sent[0]]), env as unknown as AppEnv);
+
+    expect(sent).toHaveLength(2);
+    expect(await env.DB.prepare('SELECT COUNT(*) AS total FROM draft_pages WHERE id BETWEEN ? AND ?')
+      .bind(3001, 3125)
+      .first<{ total: number }>()).toEqual({ total: 25 });
+    const partialJob = await env.DB.prepare('SELECT status, body FROM admin_jobs WHERE id = ?')
+      .bind(sent[0].jobId)
+      .first<{ status: string; body: string }>();
+    expect(partialJob?.status).toBe('queued');
+    expect(JSON.parse(partialJob?.body ?? '{}')).toMatchObject({ cursor: 100, updated: 100 });
+
+    await worker.queue(queueBatch([sent[1]]), env as unknown as AppEnv);
+
+    expect(await env.DB.prepare('SELECT COUNT(*) AS total FROM draft_pages WHERE id BETWEEN ? AND ?')
+      .bind(3001, 3125)
+      .first<{ total: number }>()).toEqual({ total: 0 });
+    expect(await env.DB.prepare('SELECT COUNT(*) AS total FROM trash_pages WHERE id BETWEEN ? AND ?')
+      .bind(3001, 3125)
+      .first<{ total: number }>()).toEqual({ total: 125 });
+    const doneJob = await env.DB.prepare('SELECT status, result_location FROM admin_jobs WHERE id = ?')
+      .bind(sent[0].jobId)
+      .first<{ status: string; result_location: string }>();
+    expect(doneJob).toEqual({
+      status: 'done',
+      result_location: `/admin/advanced-search/default?${query}&flash=125%20pages%20moved%20to%20trash`,
+    });
   });
 
   it('GET /admin/advanced-search renders bulk controls for results', async () => {
