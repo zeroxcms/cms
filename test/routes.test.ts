@@ -6,10 +6,11 @@ import { blueprintToLect, stringifyLect } from '../src/utils/lect';
 import { clearConfigCache } from '../src/plugins/config';
 import { __injectPluginFetcher, clearManifestCache } from '../src/plugins/registry';
 import { clearRolePermissionsCache } from '../src/utils/roles';
-import type { JWTPayload } from '../src/types';
+import { CMS_ADMIN_JOB_KIND, type CmsAdminJobMessage } from '../src/utils/admin-jobs';
+import type { Env as AppEnv, JWTPayload } from '../src/types';
 
 const IncomingRequest = Request;
-const worker = (exports as unknown as { default: Fetcher }).default;
+const worker = (exports as unknown as { default: Fetcher & { queue(batch: MessageBatch<unknown>, env: AppEnv): Promise<void> } }).default;
 let ipCounter = 0;
 
 interface RouteCase {
@@ -40,6 +41,26 @@ function renderPayload(html: string): RenderPayload {
 
 function bodyData(html: string): Record<string, unknown> {
   return renderPayload(html).bodyView?.data ?? {};
+}
+
+function queueStub<T>(): { queue: Queue<T>; sent: T[] } {
+  const sent: T[] = [];
+  const queue = {
+    send: async (body: T) => { sent.push(body); },
+    sendBatch: async (messages: Array<{ body: T }>) => {
+      for (const message of messages) sent.push(message.body);
+    },
+  } as unknown as Queue<T>;
+  return { queue, sent };
+}
+
+function queueBatch<T>(bodies: T[]): MessageBatch<T> {
+  return {
+    queue: 'test',
+    messages: bodies.map((body) => ({ body, ack: () => undefined, retry: () => undefined })),
+    ackAll: () => undefined,
+    retryAll: () => undefined,
+  } as unknown as MessageBatch<T>;
 }
 
 function localizedFixture(base: string): Record<string, string> {
@@ -1069,6 +1090,8 @@ describe('admin routes', () => {
   });
 
   it('POST /admin/advanced-search/:pageType/bulk publishes and unpublishes selected pages', async () => {
+    const { queue, sent } = queueStub<CmsAdminJobMessage>();
+    (env as unknown as { ADMIN_JOBS_QUEUE?: Queue<CmsAdminJobMessage> }).ADMIN_JOBS_QUEUE = queue;
     await env.PUBLISHED_DB.prepare('DELETE FROM live_page_tags').run();
     await env.PUBLISHED_DB.prepare('DELETE FROM live_pages').run();
     const query = 'operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=About&path1=';
@@ -1086,7 +1109,20 @@ describe('admin routes', () => {
     });
 
     expect(publishResponse.status).toBe(302);
-    expect(publishResponse.headers.get('Location')).toBe(`/admin/advanced-search/default?${query}&flash=1%20page%20published`);
+    expect(publishResponse.headers.get('Location')).toBe(`/admin/advanced-search/default?${query}&flash=Bulk%20publish%20queued.%20It%20may%20take%20a%20moment%20to%20finish.`);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: CMS_ADMIN_JOB_KIND });
+    const publishJob = await env.DB.prepare('SELECT type, status, body FROM admin_jobs WHERE id = ?')
+      .bind(sent[0].jobId)
+      .first<{ type: string; status: string; body: string }>();
+    expect(publishJob).toMatchObject({ type: 'advanced_search_bulk_action', status: 'queued' });
+    expect(JSON.parse(publishJob?.body ?? '{}')).toMatchObject({ action: 'publish', scope: 'selected', ids: [101] });
+    expect(await env.PUBLISHED_DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
+      .bind('page-uuid-101')
+      .first<{ id: number }>()).toBeNull();
+
+    await worker.queue(queueBatch([sent[0]]), env as unknown as AppEnv);
+
     expect(await env.PUBLISHED_DB.prepare('SELECT name FROM live_pages WHERE uuid = ?')
       .bind('page-uuid-101')
       .first<{ name: string }>()).toEqual({ name: 'About' });
@@ -1103,13 +1139,19 @@ describe('admin routes', () => {
     });
 
     expect(unpublishResponse.status).toBe(302);
-    expect(unpublishResponse.headers.get('Location')).toBe(`/admin/advanced-search/default?${query}&flash=1%20page%20unpublished`);
+    expect(unpublishResponse.headers.get('Location')).toBe(`/admin/advanced-search/default?${query}&flash=Bulk%20unpublish%20queued.%20It%20may%20take%20a%20moment%20to%20finish.`);
+    expect(sent).toHaveLength(2);
+
+    await worker.queue(queueBatch([sent[1]]), env as unknown as AppEnv);
+
     expect(await env.PUBLISHED_DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
       .bind('page-uuid-101')
       .first<{ id: number }>()).toBeNull();
   });
 
   it('POST /admin/advanced-search/:pageType/bulk moves all matching results to trash', async () => {
+    const { queue, sent } = queueStub<CmsAdminJobMessage>();
+    (env as unknown as { ADMIN_JOBS_QUEUE?: Queue<CmsAdminJobMessage> }).ADMIN_JOBS_QUEUE = queue;
     const firstLect = blueprintToLect('default', cmsConfig.blueprint, cmsConfig.defaultLanguage);
     firstLect.name = localizedFixture('Bulk Match One');
     const secondLect = blueprintToLect('default', cmsConfig.blueprint, cmsConfig.defaultLanguage);
@@ -1139,7 +1181,25 @@ describe('admin routes', () => {
     });
 
     expect(response.status).toBe(302);
-    expect(response.headers.get('Location')).toBe(`/admin/advanced-search/default?${query}&flash=2%20pages%20moved%20to%20trash`);
+    expect(response.headers.get('Location')).toBe(`/admin/advanced-search/default?${query}&flash=Bulk%20deletion%20queued.%20It%20may%20take%20a%20moment%20to%20finish.`);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: CMS_ADMIN_JOB_KIND });
+    const deleteJob = await env.DB.prepare('SELECT type, status, body FROM admin_jobs WHERE id = ?')
+      .bind(sent[0].jobId)
+      .first<{ type: string; status: string; body: string }>();
+    expect(deleteJob).toMatchObject({ type: 'advanced_search_bulk_action', status: 'queued' });
+    expect(JSON.parse(deleteJob?.body ?? '{}')).toMatchObject({
+      action: 'delete',
+      scope: 'all',
+      pageTypes: ['default'],
+      operator: 'AND',
+    });
+    expect(await env.DB.prepare('SELECT COUNT(*) AS total FROM draft_pages WHERE id IN (?, ?)')
+      .bind(103, 104)
+      .first<{ total: number }>()).toEqual({ total: 2 });
+
+    await worker.queue(queueBatch([sent[0]]), env as unknown as AppEnv);
+
     expect(await env.DB.prepare('SELECT COUNT(*) AS total FROM draft_pages WHERE id IN (?, ?)')
       .bind(103, 104)
       .first<{ total: number }>()).toEqual({ total: 0 });

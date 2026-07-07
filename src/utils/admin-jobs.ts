@@ -1,9 +1,12 @@
 import type { JWTPayload } from '../types';
+import type { AdvancedSearchCriterion, AdvancedSearchOperator } from './search';
 
 export const CMS_ADMIN_JOB_KIND = 'cms_admin_job' as const;
 
-export type AdminJobType = 'plugin_admin_action';
+export type AdminJobType = 'plugin_admin_action' | 'advanced_search_bulk_action';
 export type AdminJobStatus = 'queued' | 'running' | 'done' | 'failed';
+export type AdvancedSearchBulkAction = 'publish' | 'unpublish' | 'delete';
+export type AdvancedSearchBulkScope = 'selected' | 'all';
 
 export interface CmsAdminJobMessage {
   kind: typeof CMS_ADMIN_JOB_KIND;
@@ -16,6 +19,17 @@ export interface PluginAdminActionInput {
   path: string;
   contentType: string | null;
   body: string;
+  user: JWTPayload;
+}
+
+export interface AdvancedSearchBulkActionInput {
+  action: AdvancedSearchBulkAction;
+  scope: AdvancedSearchBulkScope;
+  ids: number[];
+  pageTypes: string[];
+  criteria: AdvancedSearchCriterion[];
+  operator: AdvancedSearchOperator;
+  returnTo: string;
   user: JWTPayload;
 }
 
@@ -85,6 +99,29 @@ export async function createPluginAdminActionJob(db: D1Database, input: PluginAd
     input.contentType,
     input.body,
     JSON.stringify(input.user),
+    now,
+    now,
+  ).run();
+  const job = await getAdminJob(db, id);
+  if (!job) throw new Error(`Unable to read admin job ${id}`);
+  return job;
+}
+
+export async function createAdvancedSearchBulkActionJob(
+  db: D1Database,
+  input: AdvancedSearchBulkActionInput,
+): Promise<AdminJobRecord> {
+  const now = jobTimestamp();
+  const id = crypto.randomUUID();
+  const { user, ...payload } = input;
+  await db.prepare(
+    `INSERT INTO admin_jobs (
+      id, type, status, body, user_json, attempts, created_at, updated_at
+    ) VALUES (?, 'advanced_search_bulk_action', 'queued', ?, ?, 0, ?, ?)`,
+  ).bind(
+    id,
+    JSON.stringify(payload),
+    JSON.stringify(user),
     now,
     now,
   ).run();
