@@ -74,11 +74,12 @@ async function runPluginAdminActionJob(env: Env, job: AdminJobRecord): Promise<v
 async function runAdvancedSearchBulkActionJob(env: Env, job: AdminJobRecord): Promise<void> {
   if (!job.user) throw new Error('Admin job is missing user data');
   let input = parseAdvancedSearchBulkActionJob(job.body);
-  if (input.scope === 'all' && !input.ids.length) {
+  if (input.scope === 'all' && !input.resolvedAll) {
     input = {
       ...input,
       ids: await advancedSearchMatchingPageIds(env.DB, input.pageTypes, input.criteria, input.operator),
       cursor: 0,
+      resolvedAll: true,
     };
   }
 
@@ -137,8 +138,9 @@ function parseAdvancedSearchBulkActionJob(body: string | null): AdvancedSearchBu
   const failedTargets = Array.isArray(value.failedTargets)
     ? value.failedTargets.filter((target): target is string => typeof target === 'string' && target.length > 0)
     : [];
+  const resolvedAll = value.resolvedAll === true;
   if (scope === 'all' && !pageTypes.length) throw new Error('Admin job is missing page types');
-  return { action: value.action, scope, ids, pageTypes, criteria, operator, returnTo, cursor, updated, refused, failedTargets };
+  return { action: value.action, scope, ids, pageTypes, criteria, operator, returnTo, resolvedAll, cursor, updated, refused, failedTargets };
 }
 
 async function applyAdvancedSearchBulkAction(

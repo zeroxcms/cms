@@ -34,6 +34,7 @@ export interface AdvancedSearchBulkActionInput {
 }
 
 export interface AdvancedSearchBulkActionPayload extends Omit<AdvancedSearchBulkActionInput, 'user'> {
+  resolvedAll?: boolean;
   cursor?: number;
   updated?: number;
   refused?: number;

@@ -1176,6 +1176,7 @@ describe('admin routes', () => {
       body: form({
         bulk_action: 'delete',
         scope: 'all',
+        page_ids: '101',
         return_to: `/admin/advanced-search/default?${query}`,
       }),
       headers: { Cookie: await authCookie() },
@@ -1192,6 +1193,7 @@ describe('admin routes', () => {
     expect(JSON.parse(deleteJob?.body ?? '{}')).toMatchObject({
       action: 'delete',
       scope: 'all',
+      ids: [],
       pageTypes: ['default'],
       operator: 'AND',
     });
@@ -1260,6 +1262,42 @@ describe('admin routes', () => {
       status: 'done',
       result_location: `/admin/advanced-search/default?${query}&flash=125%20pages%20moved%20to%20trash`,
     });
+  });
+
+  it('resolves all-result jobs even when the initial payload includes visible selected ids', async () => {
+    const { queue, sent } = queueStub<CmsAdminJobMessage>();
+    (env as unknown as { ADMIN_JOBS_QUEUE?: Queue<CmsAdminJobMessage> }).ADMIN_JOBS_QUEUE = queue;
+    await seedDraftPages('default', 25, 4000, 'All Scope');
+    const matchLect = blueprintToLect('default', cmsConfig.blueprint, cmsConfig.defaultLanguage);
+    matchLect.name = localizedFixture('All Scope');
+    await env.DB.prepare('UPDATE draft_pages SET lect = ? WHERE id BETWEEN ? AND ?')
+      .bind(stringifyLect(matchLect), 4001, 4025)
+      .run();
+    const query = 'operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=All%20Scope&path1=';
+    const body = new URLSearchParams({
+      bulk_action: 'delete',
+      scope: 'all',
+      return_to: `/admin/advanced-search/default?${query}`,
+    });
+    for (let id = 4001; id <= 4020; id += 1) body.append('page_ids', String(id));
+
+    const response = await fetchWorker(`/admin/advanced-search/default/bulk?${query}`, {
+      method: 'POST',
+      body,
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(sent).toHaveLength(1);
+
+    await worker.queue(queueBatch([sent[0]]), env as unknown as AppEnv);
+
+    expect(await env.DB.prepare('SELECT COUNT(*) AS total FROM draft_pages WHERE id BETWEEN ? AND ?')
+      .bind(4001, 4025)
+      .first<{ total: number }>()).toEqual({ total: 0 });
+    expect(await env.DB.prepare('SELECT COUNT(*) AS total FROM trash_pages WHERE id BETWEEN ? AND ?')
+      .bind(4001, 4025)
+      .first<{ total: number }>()).toEqual({ total: 25 });
   });
 
   it('GET /admin/advanced-search renders bulk controls for results', async () => {

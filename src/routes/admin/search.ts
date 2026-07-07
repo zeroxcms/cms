@@ -100,7 +100,7 @@ async function bulkAdvancedSearch(
   const job = await createAdvancedSearchBulkActionJob(c.env.DB, {
     action,
     scope,
-    ids,
+    ids: scope === 'all' ? [] : ids,
     pageTypes,
     criteria,
     operator,
