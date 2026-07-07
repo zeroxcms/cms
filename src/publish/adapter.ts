@@ -43,6 +43,12 @@ export interface PublishAdapter {
   /** Remove the published copy of a page. Throw on failure. */
   unpublish(uuid: string): Promise<void>;
 
+  /** Optional: remove many published copies in one shot. Targets that can delete
+   *  in bulk (D1 via a single batch, R2 via a multi-key delete) implement this;
+   *  the registry falls back to unpublish() per uuid for targets that can't
+   *  (e.g. plugin targets). Throw on failure. */
+  unpublishMany?(uuids: string[]): Promise<void>;
+
   /** Optional: drop a deleted tag from published content. Targets that can't
    *  do this cheaply may omit it — stale tags clear on the next publish. */
   removeTag?(tagId: number): Promise<void>;

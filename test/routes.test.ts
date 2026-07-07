@@ -1212,6 +1212,10 @@ describe('admin routes', () => {
     expect(await env.DB.prepare('SELECT id FROM draft_pages WHERE id = ?')
       .bind(101)
       .first<{ id: number }>()).not.toBeNull();
+    // Audit rows are written for every deleted page in one batched insert.
+    expect(await env.DB.prepare(
+      "SELECT COUNT(*) AS total FROM audit_log WHERE action = 'page.delete' AND entity_id IN ('103', '104')",
+    ).first<{ total: number }>()).toEqual({ total: 2 });
   });
 
   it('continues advanced-search bulk jobs across queue invocations', async () => {

@@ -128,6 +128,48 @@ export async function unpublishPageFromTargets(env: Env, uuid: string, pageType?
   return runOnAll(adapters, (adapter) => adapter.unpublish(uuid));
 }
 
+/** Result of a bulk unpublish: `refusedCount` is how many pages were submission
+ *  mirrors (skipped, never deleted), so callers can fold it into their metrics. */
+export interface BulkUnpublishOutcome {
+  targets: string[];
+  failures: string[];
+  refusedCount: number;
+}
+
+/**
+ * Removes many pages from every target in as few round-trips as possible.
+ * Adapters that implement unpublishMany() delete in bulk (D1: one batch per
+ * chunk; R2: one multi-key delete + a single index rewrite); the rest fall back
+ * to unpublish() per uuid. Submission mirrors are refused exactly as in the
+ * single-page path — publishing/unpublishing one would touch the shared live
+ * row — and counted in `refusedCount` instead of being sent to any adapter.
+ */
+export async function unpublishPagesFromTargets(
+  env: Env,
+  pages: Array<{ uuid: string; page_type?: string | null }>,
+): Promise<BulkUnpublishOutcome> {
+  const targetable = pages.filter((page) => !isSubmissionPageType(page.page_type));
+  const refusedCount = pages.length - targetable.length;
+  const uuids = Array.from(new Set(targetable.map((page) => page.uuid)));
+  const adapters = await getPublishAdapters(env);
+  const targets = adapters.map((adapter) => adapter.id);
+  if (!uuids.length || !adapters.length) return { targets, failures: [], refusedCount };
+
+  const failures: string[] = [];
+  const results = await Promise.allSettled(adapters.map((adapter) => (
+    adapter.unpublishMany
+      ? adapter.unpublishMany(uuids)
+      : uuids.reduce<Promise<void>>((prior, uuid) => prior.then(() => adapter.unpublish(uuid)), Promise.resolve())
+  )));
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      failures.push(adapters[index].id);
+      console.error(`Publish target ${adapters[index].id} bulk unpublish failed:`, result.reason);
+    }
+  });
+  return { targets, failures, refusedCount };
+}
+
 /** Drops a deleted tag from targets that support it (best effort elsewhere). */
 export async function removeTagFromTargets(env: Env, tagId: number): Promise<PublishOutcome> {
   const adapters = (await getPublishAdapters(env)).filter((adapter) => adapter.removeTag);

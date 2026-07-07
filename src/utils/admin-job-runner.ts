@@ -3,6 +3,7 @@ import { PLUGIN_ORIGIN, pluginById } from '../plugins/registry';
 import {
   publishPageToTargets,
   unpublishPageFromTargets,
+  unpublishPagesFromTargets,
 } from '../publish';
 import type { Env, JWTPayload, Page } from '../types';
 import { trashDraftPages } from './admin-queries';
@@ -156,20 +157,25 @@ async function applyAdvancedSearchBulkAction(
   if (!ids.length) return { updated, refused, failedTargets };
 
   if (action === 'delete') {
+    const deleted: Page[] = [];
     for (const chunk of chunks(ids)) {
       const trashed = await trashDraftPages(env.DB, chunk);
-      for (const page of trashed) {
-        const outcome = await unpublishPageFromTargets(env, page.uuid, page.page_type);
-        if (outcome.refused) refused += 1;
-        outcome.failures.forEach((target) => failedTargets.add(target));
-        await emitPageLifecycle(env, user, 'delete', page);
-      }
+      if (!trashed.length) continue;
+      // One bulk unpublish per chunk instead of a per-page delete: D1 collapses
+      // the whole slice into a single batch, so a 90-page chunk costs ~1 round
+      // trip to the published DB rather than ~3 per page.
+      const outcome = await unpublishPagesFromTargets(env, trashed);
+      refused += outcome.refusedCount;
+      outcome.failures.forEach((target) => failedTargets.add(target));
+      deleted.push(...trashed);
       updated += trashed.length;
     }
+    await emitPageLifecycle(env, user, 'delete', deleted);
     return { updated, refused, failedTargets };
   }
 
   const pages = await draftPagesByIds(env.DB, ids);
+  const succeeded: Page[] = [];
   for (const page of pages) {
     const outcome = action === 'publish'
       ? await publishPageToTargets(env, page.id)
@@ -180,30 +186,39 @@ async function applyAdvancedSearchBulkAction(
       continue;
     }
     outcome.failures.forEach((target) => failedTargets.add(target));
-    await emitPageLifecycle(env, user, action, page);
+    succeeded.push(page);
     updated += 1;
   }
+  await emitPageLifecycle(env, user, action, succeeded);
 
   return { updated, refused, failedTargets };
 }
 
+// Records audit rows and fires lifecycle hooks for a whole batch of pages at
+// once: one DB.batch of audit inserts instead of an INSERT per page, and hooks
+// delivered concurrently rather than serially. Both are best-effort (a failed
+// audit or hook never fails the bulk job), mirroring the plugin bulk path.
 async function emitPageLifecycle(
   env: Env,
   user: JWTPayload,
   event: HookEvent,
-  page: HookPage,
+  pages: HookPage[],
 ): Promise<void> {
-  await env.DB.prepare(
-    `INSERT INTO audit_log (user_id, user_email, action, entity_type, entity_id, detail)
-     VALUES (?, ?, ?, 'page', ?, ?)`,
-  ).bind(
-    String(user.sub),
-    user.email,
-    `page.${event}`,
-    String(page.id),
-    JSON.stringify({ name: page.name, slug: page.slug, page_type: page.page_type }),
-  ).run();
-  await deliverHook(env, user, event, page);
+  if (!pages.length) return;
+  const auditPromise = env.DB.batch(
+    pages.map((page) => env.DB.prepare(
+      `INSERT INTO audit_log (user_id, user_email, action, entity_type, entity_id, detail)
+       VALUES (?, ?, ?, 'page', ?, ?)`,
+    ).bind(
+      String(user.sub),
+      user.email,
+      `page.${event}`,
+      String(page.id),
+      JSON.stringify({ name: page.name, slug: page.slug, page_type: page.page_type }),
+    )),
+  );
+  const hooksPromise = Promise.all(pages.map((page) => deliverHook(env, user, event, page)));
+  await Promise.allSettled([auditPromise, hooksPromise]);
 }
 
 async function draftPagesByIds(db: D1Database, ids: number[]): Promise<Page[]> {

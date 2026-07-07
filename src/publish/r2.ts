@@ -112,6 +112,18 @@ export function r2Adapter(bucket: R2Bucket, prefix = ''): PublishAdapter {
       await writeIndex(index.pages.filter((existing) => existing.uuid !== uuid));
     },
 
+    async unpublishMany(uuids: string[]): Promise<void> {
+      const unique = Array.from(new Set(uuids));
+      if (!unique.length) return;
+      // R2 delete takes up to 1000 keys per call; rewrite the index just once.
+      for (let index = 0; index < unique.length; index += 1000) {
+        await bucket.delete(unique.slice(index, index + 1000).map(pageKey));
+      }
+      const removing = new Set(unique);
+      const index = await readIndex();
+      await writeIndex(index.pages.filter((existing) => !removing.has(existing.uuid)));
+    },
+
     // removeTag is intentionally omitted: rewriting every page object on tag
     // deletion is unbounded; stale tag links clear when a page republishes.
 

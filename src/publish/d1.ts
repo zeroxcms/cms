@@ -77,6 +77,23 @@ export function d1Adapter(publishedDb: D1Database): PublishAdapter {
         .run();
     },
 
+    async unpublishMany(uuids: string[]): Promise<void> {
+      // Collapse a whole slice into two statements (tags, then pages) in one
+      // batch round-trip. Chunk to stay under D1's bound-parameter cap; callers
+      // already pass bounded slices, this is a reuse-safe guard.
+      const unique = Array.from(new Set(uuids));
+      for (let index = 0; index < unique.length; index += 90) {
+        const chunk = unique.slice(index, index + 90);
+        const placeholders = chunk.map(() => '?').join(',');
+        await publishedDb.batch([
+          publishedDb.prepare(
+            `DELETE FROM live_page_tags WHERE page_id IN (SELECT id FROM live_pages WHERE uuid IN (${placeholders}))`,
+          ).bind(...chunk),
+          publishedDb.prepare(`DELETE FROM live_pages WHERE uuid IN (${placeholders})`).bind(...chunk),
+        ]);
+      }
+    },
+
     async removeTag(tagId: number): Promise<void> {
       await publishedDb.prepare('DELETE FROM live_page_tags WHERE tag_id = ?').bind(tagId).run();
     },

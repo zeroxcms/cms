@@ -8,6 +8,7 @@ import {
   liveMapForDraftPages,
   publishPageToTargets,
   unpublishPageFromTargets,
+  unpublishPagesFromTargets,
 } from '../src/publish';
 import { clearManifestCache, __injectPluginFetcher, __clearInjectedFetchers } from '../src/plugins/registry';
 import type { PublishSnapshot } from '../src/publish/adapter';
@@ -96,6 +97,48 @@ describe('d1 adapter', () => {
 
     await adapter.unpublish(PAGE.uuid);
     expect(await adapter.getLiveLect!(PAGE.uuid)).toBeNull();
+  });
+
+  it('unpublishMany removes several live pages and their tags in one pass', async () => {
+    const adapter = d1Adapter(env.PUBLISHED_DB);
+    const second: Page = { ...PAGE, id: PAGE.id + 5, uuid: 'ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee', slug: 'hello-2' };
+    const secondSnapshot: PublishSnapshot = {
+      page: second,
+      tags: [{ uuid: 'tag-link-uuid-2', tag_id: 42, weight: 1, slug: 'news', name: 'News' }],
+      publishedAt: '2026-06-12T00:00:00.000Z',
+    };
+    try {
+      await adapter.publish(snapshotFor(PAGE));
+      await adapter.publish(secondSnapshot);
+
+      await adapter.unpublishMany!([PAGE.uuid, second.uuid]);
+
+      expect(await env.PUBLISHED_DB.prepare('SELECT COUNT(*) AS n FROM live_pages WHERE uuid IN (?, ?)')
+        .bind(PAGE.uuid, second.uuid)
+        .first<{ n: number }>()).toEqual({ n: 0 });
+      expect(await env.PUBLISHED_DB.prepare('SELECT COUNT(*) AS n FROM live_page_tags WHERE page_id IN (?, ?)')
+        .bind(PAGE.id, second.id)
+        .first<{ n: number }>()).toEqual({ n: 0 });
+    } finally {
+      await env.PUBLISHED_DB.prepare('DELETE FROM live_page_tags WHERE page_id = ?').bind(second.id).run();
+      await env.PUBLISHED_DB.prepare('DELETE FROM live_pages WHERE uuid = ?').bind(second.uuid).run();
+    }
+  });
+
+  it('unpublishPagesFromTargets skips submission mirrors and reports refusedCount', async () => {
+    const adapter = d1Adapter(env.PUBLISHED_DB);
+    await adapter.publish(snapshotFor(PAGE));
+
+    const outcome = await unpublishPagesFromTargets(env as unknown as Env, [
+      { uuid: PAGE.uuid, page_type: 'default' },
+      { uuid: 'no-such-submission-uuid', page_type: 'rsvp_response' },
+    ]);
+
+    expect(outcome.refusedCount).toBe(1);
+    expect(outcome.failures).toEqual([]);
+    expect(await env.PUBLISHED_DB.prepare('SELECT COUNT(*) AS n FROM live_pages WHERE uuid = ?')
+      .bind(PAGE.uuid)
+      .first<{ n: number }>()).toEqual({ n: 0 });
   });
 
   it('republishes older live rows using the draft page id', async () => {
