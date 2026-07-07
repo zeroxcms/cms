@@ -36,6 +36,13 @@ bucket_name = "worker-cms-media"
 # binding = "PUBLISH_BUCKET"
 # bucket_name = "worker-cms-published"
 
+# Submission ingest: pulls new worker-rsvp rows (rsvp_response /
+# rsvp_registration in the published DB) into the draft DB as pages, firing
+# create hooks. Bounded batch per tick; plugins can also trigger it on demand
+# via POST /__cms/ingest/submissions.
+[triggers]
+crons = ["*/5 * * * *"]
+
 [[durable_objects.bindings]]
 name = "PAGE_SYNC"
 class_name = "PageSyncDO"

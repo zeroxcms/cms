@@ -24,6 +24,7 @@ import { viewRevision } from './utils/view-revision';
 import type { Env, Variables } from './types';
 import { isCmsAdminJobMessage } from './utils/admin-jobs';
 import { runCmsAdminJob } from './utils/admin-job-runner';
+import { ingestSubmissions } from './utils/submission-ingest';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -170,6 +171,14 @@ export default {
     for (const message of batch.messages) {
       if (isCmsAdminJobMessage(message.body)) await runCmsAdminJob(env, message.body.jobId);
     }
+  },
+
+  // Cron: pull new worker-rsvp submission rows (published DB → draft pages).
+  // Each tick handles one bounded batch and advances the cursor; plugins can
+  // trigger the same ingest on demand via POST /__cms/ingest/submissions.
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    const result = await ingestSubmissions(env);
+    if (result.scanned) console.log('submission ingest:', JSON.stringify(result));
   },
 };
 export { PageSyncDO } from './durable-objects/page-sync';

@@ -47,6 +47,7 @@ import {
   type AdvancedSearchCriterion,
 } from '../utils/search';
 import { unpublishPageFromTargets } from '../publish';
+import { ingestSubmissions, SUBMISSION_PAGE_TYPES } from '../utils/submission-ingest';
 import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../utils/page-store';
 import { listPageTypeApprovals, pageTypeScopeAllows } from '../utils/plugin-page-types';
 import {
@@ -1269,7 +1270,7 @@ cmsApiRoutes.delete('/pages/batch', async (c) => {
 
   const pages = await trashDraftPages(c.env.DB, ids);
 
-  await Promise.allSettled(pages.map((page) => unpublishPageFromTargets(c.env, page.uuid)));
+  await Promise.allSettled(pages.map((page) => unpublishPageFromTargets(c.env, page.uuid, page.page_type)));
   for (const page of pages) {
     emitPluginHook(
       c,
@@ -1344,6 +1345,22 @@ cmsApiRoutes.delete('/pages/children', async (c) => {
   return c.json({ trashed, done });
 });
 
+// Pull new worker-rsvp submission rows (published DB → draft pages) now,
+// instead of waiting for the next cron tick. The caller must own the
+// submission page types in its manifest scope (the events plugin does); the
+// run itself is idempotent, cursor-driven, and never mutates the published
+// rows, so triggering it repeatedly is harmless. Returns the run summary.
+cmsApiRoutes.post('/ingest/submissions', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const allowed = SUBMISSION_PAGE_TYPES.every((pageType) => pageTypeScopeAllows(auth.allowedTypes, pageType));
+  if (!allowed) return c.json({ error: 'forbidden_page_type' }, 403);
+
+  const result = await ingestSubmissions(c.env);
+  return c.json({ ok: true, ...result });
+});
+
 // Soft-delete a page to trash.
 cmsApiRoutes.delete('/pages/:id', async (c) => {
   const auth = await authenticatePlugin(c);
@@ -1362,7 +1379,7 @@ cmsApiRoutes.delete('/pages/:id', async (c) => {
   const page = await trashDraftPage(c.env.DB, id);
   if (!page) return c.json({ error: 'not_found' }, 404);
 
-  await unpublishPageFromTargets(c.env, page.uuid);
+  await unpublishPageFromTargets(c.env, page.uuid, page.page_type);
   emitPluginHook(
     c,
     'delete',

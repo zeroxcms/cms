@@ -227,6 +227,7 @@ function pageTypeHasPrivacyFields(entries: BlueprintEntry[] | undefined): boolea
 // Flash message for a publish fan-out: plain success, or success qualified
 // with the targets that failed (failures are already logged by the registry).
 function publishFlash(outcome: PublishOutcome): string {
+  if (outcome.refused) return encodeURIComponent('Submission pages cannot be published — they mirror public RSVP data');
   const failed = describeFailures(outcome);
   if (!failed) return 'Page+published+successfully';
   return encodeURIComponent(`Page published, but these targets failed: ${failed}`);
@@ -1066,7 +1067,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
   if (action === 'publish') {
     const outcome = await publishPageToTargets(c.env, pageId);
     if (!outcome) return c.notFound();
-    dispatchHook(c, 'publish', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug: uniqueSlug });
+    if (!outcome.refused) dispatchHook(c, 'publish', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug: uniqueSlug });
     return c.redirect(`/admin?flash=${publishFlash(outcome)}`);
   }
 
@@ -1095,13 +1096,15 @@ pagesRoutes.post('/pages/:id/publish', requirePermission('content:publish'), asy
   const page = await c.env.DB.prepare('SELECT uuid, name, slug, page_type FROM draft_pages WHERE id = ?')
     .bind(pageId)
     .first<{ uuid: string; name: string; slug: string; page_type: string | null }>();
-  dispatchHook(c, 'publish', {
-    id: pageId,
-    uuid: page?.uuid,
-    name: page?.name,
-    slug: page?.slug,
-    page_type: page?.page_type,
-  });
+  if (!outcome.refused) {
+    dispatchHook(c, 'publish', {
+      id: pageId,
+      uuid: page?.uuid,
+      name: page?.name,
+      slug: page?.slug,
+      page_type: page?.page_type,
+    });
+  }
 
   return c.redirect(`/admin?flash=${publishFlash(outcome)}`);
 });
@@ -1136,7 +1139,7 @@ pagesRoutes.post('/pages/:id/unpublish', requirePermission('content:publish'), a
     .first<{ uuid: string; name: string; slug: string; page_type: string | null }>();
   if (!page) return c.notFound();
 
-  await unpublishPageFromTargets(c.env, page.uuid);
+  await unpublishPageFromTargets(c.env, page.uuid, page.page_type);
 
   dispatchHook(c, 'unpublish', {
     id: pageId,
@@ -1161,7 +1164,7 @@ pagesRoutes.post('/pages/:id/delete', requirePermission('content:delete'), async
   if (!page) return c.notFound();
 
   // Unpublish from every publish target now that the draft copy is gone.
-  await unpublishPageFromTargets(c.env, page.uuid);
+  await unpublishPageFromTargets(c.env, page.uuid, page.page_type);
 
   dispatchHook(c, 'delete', {
     id: page.id,
