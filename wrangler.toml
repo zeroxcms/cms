@@ -52,12 +52,20 @@ tag = "v1"
 new_sqlite_classes = ["PageSyncDO"]
 
 # CMS-owned admin background jobs. Used for long plugin admin actions such as
-# event duplicate/delete; job rows live in DB.admin_jobs.
-# [[queues.producers]]
-# binding = "ADMIN_JOBS_QUEUE"
-# queue = "cms-admin-jobs"
-# [[queues.consumers]]
-# queue = "cms-admin-jobs"
+# event duplicate/delete, and for chunked advanced-search bulk actions; job rows
+# live in DB.admin_jobs. Without this binding the job runner falls back to
+# running every batch synchronously in a single invocation, which blows the
+# 1000-subrequest per-invocation limit on large bulk operations.
+# Create the queue once before deploying: wrangler queues create cms-admin-jobs
+[[queues.producers]]
+binding = "ADMIN_JOBS_QUEUE"
+queue = "cms-admin-jobs"
+[[queues.consumers]]
+queue = "cms-admin-jobs"
+# One job-batch (<=100 pages) per invocation so each gets a fresh subrequest
+# budget; batching several messages together would reintroduce the cap blowout.
+max_batch_size = 1
+max_retries = 3
 
 # ── Rate limiting (per-colo, IP-keyed) ────────────────────────────────────────
 [[unsafe.bindings]]
