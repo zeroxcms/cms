@@ -46,7 +46,7 @@ import {
   performAdvancedSearch,
   type AdvancedSearchCriterion,
 } from '../utils/search';
-import { unpublishPageFromTargets } from '../publish';
+import { unpublishPageFromTargets, unpublishPagesFromTargets } from '../publish';
 import { ingestSubmissions, SUBMISSION_PAGE_TYPES } from '../utils/submission-ingest';
 import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../utils/page-store';
 import { listPageTypeApprovals, pageTypeScopeAllows } from '../utils/plugin-page-types';
@@ -1409,7 +1409,9 @@ cmsApiRoutes.delete('/pages/batch', async (c) => {
 
   const pages = await trashDraftPages(c.env.DB, ids);
 
-  await Promise.allSettled(pages.map((page) => unpublishPageFromTargets(c.env, page.uuid, page.page_type)));
+  // Bulk unpublish: one round-trip per target per chunk, instead of a
+  // 100-wide per-page fanout that made big batch deletes hang mid-way.
+  await unpublishPagesFromTargets(c.env, pages).catch(() => {});
   for (const page of pages) {
     emitPluginHook(
       c,
