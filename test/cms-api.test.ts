@@ -376,6 +376,26 @@ describe('Plugin API create / read / list / update / delete', () => {
     expect(uncounted.pages).toHaveLength(1); // rows still paged normally
   });
 
+  it('projects only the requested columns when fields= is given', async () => {
+    await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Ada', lect: { _pointers: { mail_list: '12' }, email: 'ada@example.com' } });
+    await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Bob', lect: { _pointers: { mail_list: '12' }, email: 'bob@example.com' } });
+    await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Eve', lect: { _pointers: { mail_list: '99' } } });
+
+    const res = await cmsApi('GET', '/__cms/pages?page_type=guest&pointer_key=mail_list&pointer_value=12&fields=id&limit=1&offset=1&count=0');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { total: number; pages: Array<Record<string, unknown>> };
+    expect(body.pages).toHaveLength(1); // criteria + limit/offset still apply
+    expect(Object.keys(body.pages[0])).toEqual(['id']); // no lect, no other columns
+    expect(typeof body.pages[0].id).toBe('number');
+
+    const named = await (await cmsApi('GET', '/__cms/pages?page_type=guest&fields=id,name')).json() as { pages: Array<Record<string, unknown>> };
+    expect(Object.keys(named.pages[0]).sort()).toEqual(['id', 'name']);
+
+    const bad = await cmsApi('GET', '/__cms/pages?page_type=guest&fields=id,secret_column');
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toMatchObject({ error: 'invalid_fields' });
+  });
+
   it('serves pointer filters from the expression index, not a full scan', async () => {
     // The route inlines the JSON path as a literal for exactly this reason —
     // a bound parameter in the indexed expression would force a table scan.

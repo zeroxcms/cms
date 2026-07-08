@@ -184,22 +184,34 @@ export async function trashDraftPage(db: D1Database, pageId: number): Promise<Pa
   return page;
 }
 
+/** What trashDraftPages reports back per page — enough for unpublish (uuid,
+ *  page_type) and lifecycle hooks/audit (id, name, slug), WITHOUT the lect
+ *  column: deserializing thousands of fat lect rows just to throw them away
+ *  was a measurable share of bulk-delete CPU. */
+export interface TrashedPageRef {
+  id: number;
+  uuid: string;
+  name: string;
+  slug: string;
+  page_type: string | null;
+}
+
 /**
  * Batch-trash multiple draft pages in a single D1 transaction.
  * Equivalent to calling trashDraftPage for each id, but uses INSERT-SELECT
  * to copy pages, versions, and tags in bulk — O(1) round trips regardless
- * of how many pages are deleted.
+ * of how many pages are deleted, and no page content ever leaves SQLite.
  *
  * Pages not found are silently skipped (same as the single-page variant).
- * Returns the pages that were actually trashed.
+ * Returns light refs to the pages that were actually trashed.
  */
-export async function trashDraftPages(db: D1Database, ids: number[]): Promise<Page[]> {
+export async function trashDraftPages(db: D1Database, ids: number[]): Promise<TrashedPageRef[]> {
   if (!ids.length) return [];
   const ph = ids.map(() => '?').join(',');
 
   const { results: pages } = await db.prepare(
-    `SELECT * FROM draft_pages WHERE id IN (${ph})`,
-  ).bind(...ids).all<Page>();
+    `SELECT id, uuid, name, slug, page_type FROM draft_pages WHERE id IN (${ph})`,
+  ).bind(...ids).all<TrashedPageRef>();
   if (!pages.length) return [];
 
   const foundIds = pages.map((p) => p.id);

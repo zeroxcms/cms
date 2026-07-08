@@ -1,4 +1,4 @@
-import { deliverHook, type HookEvent, type HookPage } from '../plugins/hooks';
+import { deliverHooks, type HookEvent, type HookPage } from '../plugins/hooks';
 import { PLUGIN_ORIGIN, pluginById } from '../plugins/registry';
 import {
   publishPageToTargets,
@@ -6,7 +6,7 @@ import {
   unpublishPagesFromTargets,
 } from '../publish';
 import type { Env, JWTPayload, Page } from '../types';
-import { trashDraftPages } from './admin-queries';
+import { trashDraftPages, type TrashedPageRef } from './admin-queries';
 import {
   claimAdminJob,
   completeAdminJob,
@@ -157,7 +157,7 @@ async function applyAdvancedSearchBulkAction(
   if (!ids.length) return { updated, refused, failedTargets };
 
   if (action === 'delete') {
-    const deleted: Page[] = [];
+    const deleted: TrashedPageRef[] = [];
     for (const chunk of chunks(ids)) {
       const trashed = await trashDraftPages(env.DB, chunk);
       if (!trashed.length) continue;
@@ -196,8 +196,9 @@ async function applyAdvancedSearchBulkAction(
 
 // Records audit rows and fires lifecycle hooks for a whole batch of pages at
 // once: one DB.batch of audit inserts instead of an INSERT per page, and hooks
-// delivered concurrently rather than serially. Both are best-effort (a failed
-// audit or hook never fails the bulk job), mirroring the plugin bulk path.
+// delivered in chunked bulk POSTs rather than one fetch per page. Both are
+// best-effort (a failed audit or hook never fails the bulk job), mirroring the
+// plugin bulk path.
 async function emitPageLifecycle(
   env: Env,
   user: JWTPayload,
@@ -217,7 +218,7 @@ async function emitPageLifecycle(
       JSON.stringify({ name: page.name, slug: page.slug, page_type: page.page_type }),
     )),
   );
-  const hooksPromise = Promise.all(pages.map((page) => deliverHook(env, user, event, page)));
+  const hooksPromise = deliverHooks(env, user, event, pages);
   await Promise.allSettled([auditPromise, hooksPromise]);
 }
 

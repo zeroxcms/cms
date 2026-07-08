@@ -32,7 +32,7 @@ import type { AppContext } from '../utils/context';
 import type { Env, Variables, Page, ResolvedPlugin } from '../types';
 import { resolveCmsConfig } from '../plugins/config';
 import { pluginById } from '../plugins/registry';
-import { deliverHook, type HookEvent, type HookPage } from '../plugins/hooks';
+import { deliverHooks, type HookEvent, type HookPage } from '../plugins/hooks';
 import { blueprintToLect, mergeLects, safeParseLect, stringifyLect } from '../utils/lect';
 import type { Lect } from '../utils/lect';
 import { withDraftMetadata } from '../utils/page-logic';
@@ -232,6 +232,21 @@ function serializePage(page: Page): ApiPage {
   };
 }
 
+/** Columns GET /pages may project via `fields=` — exactly the serializePage set. */
+const LISTABLE_PAGE_FIELDS = new Set([
+  'id', 'uuid', 'page_type', 'name', 'slug', 'weight', 'start', 'end', 'timezone',
+  'page_id', 'created_at', 'updated_at', 'lect',
+]);
+
+/** serializePage restricted to the projected columns; lect still parses to an object. */
+function serializePartialPage(row: Page, fields: string[]): Partial<ApiPage> {
+  const out: Record<string, unknown> = {};
+  for (const field of fields) {
+    out[field] = field === 'lect' ? safeParseLect(row.lect) : row[field as keyof Page];
+  }
+  return out as Partial<ApiPage>;
+}
+
 /** Accepts lect as a parsed object or a JSON string; anything else becomes empty. */
 function coerceLect(value: unknown): Lect {
   if (!value) return {};
@@ -367,8 +382,9 @@ function emitPluginHooks(c: AppContext, event: HookEvent, pages: HookPage[], plu
       )),
   ).catch((error) => console.error('audit log failed', error));
 
-  // deliverHook tolerates a null user (passes user: null in the payload).
-  const hookPromise = Promise.all(pages.map((page) => deliverHook(c.env, undefined, event, page)));
+  // deliverHooks tolerates a null user (passes user: null in the payload) and
+  // chunks the pages so a bulk delete costs a fetch per hundred, not per page.
+  const hookPromise = deliverHooks(c.env, undefined, event, pages);
 
   const combined = Promise.allSettled([auditPromise, hookPromise]);
   try {
@@ -825,6 +841,19 @@ cmsApiRoutes.get('/pages', async (c) => {
   // Optional parent filter: e.g. all `guest` pages belonging to one event.
   const parentId = asFiniteNumber(c.req.query('page_id'));
 
+  // Optional column projection, e.g. fields=id — the same criteria/limit/offset
+  // but without reading (or JSON-parsing) lect, which dominates the cost of
+  // listing fat rows the caller only needs ids from. Whitelisted column names
+  // only, so interpolating them into the SELECT is safe.
+  const fieldsParam = (c.req.query('fields') ?? '').trim();
+  let fields: string[] | null = null;
+  if (fieldsParam) {
+    fields = [...new Set(fieldsParam.split(',').map((field) => field.trim()).filter(Boolean))];
+    if (!fields.length || fields.some((field) => !LISTABLE_PAGE_FIELDS.has(field))) {
+      return c.json({ error: 'invalid_fields' }, 400);
+    }
+  }
+
   // Optional pointer filter: pointer_key=mail_list&pointer_value=123
   // or pointer_key=mail_list&pointer_values=123,456.
   const pointerKey = (c.req.query('pointer_key') ?? '').trim();
@@ -873,8 +902,9 @@ cmsApiRoutes.get('/pages', async (c) => {
   // paginating with offset only need the total once, on the first page.
   const skipCount = c.req.query('count') === '0';
 
+  const select = fields ? fields.join(', ') : '*';
   const [rows, totalRow] = await Promise.all([
-    c.env.DB.prepare(`SELECT * FROM draft_pages ${where} ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`)
+    c.env.DB.prepare(`SELECT ${select} FROM draft_pages ${where} ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`)
       .bind(...params, limit, offset)
       .all<Page>(),
     skipCount
@@ -885,7 +915,7 @@ cmsApiRoutes.get('/pages', async (c) => {
   ]);
 
   return c.json({
-    pages: rows.results.map(serializePage),
+    pages: fields ? rows.results.map((row) => serializePartialPage(row, fields)) : rows.results.map(serializePage),
     total: skipCount ? -1 : (totalRow?.total ?? 0),
     limit,
     offset,
@@ -1412,14 +1442,7 @@ cmsApiRoutes.delete('/pages/batch', async (c) => {
   // Bulk unpublish: one round-trip per target per chunk, instead of a
   // 100-wide per-page fanout that made big batch deletes hang mid-way.
   await unpublishPagesFromTargets(c.env, pages).catch(() => {});
-  for (const page of pages) {
-    emitPluginHook(
-      c,
-      'delete',
-      { id: page.id, uuid: page.uuid, page_type: page.page_type, name: page.name, slug: page.slug },
-      auth.pluginId,
-    );
-  }
+  emitPluginHooks(c, 'delete', pages, auth.pluginId);
 
   return c.json({ ok: true, trashed: pages.length });
 });
@@ -1472,9 +1495,7 @@ cmsApiRoutes.delete('/pages/children', async (c) => {
 
     if (!results.length) { done = true; break; }
     const pages = await trashDraftPages(c.env.DB, results.map((row) => row.id));
-    for (const page of pages) {
-      hookPages.push({ id: page.id, uuid: page.uuid, page_type: page.page_type, name: page.name, slug: page.slug });
-    }
+    hookPages.push(...pages);
     trashed += results.length;
     if (results.length < DELETE_CHILDREN_BATCH) { done = true; break; }
   }

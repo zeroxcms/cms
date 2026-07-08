@@ -57,41 +57,62 @@ export async function deliverHook(
   event: HookEvent,
   page: HookPage,
 ): Promise<void> {
+  await deliverHooks(env, user, event, [page]);
+}
+
+/** Pages per bulk hook POST — bounds the payload size per delivery. */
+const HOOK_BATCH_SIZE = 100;
+
+/**
+ * Bulk delivery: one POST per subscribed plugin per HOOK_BATCH_SIZE pages,
+ * instead of one fetch per page — a thousand-guest bulk delete used to fan out
+ * a thousand subrequests (and their CPU) from a single invocation. The payload
+ * carries the chunk in `pages`; `page` stays set to the first entry so handlers
+ * written for single-page payloads keep working.
+ */
+export async function deliverHooks(
+  env: Env,
+  user: JWTPayload | undefined,
+  event: HookEvent,
+  pages: HookPage[],
+): Promise<void> {
+  if (!pages.length) return;
   const plugins = await pluginsForHook(env, event);
   if (plugins.length === 0) return;
 
-  const body = JSON.stringify({
-    event,
-    page,
-    user: user
-      ? { id: user.sub, email: user.email, name: user.name, role: user.role }
-      : null,
-  });
+  const userPayload = user
+    ? { id: user.sub, email: user.email, name: user.name, role: user.role }
+    : null;
 
-  await Promise.all(
-    plugins.map(async (plugin) => {
-      if (!plugin.secret) {
-        console.error(`Plugin ${plugin.binding} has no secret configured; skipping hook ${event}`);
-        return;
-      }
-      try {
-        const response = await plugin.fetcher.fetch(
-          `${PLUGIN_ORIGIN}${PLUGIN_PREFIX}/hooks/${event}`,
-          {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              'x-plugin-secret': plugin.secret,
-            },
-            body,
-          },
-        );
-        if (!response.ok) {
-          console.error(`Plugin ${plugin.binding} hook ${event} returned ${response.status}`);
+  for (let start = 0; start < pages.length; start += HOOK_BATCH_SIZE) {
+    const chunk = pages.slice(start, start + HOOK_BATCH_SIZE);
+    const body = JSON.stringify({ event, page: chunk[0], pages: chunk, user: userPayload });
+
+    await Promise.all(
+      plugins.map(async (plugin) => {
+        if (!plugin.secret) {
+          console.error(`Plugin ${plugin.binding} has no secret configured; skipping hook ${event}`);
+          return;
         }
-      } catch (error) {
-        console.error(`Plugin ${plugin.binding} hook ${event} failed:`, error);
-      }
-    }),
-  );
+        try {
+          const response = await plugin.fetcher.fetch(
+            `${PLUGIN_ORIGIN}${PLUGIN_PREFIX}/hooks/${event}`,
+            {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                'x-plugin-secret': plugin.secret,
+              },
+              body,
+            },
+          );
+          if (!response.ok) {
+            console.error(`Plugin ${plugin.binding} hook ${event} returned ${response.status}`);
+          }
+        } catch (error) {
+          console.error(`Plugin ${plugin.binding} hook ${event} failed:`, error);
+        }
+      }),
+    );
+  }
 }
