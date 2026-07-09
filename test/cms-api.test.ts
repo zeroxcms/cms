@@ -98,7 +98,13 @@ describe('Plugin API auth + scoping', () => {
   it('rejects writes to a page type the plugin does not own', async () => {
     const res = await cmsApi('POST', '/__cms/pages', { page_type: 'contact', name: 'X' });
     expect(res.status).toBe(403);
-    expect((await res.json() as { error: string }).error).toBe('forbidden_page_type');
+    const body = await res.json() as { error: string; page_type: string; message: string };
+    expect(body.error).toBe('forbidden_page_type');
+    // The refused type and the approval hint ride along so plugin error panels
+    // can point admins at Plugins → (plugin) → Page types instead of
+    // suggesting a CMS_URL/PLUGIN_SECRET problem.
+    expect(body.page_type).toBe('contact');
+    expect(body.message).toContain('Page types');
   });
 
   it('requires admin approval before honoring delegated writeTypes', async () => {
