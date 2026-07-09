@@ -434,6 +434,8 @@ export interface ResolvedPlugin {
   manifest: PluginManifest;
   /** Effective shared secret for this plugin (its own, or the env fallback). Empty when neither is set. */
   secret: string;
+  /** Admin-entered display label from the plugin row (Plugins → edit → Label). Empty when unset. */
+  label?: string;
 }
 
 // ============================================================

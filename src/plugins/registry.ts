@@ -99,7 +99,7 @@ export async function getPlugins(env: Env): Promise<ResolvedPlugin[]> {
       // Prefer the plugin's own secret; fall back to the shared env secret so a
       // pre-migration row (NULL secret) keeps working until it's rotated.
       const secret = record.secret || env.PLUGIN_SECRET || '';
-      return { binding: record.url, fetcher, manifest, secret };
+      return { binding: record.url, fetcher, manifest, secret, label: record.label || '' };
     }),
   );
   return resolved.filter((plugin): plugin is ResolvedPlugin => plugin !== null);
@@ -108,15 +108,21 @@ export async function getPlugins(env: Env): Promise<ResolvedPlugin[]> {
 /** Nav items contributed by all plugins, flattened with their plugin id. */
 export async function pluginNav(env: Env): Promise<Array<{ pluginId: string; label: string; href: string; roles?: string[]; group?: 'settings' }>> {
   const plugins = await getPlugins(env);
-  return plugins.flatMap((plugin) =>
-    (plugin.manifest.nav ?? []).map((item) => ({
+  return plugins.flatMap((plugin) => {
+    const items = plugin.manifest.nav ?? [];
+    // The admin-entered plugin label (Plugins → edit → Label) overrides the
+    // manifest's sidebar text — but only when the plugin contributes a single
+    // nav entry: with several entries, one label cannot disambiguate them, so
+    // they keep their manifest labels.
+    const override = items.length === 1 ? (plugin.label ?? '').trim() : '';
+    return items.map((item) => ({
       pluginId: plugin.manifest.id,
-      label: item.label,
+      label: override || item.label,
       href: `/admin/plugins/${plugin.manifest.id}/${item.href.replace(/^\/+/, '')}`,
       roles: item.roles,
       group: item.group,
-    })),
-  );
+    }));
+  });
 }
 
 /** Finds the plugin that owns a given field type, if any. */

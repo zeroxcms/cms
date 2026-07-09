@@ -621,10 +621,10 @@ describe('plugin admin proxy', () => {
     expect(body).not.toContain('javascript:BAD');
   });
 
-  it('renders plugin nav items in the admin sidebar', async () => {
+  it('renders plugin nav items in the admin sidebar, preferring the admin-entered plugin label', async () => {
     testEnv.PLUGIN_SECRET = 'server-secret';
     const url = 'https://plugin-nav.local';
-    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', url).run();
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Ticketing', url).run();
     __injectPluginFetcher(url, {
       fetch: async (input: RequestInfo | URL): Promise<Response> => {
         const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -646,9 +646,13 @@ describe('plugin admin proxy', () => {
     expect(response.status).toBe(200);
     const body = await response.text();
     const payload = renderPayload(body);
-    // The plugin's nav entry (EVENTS_MANIFEST.nav) must reach the rendered sidebar.
+    // The plugin's nav entry (EVENTS_MANIFEST.nav) must reach the rendered
+    // sidebar, displaying the admin-entered row label ('Ticketing') instead of
+    // the manifest label ('Events') — the plugin has a single nav item, so the
+    // override is unambiguous. (The group:settings test below pins the
+    // multi-item case, where manifest labels are kept.)
     expect(payload.layoutData.pluginNav).toEqual(expect.arrayContaining([
-      { label: 'Events', href: '/admin/plugins/events/dashboard' },
+      { label: 'Ticketing', href: '/admin/plugins/events/dashboard' },
     ]));
   });
 
