@@ -20,6 +20,7 @@ import { d1Adapter } from './d1';
 import { r2Adapter } from './r2';
 import { pluginAdapter } from './plugin';
 import { getPlugins } from '../plugins/registry';
+import { pluginTenantId } from '../security/plugin-proxy';
 import { isSubmissionPageType } from '../utils/submission-ingest';
 
 export type { LivePageSnapshot, PublishAdapter, PublishSnapshot, PublishSnapshotTag } from './adapter';
@@ -68,7 +69,7 @@ export async function getPublishAdapters(env: Env): Promise<PublishAdapter[]> {
       console.error(`Plugin ${plugin.manifest.id} declares publishTarget but has no secret configured`);
       continue;
     }
-    adapters.push(pluginAdapter(plugin, plugin.secret));
+    adapters.push(pluginAdapter(plugin, plugin.secret, pluginTenantId(env)));
   }
 
   return adapters;

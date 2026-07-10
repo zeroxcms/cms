@@ -10,7 +10,41 @@ const FORWARD_HEADERS = [
   'x-requested-with',
 ];
 
-export function buildPluginProxyHeaders(source: Headers, user: JWTPayload, pluginSecret: string): Headers {
+/**
+ * This CMS's tenant id toward multi-tenant plugin Workers: the canonical
+ * origin, normalized. Sent as `x-cms-tenant` with every secret-authenticated
+ * plugin call so one plugin deployment can serve several CMS hosts and pick
+ * the right pairwise secret. Empty (header omitted) when CANONICAL_ORIGIN is
+ * unset — single-tenant plugins accept that while exactly one tenant exists.
+ */
+export function pluginTenantId(env: { CANONICAL_ORIGIN?: string }): string {
+  const configured = (env.CANONICAL_ORIGIN ?? '').trim();
+  if (!configured) return '';
+  try {
+    return new URL(configured).origin;
+  } catch {
+    return configured.replace(/\/+$/, '');
+  }
+}
+
+/** Sets the plugin auth pair (secret + tenant id) on an outbound header set. */
+export function setPluginAuthHeaders(headers: Headers, pluginSecret: string, tenantId: string): void {
+  headers.set('x-plugin-secret', pluginSecret);
+  if (tenantId) headers.set('x-cms-tenant', tenantId);
+}
+
+/** Constant-time string equality for secret comparison. */
+export function timingSafeEqualStr(a: string, b: string): boolean {
+  const encoder = new TextEncoder();
+  const aBytes = encoder.encode(a);
+  const bBytes = encoder.encode(b);
+  if (aBytes.length !== bBytes.length) return false;
+  let diff = 0;
+  for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i];
+  return diff === 0;
+}
+
+export function buildPluginProxyHeaders(source: Headers, user: JWTPayload, pluginSecret: string, tenantId = ''): Headers {
   const headers = new Headers();
   for (const name of FORWARD_HEADERS) {
     const value = source.get(name);
@@ -20,7 +54,7 @@ export function buildPluginProxyHeaders(source: Headers, user: JWTPayload, plugi
     'x-cms-user',
     JSON.stringify({ id: user.sub, email: user.email, name: user.name, role: user.role }),
   );
-  headers.set('x-plugin-secret', pluginSecret);
+  setPluginAuthHeaders(headers, pluginSecret, tenantId);
   return headers;
 }
 

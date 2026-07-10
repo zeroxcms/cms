@@ -28,7 +28,7 @@ import { pluginClientView } from '../templates/liquid';
 import { buildBaseProps } from '../utils/admin-render';
 import { viewsFor } from './views';
 import { sanitizePluginHtmlFragment } from '../security/plugin-sanitize';
-import { isPluginClientViewResponse, readPluginClientViewData } from '../security/plugin-proxy';
+import { isPluginClientViewResponse, pluginTenantId, readPluginClientViewData, setPluginAuthHeaders } from '../security/plugin-proxy';
 import { listApprovals } from '../utils/plugin-assets';
 import { pluginViewRevision, pluginWorkerRevision } from '../utils/view-revision';
 
@@ -156,9 +156,9 @@ async function dispatchPluginView(
   const user = c.get('user');
   const headers = new Headers({
     'content-type': 'application/json',
-    'x-plugin-secret': plugin.secret,
     'x-cms-user': JSON.stringify({ id: user.sub, email: user.email, name: user.name, role: user.role }),
   });
+  setPluginAuthHeaders(headers, plugin.secret, pluginTenantId(c.env));
 
   let upstream: Response;
   try {

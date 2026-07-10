@@ -17,12 +17,13 @@ import type { ResolvedPlugin } from '../types';
 import type { PublishAdapter, PublishSnapshot } from './adapter';
 import { PLUGIN_ORIGIN, PLUGIN_PREFIX } from '../plugins/registry';
 
-async function post(plugin: ResolvedPlugin, secret: string, path: string, body: unknown, optional = false): Promise<void> {
+async function post(plugin: ResolvedPlugin, secret: string, tenantId: string, path: string, body: unknown, optional = false): Promise<void> {
   const response = await plugin.fetcher.fetch(`${PLUGIN_ORIGIN}${PLUGIN_PREFIX}/publish/${path}`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       'x-plugin-secret': secret,
+      ...(tenantId ? { 'x-cms-tenant': tenantId } : {}),
     },
     body: JSON.stringify(body),
   });
@@ -33,20 +34,20 @@ async function post(plugin: ResolvedPlugin, secret: string, path: string, body: 
   }
 }
 
-export function pluginAdapter(plugin: ResolvedPlugin, secret: string): PublishAdapter {
+export function pluginAdapter(plugin: ResolvedPlugin, secret: string, tenantId = ''): PublishAdapter {
   return {
     id: `plugin:${plugin.manifest.id}`,
 
     async publish(snapshot: PublishSnapshot): Promise<void> {
-      await post(plugin, secret, 'page', snapshot);
+      await post(plugin, secret, tenantId, 'page', snapshot);
     },
 
     async unpublish(uuid: string): Promise<void> {
-      await post(plugin, secret, 'remove', { uuid });
+      await post(plugin, secret, tenantId, 'remove', { uuid });
     },
 
     async removeTag(tagId: number): Promise<void> {
-      await post(plugin, secret, 'remove-tag', { tagId }, true);
+      await post(plugin, secret, tenantId, 'remove-tag', { tagId }, true);
     },
   };
 }

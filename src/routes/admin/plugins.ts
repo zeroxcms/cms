@@ -21,6 +21,7 @@ import { buildBaseProps } from '../../utils/admin-render';
 import { viewsFor } from '../../plugins/views';
 import {
   buildPluginProxyHeaders,
+  pluginTenantId,
   decodePluginTitle,
   readPluginClientViewData,
   pluginDocumentResponse,
@@ -162,7 +163,7 @@ async function servePluginView(c: AppContext): Promise<Response> {
   const viewPath = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) : '';
   if (!viewPath.startsWith('/') || viewPath.includes('..')) return c.notFound();
 
-  const headers = buildPluginProxyHeaders(c.req.raw.headers, c.get('user'), plugin.secret);
+  const headers = buildPluginProxyHeaders(c.req.raw.headers, c.get('user'), plugin.secret, pluginTenantId(c.env));
   const upstreamResponse = await plugin.fetcher.fetch(`${PLUGIN_ORIGIN}${PLUGIN_PREFIX}/admin/views${viewPath}${url.search}`, {
     method: c.req.method,
     headers,
@@ -225,7 +226,7 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
   const pluginAdminPath = `${PLUGIN_PREFIX}/admin${rest}${url.search}`;
   const upstream = `${PLUGIN_ORIGIN}${pluginAdminPath}`;
 
-  const headers = buildPluginProxyHeaders(c.req.raw.headers, c.get('user'), plugin.secret);
+  const headers = buildPluginProxyHeaders(c.req.raw.headers, c.get('user'), plugin.secret, pluginTenantId(c.env));
 
   warnSharedPluginOrigin();
 

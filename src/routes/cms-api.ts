@@ -32,6 +32,7 @@ import type { AppContext } from '../utils/context';
 import type { Env, Variables, Page, ResolvedPlugin } from '../types';
 import { resolveCmsConfig } from '../plugins/config';
 import { pluginById } from '../plugins/registry';
+import { timingSafeEqualStr } from '../security/plugin-proxy';
 import { deliverHooks, type HookEvent, type HookPage } from '../plugins/hooks';
 import { blueprintToLect, mergeLects, safeParseLect, stringifyLect } from '../utils/lect';
 import type { Lect } from '../utils/lect';
@@ -192,7 +193,7 @@ async function authenticatePlugin(c: AppContext): Promise<PluginAuth | Response>
     console.error(`Plugin ${pluginId} called the write-back API but has no secret configured`);
     return c.json({ error: 'plugin_api_unavailable' }, 503);
   }
-  if (c.req.header('x-plugin-secret') !== plugin.secret) {
+  if (!timingSafeEqualStr(c.req.header('x-plugin-secret') ?? '', plugin.secret)) {
     return c.json({ error: 'forbidden' }, 403);
   }
 

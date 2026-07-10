@@ -10,6 +10,7 @@
 import type { AppContext } from '../utils/context';
 import type { Env, JWTPayload } from '../types';
 import { pluginsForHook, PLUGIN_ORIGIN, PLUGIN_PREFIX } from './registry';
+import { pluginTenantId } from '../security/plugin-proxy';
 import { logAudit } from '../utils/audit';
 
 /** A minimal page snapshot delivered to plugins. Plugins receive whatever the
@@ -83,6 +84,7 @@ export async function deliverHooks(
   const userPayload = user
     ? { id: user.sub, email: user.email, name: user.name, role: user.role }
     : null;
+  const tenantId = pluginTenantId(env);
 
   for (let start = 0; start < pages.length; start += HOOK_BATCH_SIZE) {
     const chunk = pages.slice(start, start + HOOK_BATCH_SIZE);
@@ -102,6 +104,7 @@ export async function deliverHooks(
               headers: {
                 'content-type': 'application/json',
                 'x-plugin-secret': plugin.secret,
+                ...(tenantId ? { 'x-cms-tenant': tenantId } : {}),
               },
               body,
             },

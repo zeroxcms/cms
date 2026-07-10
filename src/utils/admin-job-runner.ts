@@ -1,5 +1,6 @@
 import { deliverHooks, type HookEvent, type HookPage } from '../plugins/hooks';
 import { PLUGIN_ORIGIN, pluginById } from '../plugins/registry';
+import { pluginTenantId, setPluginAuthHeaders } from '../security/plugin-proxy';
 import {
   publishPageToTargets,
   unpublishPageFromTargets,
@@ -53,7 +54,7 @@ async function runPluginAdminActionJob(env: Env, job: AdminJobRecord): Promise<v
     name: job.user.name,
     role: job.user.role,
   }));
-  headers.set('x-plugin-secret', plugin.secret);
+  setPluginAuthHeaders(headers, plugin.secret, pluginTenantId(env));
   headers.set('x-cms-background-job', '1');
   if (job.contentType) headers.set('content-type', job.contentType);
 

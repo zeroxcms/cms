@@ -163,6 +163,23 @@ describe('deliverHook', () => {
     expect(plugin.hookCalls[0].body?.user).toMatchObject({ id: '7', role: 'admin' });
   });
 
+  it('sends x-cms-tenant (the canonical origin) alongside the secret', async () => {
+    const plugin = makePlugin(EVENTS_MANIFEST);
+    await deliverHook(
+      await envWith(plugin, { PLUGIN_SECRET: 's', CANONICAL_ORIGIN: 'https://cms1.example.com/' }),
+      USER,
+      'publish',
+      { id: 5, slug: 'x' },
+    );
+    expect(plugin.hookCalls[0].headers.get('x-cms-tenant')).toBe('https://cms1.example.com');
+  });
+
+  it('omits x-cms-tenant when CANONICAL_ORIGIN is unset', async () => {
+    const plugin = makePlugin(EVENTS_MANIFEST);
+    await deliverHook(await envWith(plugin, { PLUGIN_SECRET: 's' }), USER, 'publish', { id: 5, slug: 'x' });
+    expect(plugin.hookCalls[0].headers.get('x-cms-tenant')).toBeNull();
+  });
+
   it('does not deliver subscribed hooks when PLUGIN_SECRET is missing', async () => {
     const plugin = makePlugin(EVENTS_MANIFEST);
     await deliverHook(await envWith(plugin), USER, 'publish', { id: 5, slug: 'x' });
