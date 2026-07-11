@@ -3,7 +3,7 @@
 import { Hono } from 'hono';
 import { trashPage } from '../../templates/trash';
 import type { Env, Variables, Page, PageTag, PageVersion } from '../../types';
-import { restoreTrashedPages, savePageVersion } from '../../utils/admin-queries';
+import { restoreTrashedPages } from '../../utils/admin-queries';
 import { dashboardPagination, renderPage, userCan } from '../../utils/admin-render';
 import { dashboardPageNumber, dashboardPageSize } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
@@ -153,20 +153,6 @@ trashRoutes.post('/trash/:id/restore', requirePermission('trash:restore'), async
         `INSERT OR IGNORE INTO draft_page_tags (uuid, page_id, tag_id, weight) VALUES (?, ?, ?, ?)`,
       )
         .bind(pt.uuid, draftPage.id, pt.tag_id, pt.weight)
-        .run();
-    }
-
-    // Legacy trash rows (deleted before history was preserved) carry no versions
-    // or current pointer — give those a fresh restore snapshot instead.
-    if (trashVersions.results.length === 0 || trashedPage.current_page_version_id == null) {
-      const restoredVersionId = await savePageVersion(
-        c.env.DB,
-        draftPage.id,
-        trashedPage.lect,
-        'restore',
-      );
-      await c.env.DB.prepare('UPDATE draft_pages SET current_page_version_id = ? WHERE id = ?')
-        .bind(restoredVersionId, draftPage.id)
         .run();
     }
   }

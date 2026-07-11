@@ -263,10 +263,9 @@ export async function trashDraftPages(db: D1Database, ids: number[]): Promise<Tr
  * Returns the number of pages restored. `pageType`/`withinLastHour` scope it to
  * match the trash list's "Empty" controls.
  *
- * Caveat vs. the single-page route: it does not mint a fresh restore snapshot
- * for legacy rows that predate version history, and a parent restored in the
- * SAME call is not yet visible to the child's parent check — fine here because
- * guests/lists link by their lect pointer, not by parent page.
+ * Caveat vs. the single-page route: a parent restored in the SAME call is not
+ * yet visible to the child's parent check — fine here because guests/lists
+ * link by their lect pointer, not by parent page.
  */
 export async function restoreTrashedPages(
   db: D1Database,
