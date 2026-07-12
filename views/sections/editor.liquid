@@ -284,7 +284,7 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
       </div>
       {% endif %}
 
-    <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+    <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sticky bottom-4">
       {% if isVersionPreview %}
         <button type="submit" name="action" value="{{ selectedVersion.restoreAction | escape }}"
                 class="w-full px-6 py-2 bg-amber-600 text-white text-sm font-semibold rounded-lg hover:bg-amber-700 transition-colors shadow-sm sm:w-auto">
