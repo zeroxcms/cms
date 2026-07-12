@@ -1074,6 +1074,66 @@ describe('admin routes', () => {
       .first<{ tag_id: number }>()).toEqual({ tag_id: 302 });
   });
 
+  it.each(['event', 'guest', 'mail_list', 'edm'])('saving an already-published %s page republishes its new version', async (pageType) => {
+    const pluginUrl = `https://auto-publish-${crypto.randomUUID()}.local`;
+    __injectPluginFetcher(pluginUrl, {
+      fetch: async () => Response.json({
+        id: 'events',
+        name: 'Events Suite',
+        version: '1.0.0',
+        autoPublishTypes: ['event', 'guest', 'mail_list', 'edm'],
+        contentTypes: { blueprint: { event: [], guest: [], mail_list: [], edm: [] } },
+      }),
+    } as unknown as Fetcher);
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Events', pluginUrl).run();
+    clearManifestCache();
+    await env.DB.prepare('UPDATE draft_pages SET page_type = ? WHERE id = ?').bind(pageType, 101).run();
+    await fetchWorker('/admin/pages/101/publish', {
+      method: 'POST',
+      headers: { Cookie: await authCookie() },
+    });
+
+    const response = await fetchWorker('/admin/pages/101', {
+      method: 'POST',
+      body: form({ name: 'RSVP Fresh', slug: 'rsvp-fresh', page_type: pageType, weight: '3' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('Location')).toContain('flash=Page+updated+and+published+successfully');
+    expect(await env.PUBLISHED_DB.prepare('SELECT name, slug, page_type FROM live_pages WHERE uuid = ?')
+      .bind('page-uuid-101')
+      .first()).toEqual({ name: 'RSVP Fresh', slug: 'rsvp-fresh', page_type: pageType });
+  });
+
+  it('saving a draft-only RSVP page type does not publish it', async () => {
+    const pluginUrl = `https://auto-publish-${crypto.randomUUID()}.local`;
+    __injectPluginFetcher(pluginUrl, {
+      fetch: async () => Response.json({
+        id: 'events',
+        name: 'Events Suite',
+        version: '1.0.0',
+        autoPublishTypes: ['guest'],
+        contentTypes: { blueprint: { guest: [] } },
+      }),
+    } as unknown as Fetcher);
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Events', pluginUrl).run();
+    clearManifestCache();
+    await env.PUBLISHED_DB.prepare('DELETE FROM live_pages WHERE uuid = ?').bind('page-uuid-101').run();
+    await env.DB.prepare("UPDATE draft_pages SET page_type = 'guest' WHERE id = 101").run();
+
+    const response = await fetchWorker('/admin/pages/101', {
+      method: 'POST',
+      body: form({ name: 'Still Draft', slug: 'still-draft', page_type: 'guest', weight: '3' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(await env.PUBLISHED_DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
+      .bind('page-uuid-101')
+      .first()).toBeNull();
+  });
+
   it('POST /admin/pages/:id/unpublish removes content from PUBLISHED_DB', async () => {
     expect(await env.PUBLISHED_DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
       .bind('page-uuid-101')

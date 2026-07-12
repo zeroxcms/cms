@@ -151,6 +151,15 @@ export async function pluginForReadView(env: Env, pageType: string): Promise<Res
   return plugins.find((plugin) => (plugin.manifest.readViews ?? []).includes(pageType)) ?? null;
 }
 
+/** True when the plugin that owns a page type requests save-time republishing. */
+export async function pluginAutoPublishesPageType(env: Env, pageType: string): Promise<boolean> {
+  const plugins = await getPlugins(env);
+  return plugins.some((plugin) => (
+    Object.hasOwn(plugin.manifest.contentTypes?.blueprint ?? {}, pageType)
+    && (plugin.manifest.autoPublishTypes ?? []).includes(pageType)
+  ));
+}
+
 /** Resolves a plugin by its manifest id (used by the admin proxy). */
 export async function pluginById(env: Env, id: string): Promise<ResolvedPlugin | null> {
   const plugins = await getPlugins(env);
