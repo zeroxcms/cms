@@ -8,6 +8,7 @@ import { resolveCmsConfig } from '../../plugins/config';
 import { dispatchHook } from '../../plugins/hooks';
 import { viewsFor } from '../../plugins/views';
 import { pluginEditView, pluginNewView, pluginReadView } from '../../plugins/edit-view';
+import { pluginAutoPublishesPageType } from '../../plugins/registry';
 import type { EditViewContext, ReadViewContext } from '../../plugins/edit-view';
 import { blueprintToLect, safeParseLect, stringifyLect } from '../../utils/lect';
 import type { Lect } from '../../utils/lect';
@@ -1064,11 +1065,17 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
 
   await setDraftPageTags(c.env.DB, pageId, form.getAll('tag_ids'), true);
 
-  if (action === 'publish') {
+  const autoRepublish = action !== 'publish'
+    && await pluginAutoPublishesPageType(c.env, pageTypeVal)
+    && !!await c.env.PUBLISHED_DB.prepare('SELECT 1 FROM live_pages WHERE uuid = ?')
+      .bind(page.uuid)
+      .first();
+
+  if (action === 'publish' || autoRepublish) {
     const outcome = await publishPageToTargets(c.env, pageId);
     if (!outcome) return c.notFound();
     if (!outcome.refused) dispatchHook(c, 'publish', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug: uniqueSlug });
-    return c.redirect(`/admin?flash=${publishFlash(outcome)}`);
+    if (action === 'publish') return c.redirect(`/admin?flash=${publishFlash(outcome)}`);
   }
 
   // Preserve where the editor returns to (e.g. a plugin dashboard) across saves,
@@ -1081,9 +1088,10 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
     return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}${returnToParam}${nativeParam}`);
   }
 
-  dispatchHook(c, 'update', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug: uniqueSlug });
+  if (!autoRepublish) dispatchHook(c, 'update', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug: uniqueSlug });
 
-  return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}&flash=Page+updated+successfully${returnToParam}${nativeParam}`);
+  const savedFlash = autoRepublish ? 'Page+updated+and+published+successfully' : 'Page+updated+successfully';
+  return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}&flash=${savedFlash}${returnToParam}${nativeParam}`);
 });
 
 // ── Publish (DRAFT → PUBLISHED) ───────────────────────────────────────────────

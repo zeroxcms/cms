@@ -278,6 +278,10 @@ export interface PluginManifest {
   CF_VERSION_METADATA?: Pick<WorkerVersionMetadata, 'id' | 'tag' | 'timestamp'>;
   /** Lifecycle events the plugin wants to receive (e.g. "publish", "delete"). */
   hooks?: string[];
+  /** Plugin-owned page types that should be republished after each save once
+   *  they are already live. Types must also be declared in contentTypes.blueprint;
+   *  the first publish always remains an explicit editor action. */
+  autoPublishTypes?: string[];
   /** When true, the plugin is a publish target: it receives full page
    *  snapshots on publish/unpublish via /__plugin/publish/*. */
   publishTarget?: boolean;
