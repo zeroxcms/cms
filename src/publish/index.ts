@@ -22,6 +22,7 @@ import { pluginAdapter } from './plugin';
 import { getPlugins } from '../plugins/registry';
 import { pluginTenantId } from '../security/plugin-proxy';
 import { isSubmissionPageType } from '../utils/submission-ingest';
+import { projectLect, publishLectRules } from './projection';
 
 export type { LivePageSnapshot, PublishAdapter, PublishSnapshot, PublishSnapshotTag } from './adapter';
 
@@ -80,6 +81,11 @@ async function buildSnapshot(env: Env, pageId: number): Promise<PublishSnapshot 
     .bind(pageId)
     .first<Page>();
   if (!page) return null;
+
+  // Data minimization: project the lect BEFORE fan-out so every publish
+  // target (D1, R2, plugin targets) receives the same thinned snapshot.
+  const rules = await publishLectRules(env);
+  page.lect = projectLect(page.lect, rules[page.page_type ?? '']);
 
   const tags = await env.DB.prepare(
     `SELECT pt.uuid, pt.tag_id, pt.weight, t.slug, t.name

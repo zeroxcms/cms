@@ -26,6 +26,7 @@ import { pluginNav } from '../plugins/registry';
 import { editorTaxonomy, fetchUserAvatar } from './admin-queries';
 import { getCreditBalance } from './credits';
 import { listLiveByTypes } from '../publish';
+import { draftLectProjector } from '../publish/projection';
 import type { DashboardListResult } from './admin-queries';
 import { withLiveStatus } from './page-logic';
 import { strParam } from './forms';
@@ -305,7 +306,10 @@ export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all
         },
       };
 
-  const livePages = await listLiveByTypes(c.env, pageTypes);
+  const [livePages, projectDraft] = await Promise.all([
+    listLiveByTypes(c.env, pageTypes),
+    draftLectProjector(c.env),
+  ]);
   const liveMap = new Map(livePages.map((page) => [page.uuid, page]));
   const routeBase = selectedPageType === 'all'
     ? '/admin/advanced-search'
@@ -353,6 +357,6 @@ export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all
       bulkAction: `${routeBase}/bulk?${queryWithoutPage}`,
       currentHref: `${routeBase}?${pageQuery(result.pagination.currentPage)}`,
       queryWithoutPage,
-      pages: withLiveStatus(result.results, liveMap),
+      pages: withLiveStatus(result.results, liveMap, projectDraft),
   });
 }

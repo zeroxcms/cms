@@ -236,11 +236,30 @@ export interface PluginFieldType {
   type: string;
 }
 
+/**
+ * Publish-time lect projection for one page type. `keep` retains ONLY the
+ * listed top-level fields (structural `_`-prefixed keys always survive);
+ * `drop` removes the listed fields and keeps everything else. When both are
+ * set, `keep` wins. Data minimization: the published DB is read by
+ * public-facing Workers, so fields no published-side consumer needs (PII,
+ * secrets) should never land there.
+ */
+export interface PublishLectRule {
+  keep?: string[];
+  drop?: string[];
+}
+
 /** Content-type fragments a plugin merges into the effective CmsConfig. */
 export interface PluginContentTypes {
   blueprint?: Record<string, BlueprintEntry[]>;
   blocks?: Record<string, BlueprintEntry[]>;
   blockLists?: Record<string, string[]>;
+  /**
+   * Publish-time lect projection per page type this plugin OWNS (declared in
+   * `blueprint`). Rules for types the plugin does not own are ignored — a
+   * plugin must not be able to thin out another plugin's published pages.
+   */
+  publishLect?: Record<string, PublishLectRule>;
   /** Taxonomy definitions keyed by slug; values are display names. */
   taxonomies?: Record<string, string>;
   taxonomyLists?: Record<string, string[]>;

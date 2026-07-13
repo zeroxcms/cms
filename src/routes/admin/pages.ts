@@ -40,6 +40,7 @@ import {
   isStructuredEditorAction,
   lectForPage,
   lectFromForm,
+  lectsMatch,
   withDraftMetadata,
   withLiveStatus,
 } from '../../utils/page-logic';
@@ -61,6 +62,7 @@ import {
   unpublishPageFromTargets,
 } from '../../publish';
 import type { PublishOutcome } from '../../publish';
+import { draftLectProjector } from '../../publish/projection';
 import { dashboardPagination, exportPageList, renderPage } from '../../utils/admin-render';
 import { loadAdminHomeSettings } from '../../utils/settings';
 import { requirePermission } from '../../middleware/auth';
@@ -140,9 +142,10 @@ async function liveDashboardPagesForRequest(
     const draft = draftMap.get(page.uuid);
     return draft ?? { ...page, current_page_version_id: null, isDraftMissing: true };
   });
+  const projectDraft = await draftLectProjector(c.env);
 
   return {
-    results: withLiveStatus(results, liveMap),
+    results: withLiveStatus(results, liveMap, projectDraft),
     pagination: {
       total,
       totalPages,
@@ -186,10 +189,13 @@ async function dashboardPagesForRequest(
       page: requestedPage,
       limit: pageSize,
     });
-    const liveMap = await liveMapForDraftPages(c.env, draftPages.results);
+    const [liveMap, projectDraft] = await Promise.all([
+      liveMapForDraftPages(c.env, draftPages.results),
+      draftLectProjector(c.env),
+    ]);
     return {
       ...draftPages,
-      results: withLiveStatus(draftPages.results, liveMap),
+      results: withLiveStatus(draftPages.results, liveMap, projectDraft),
     };
   }
   if (statusFilter === 'live') {
@@ -338,7 +344,7 @@ async function editorPageData(
   parentId: string | number | null | undefined,
   requestedVersionId = NaN,
 ) {
-  const [parentPages, taxonomy, version, versions, liveLect, pageTags] = await Promise.all([
+  const [parentPages, taxonomy, version, versions, liveLect, pageTags, projectDraft] = await Promise.all([
     parentPageOption(c.env.DB, parentId),
     editorTaxonomy(c.env.DB),
     Number.isFinite(requestedVersionId)
@@ -357,6 +363,7 @@ async function editorPageData(
     c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?')
       .bind(page.id)
       .all<{ tag_id: number }>(),
+    draftLectProjector(c.env),
   ]);
 
   return {
@@ -364,7 +371,12 @@ async function editorPageData(
     taxonomy,
     version,
     versions: versions.results,
-    liveVersionId: versions.results.find((candidate) => candidate.lect === liveLect)?.id,
+    // The live copy is projected at publish time, so each candidate version
+    // must be projected the same way before comparing (page-logic lectsMatch
+    // semantics keep byte-equality for non-projected types).
+    liveVersionId: versions.results.find(
+      (candidate) => lectsMatch(projectDraft({ page_type: page.page_type, lect: candidate.lect }), liveLect),
+    )?.id,
     selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
   };
 }

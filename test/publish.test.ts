@@ -445,4 +445,122 @@ describe('publish registry', () => {
   it('returns null when the draft page does not exist', async () => {
     expect(await publishPageToTargets(registryEnv(), 999999)).toBeNull();
   });
+
+  // ── Publish-time lect projection (contentTypes.publishLect) ───────────────
+  describe('lect projection', () => {
+    const GUEST_LECT = {
+      _type: 'guest',
+      _pointers: { mail_list: '8', event: '7' },
+      name: { en: 'Ada' },
+      email: 'ada@x.io',
+      status: 'confirmed',
+      plus_guests: '1',
+      response: [{ status: 'confirmed', date: '2026-06-01' }],
+      // Private operational fields that must never reach the published DB:
+      phone: '+44 555 0100',
+      wechat: 'ada-wc',
+      remarks: 'VIP handling',
+      checkin: [{ status: 'checked-in' }],
+      qrcode: 'QR123',
+    };
+
+    function projectingPlugin(): Fetcher {
+      return {
+        fetch: async () => Response.json({
+          id: 'events-test',
+          name: 'Events Test',
+          version: '1.0.0',
+          contentTypes: {
+            blueprint: { guest: ['@email', 'name'], event: ['@checkin_lite_passcode', 'name'] },
+            publishLect: {
+              guest: { keep: ['name', 'email', 'status', 'plus_guests', 'response'] },
+              event: { drop: ['checkin_lite_passcode'] },
+              // Not owned by this plugin — must be ignored.
+              article: { keep: ['name'] },
+            },
+          },
+        }),
+      } as unknown as Fetcher;
+    }
+
+    async function seedTypedDraft(pageType: string, lect: Record<string, unknown>): Promise<void> {
+      await env.DB.prepare(
+        `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, lect, creator)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(PAGE.id, PAGE.uuid, PAGE.name, PAGE.slug, PAGE.weight, pageType, JSON.stringify(lect), PAGE.creator)
+        .run();
+    }
+
+    it('keeps only allow-listed guest fields (plus structural keys) in the live copy', async () => {
+      await registerPlugin(projectingPlugin());
+      await seedTypedDraft('guest', GUEST_LECT);
+      const testEnv = registryEnv({ PLUGIN_SECRET: 's3cret' });
+
+      const outcome = await publishPageToTargets(testEnv, PAGE.id);
+      expect(outcome?.failures).toEqual([]);
+
+      const live = await env.PUBLISHED_DB.prepare('SELECT lect FROM live_pages WHERE uuid = ?')
+        .bind(PAGE.uuid)
+        .first<{ lect: string }>();
+      const liveLect = JSON.parse(live!.lect) as Record<string, unknown>;
+      expect(liveLect).toMatchObject({
+        _type: 'guest',
+        _pointers: { mail_list: '8', event: '7' },
+        name: { en: 'Ada' },
+        email: 'ada@x.io',
+        status: 'confirmed',
+        plus_guests: '1',
+        response: [{ status: 'confirmed', date: '2026-06-01' }],
+      });
+      for (const key of ['phone', 'wechat', 'remarks', 'checkin', 'qrcode']) {
+        expect(liveLect, `${key} must not be published`).not.toHaveProperty(key);
+      }
+      // The draft copy is untouched — projection happens only at publish.
+      const draft = await env.DB.prepare('SELECT lect FROM draft_pages WHERE id = ?')
+        .bind(PAGE.id)
+        .first<{ lect: string }>();
+      expect(JSON.parse(draft!.lect)).toHaveProperty('phone');
+    });
+
+    it('drop-mode strips secrets from event pages; unowned rules are ignored', async () => {
+      await registerPlugin(projectingPlugin());
+      const { publishLectRules, projectLect } = await import('../src/publish/projection');
+      const rules = await publishLectRules(registryEnv({ PLUGIN_SECRET: 's3cret' }));
+      expect(rules.guest).toBeTruthy();
+      expect(rules.event).toEqual({ drop: ['checkin_lite_passcode'] });
+      expect(rules.article).toBeUndefined(); // blueprint ownership required
+
+      const eventLect = JSON.stringify({ _type: 'event', name: { en: 'Launch' }, checkin_lite_passcode: '1234' });
+      const projected = JSON.parse(projectLect(eventLect, rules.event)!) as Record<string, unknown>;
+      expect(projected).toMatchObject({ _type: 'event', name: { en: 'Launch' } });
+      expect(projected).not.toHaveProperty('checkin_lite_passcode');
+
+      // No rule → byte-identical passthrough (drift comparisons rely on this).
+      expect(projectLect(eventLect, undefined)).toBe(eventLect);
+    });
+
+    it('keeps the dashboard drift badge clean for projected types', async () => {
+      await registerPlugin(projectingPlugin());
+      await seedTypedDraft('guest', GUEST_LECT);
+      const testEnv = registryEnv({ PLUGIN_SECRET: 's3cret' });
+      await publishPageToTargets(testEnv, PAGE.id);
+
+      const { draftLectProjector } = await import('../src/publish/projection');
+      const { withLiveStatus } = await import('../src/utils/page-logic');
+      const draft = await env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
+        .bind(PAGE.id)
+        .first<Page>();
+      const liveMap = await liveMapForDraftPages(testEnv, [draft!]);
+      const projectDraft = await draftLectProjector(testEnv);
+
+      // Unprojected comparison would report permanent drift…
+      const [naive] = withLiveStatus([draft!], liveMap);
+      expect(naive.hasLiveLectDrift).toBe(true);
+      // …the projected comparison must not.
+      const [projected] = withLiveStatus([draft!], liveMap, projectDraft);
+      expect(projected.isPublished).toBe(true);
+      expect(projected.hasLiveLectDrift).toBe(false);
+    });
+  });
 });

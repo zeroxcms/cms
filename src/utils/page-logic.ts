@@ -57,6 +57,10 @@ export function lectsMatch(left: string | null | undefined, right: string | null
 export function withLiveStatus<T extends { uuid: string; weight: number; lect: string | null | undefined }>(
   pages: T[],
   liveMap: Map<string, { weight: number; lect: string | null | undefined }>,
+  // Publish-time lect projection (publish/projection.ts). The live copy is
+  // projected, so the draft must be projected the same way before diffing or
+  // projected types would show permanent lect drift.
+  projectDraftLect: (page: T) => string | null | undefined = (page) => page.lect,
 ) {
   return pages.map((page) => {
     const livePage = liveMap.get(page.uuid);
@@ -65,7 +69,7 @@ export function withLiveStatus<T extends { uuid: string; weight: number; lect: s
       isPublished: !!livePage,
       liveWeight: livePage?.weight,
       hasLiveWeightDrift: !!livePage && livePage.weight !== page.weight,
-      hasLiveLectDrift: !!livePage && !lectsMatch(livePage.lect, page.lect),
+      hasLiveLectDrift: !!livePage && !lectsMatch(livePage.lect, projectDraftLect(page)),
     };
   });
 }
