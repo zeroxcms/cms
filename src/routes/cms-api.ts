@@ -506,8 +506,10 @@ async function draftPageIds(db: D1Database, ids: number[]): Promise<Set<number>>
 async function reservedPageIds(db: D1Database, ids: number[]): Promise<Set<number>> {
   const unique = [...new Set(ids)];
   const out = new Set<number>();
-  for (let index = 0; index < unique.length; index += 100) {
-    const chunk = unique.slice(index, index + 100);
+  // Each id is bound twice (draft + trash). Keep each statement at no more
+  // than 100 SQL variables for local D1/SQLite compatibility.
+  for (let index = 0; index < unique.length; index += 50) {
+    const chunk = unique.slice(index, index + 50);
     if (!chunk.length) continue;
     const placeholders = chunk.map(() => '?').join(',');
     const rows = await db.prepare(
@@ -526,6 +528,45 @@ async function generatedPageId(db: D1Database, usedIds: Set<number>): Promise<nu
   let id = cmsId(usedIds);
   while ((await reservedPageIds(db, [id])).has(id)) id = cmsId(usedIds);
   return id;
+}
+
+/** Allocates a whole batch of page ids with one collision query in the normal
+ * case, rather than spending one D1 subrequest per generated id. */
+async function generatedPageIds(db: D1Database, count: number, usedIds: Set<number>): Promise<number[]> {
+  const ids: number[] = [];
+  while (ids.length < count) {
+    const candidates = Array.from({ length: count - ids.length }, () => cmsId(usedIds));
+    const reserved = await reservedPageIds(db, candidates);
+    ids.push(...candidates.filter((id) => !reserved.has(id)));
+  }
+  return ids;
+}
+
+async function reservedPageVersionIds(db: D1Database, ids: number[]): Promise<Set<number>> {
+  const unique = [...new Set(ids)];
+  const out = new Set<number>();
+  for (let index = 0; index < unique.length; index += 100) {
+    const chunk = unique.slice(index, index + 100);
+    if (!chunk.length) continue;
+    const rows = await db.prepare(`SELECT id FROM page_versions WHERE id IN (${chunk.map(() => '?').join(',')})`)
+      .bind(...chunk)
+      .all<{ id: number }>();
+    for (const row of rows.results) out.add(row.id);
+  }
+  return out;
+}
+
+/** Explicit version ids let bulk writes set current_page_version_id in the
+ * same DB.batch as the version INSERT. Collision-check all candidates at once. */
+async function generatedPageVersionIds(db: D1Database, count: number): Promise<number[]> {
+  const ids: number[] = [];
+  const usedIds = new Set<number>();
+  while (ids.length < count) {
+    const candidates = Array.from({ length: count - ids.length }, () => cmsId(usedIds));
+    const reserved = await reservedPageVersionIds(db, candidates);
+    ids.push(...candidates.filter((id) => !reserved.has(id)));
+  }
+  return ids;
 }
 
 async function createPage(
@@ -701,6 +742,21 @@ function bulkPageInsertStatements(db: D1Database, row: BulkPageRow): D1PreparedS
       `INSERT INTO page_versions (id, uuid, created_at, updated_at, page_id, lect, action)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).bind(row.versionId, crypto.randomUUID(), row.createdAt, row.createdAt, row.id, row.lect, 'create'),
+  ];
+}
+
+function bulkPageUpdateStatements(
+  db: D1Database,
+  row: { id: number; versionId: number; updatedAt: string; lect: string; action: string },
+): D1PreparedStatement[] {
+  return [
+    db.prepare(
+      'UPDATE draft_pages SET lect = ?, current_page_version_id = ?, updated_at = ? WHERE id = ?',
+    ).bind(row.lect, row.versionId, row.updatedAt, row.id),
+    db.prepare(
+      `INSERT INTO page_versions (id, uuid, created_at, updated_at, page_id, lect, action)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(row.versionId, crypto.randomUUID(), row.updatedAt, row.updatedAt, row.id, row.lect, row.action),
   ];
 }
 
@@ -1063,6 +1119,12 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
     const finalized: PreparedCreate[] = [];
     const finalizedIndexes: number[] = [];
     const allocatedIds: number[] = [];
+    const generatedIds = await generatedPageIds(
+      c.env.DB,
+      prepared.filter((item) => item.id === null).length,
+      usedIds,
+    );
+    let generatedIdIndex = 0;
     for (let i = 0; i < prepared.length; i++) {
       const item = prepared[i];
       if (item.id !== null) {
@@ -1079,7 +1141,7 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
         continue;
       }
 
-      const id = await generatedPageId(c.env.DB, usedIds);
+      const id = generatedIds[generatedIdIndex++];
       finalized.push(item);
       finalizedIndexes.push(preparedIndexes[i]);
       allocatedIds.push(id);
@@ -1162,12 +1224,13 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
     const statements: D1PreparedStatement[] = [];
     const hookPages: HookPage[] = [];
     const createdAt = cmsTimestamp();
+    const versionIds = await generatedPageVersionIds(c.env.DB, finalized.length);
 
     for (let i = 0; i < finalized.length; i++) {
       const item = finalized[i];
       const id = allocatedIds[i];
       const uuid = crypto.randomUUID();
-      const versionId = cmsId(usedIds);
+      const versionId = versionIds[i];
       const slug = allocateSlug(item.baseSlug, usedSlugs);
 
       statements.push(...bulkPageInsertStatements(c.env.DB, {
@@ -1317,7 +1380,11 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
     const hasMore = rows.length > take;
     const chunk = hasMore ? rows.slice(0, take) : rows;
 
-    const usedSlugs = await existingSlugSet(c.env.DB, chunk.map((row) => slugify(row.name) || pageType));
+    // Clones keep the SOURCE slug family, not a name-derived one: some types
+    // (events-plugin guests) deliberately carry pseudonymous slugs so the
+    // person's name never becomes a public identifier — re-deriving from the
+    // name here would undo that.
+    const usedSlugs = await existingSlugSet(c.env.DB, chunk.map((row) => slugify(row.slug) || slugify(row.name) || pageType));
     const statements: D1PreparedStatement[] = [];
     const hookPages: HookPage[] = [];
     const createdAt = cmsTimestamp();
@@ -1332,7 +1399,7 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
 
       const id = cmsId(usedIds);
       const uuid = crypto.randomUUID();
-      const slug = allocateSlug(slugify(row.name) || pageType, usedSlugs);
+      const slug = allocateSlug(slugify(row.slug) || slugify(row.name) || pageType, usedSlugs);
 
       statements.push(...bulkPageInsertStatements(c.env.DB, {
         id, uuid, createdAt, name: row.name, slug, weight: row.weight ?? 5, start: row.start,
@@ -1375,6 +1442,114 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
   }
 
   return c.json({ count: copied, next_cursor: done ? null : cursor, done });
+});
+
+// Batch-update page lect (up to MAX_BATCH). This is the generic bulk mutation
+// path for plugin jobs: authenticate/configure once, merge each partial lect,
+// then commit every page + distinct version pair in one D1 transaction. Valid
+// rows are applied while malformed, missing, duplicate, or forbidden rows are
+// reported by input index, matching POST /pages/batch semantics.
+//
+// Page Sync notifications are intentionally omitted. They are a best-effort
+// live-editor overlay and would turn a 100-page server-side batch back into 100
+// Durable Object subrequests. Version history, audit, and hooks are preserved.
+cmsApiRoutes.patch('/pages/batch', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const body = await c.req.json().catch(() => null) as { pages?: unknown } | null;
+  const items = body && Array.isArray(body.pages) ? body.pages : null;
+  if (!items) return c.json({ error: 'invalid_body' }, 400);
+  if (items.length > MAX_BATCH) return c.json({ error: 'batch_too_large', max: MAX_BATCH }, 413);
+
+  const candidates: Array<{ index: number; id: number; input: PageInput }> = [];
+  const errors: Array<{ index: number; error: string }> = [];
+  const seenIds = new Set<number>();
+  for (let index = 0; index < items.length; index++) {
+    const raw = items[index];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      errors.push({ index, error: 'invalid_item' });
+      continue;
+    }
+    const input = raw as PageInput;
+    const id = asPositiveSafeInteger(input.id);
+    if (id === null) {
+      errors.push({ index, error: 'invalid_id' });
+      continue;
+    }
+    if (seenIds.has(id)) {
+      errors.push({ index, error: 'duplicate_id' });
+      continue;
+    }
+    seenIds.add(id);
+    if (!Object.hasOwn(input, 'lect') || !input.lect || typeof input.lect !== 'object' || Array.isArray(input.lect)) {
+      errors.push({ index, error: 'invalid_lect' });
+      continue;
+    }
+    candidates.push({ index, id, input });
+  }
+
+  if (!candidates.length) return c.json({ updated: [], errors, count: 0 });
+
+  const ids = candidates.map((candidate) => candidate.id);
+  const rows = await c.env.DB.prepare(
+    `SELECT * FROM draft_pages WHERE id IN (${ids.map(() => '?').join(',')})`,
+  ).bind(...ids).all<Page>();
+  const pageById = new Map(rows.results.map((page) => [page.id, page]));
+  const writable: Array<{ index: number; input: PageInput; page: Page }> = [];
+  for (const candidate of candidates) {
+    const page = pageById.get(candidate.id);
+    if (!page) {
+      errors.push({ index: candidate.index, error: 'not_found' });
+      continue;
+    }
+    if (!pageTypeScopeAllows(auth.allowedTypes, page.page_type ?? '')) {
+      errors.push({ index: candidate.index, error: 'forbidden_page_type' });
+      continue;
+    }
+    writable.push({ index: candidate.index, input: candidate.input, page });
+  }
+
+  if (!writable.length) {
+    errors.sort((a, b) => a.index - b.index);
+    return c.json({ updated: [], errors, count: 0 });
+  }
+
+  const config = await resolveCmsConfig(c.env);
+  const versionIds = await generatedPageVersionIds(c.env.DB, writable.length);
+  const updatedAt = cmsTimestamp();
+  const statements: D1PreparedStatement[] = [];
+  const updated: ApiPage[] = [];
+  const hookPages: HookPage[] = [];
+
+  for (let index = 0; index < writable.length; index++) {
+    const { input, page } = writable[index];
+    const pageType = page.page_type ?? 'default';
+    const mergedLect = mergeLects(
+      mergeLects(blueprintToLect(pageType, config.blueprint, config.defaultLanguage), safeParseLect(page.lect)),
+      coerceLect(input.lect),
+    );
+    const lect = stringifyLect(withDraftMetadata(mergedLect, 0));
+    statements.push(...bulkPageUpdateStatements(c.env.DB, {
+      id: page.id,
+      versionId: versionIds[index],
+      updatedAt,
+      lect,
+      action: versionAction(input.version_action, 'update'),
+    }));
+    updated.push(serializePage({ ...page, lect, updated_at: updatedAt }));
+    hookPages.push({ id: page.id, uuid: page.uuid, page_type: page.page_type, name: page.name, slug: page.slug });
+  }
+
+  try {
+    await c.env.DB.batch(statements);
+  } catch (error) {
+    console.error('Plugin API batch update failed', error);
+    return c.json({ error: 'update_failed' }, 500);
+  }
+  emitPluginHooks(c, 'update', hookPages, auth.pluginId);
+  errors.sort((a, b) => a.index - b.index);
+  return c.json({ updated, errors, count: updated.length });
 });
 
 // Update a page (PUT/PATCH are equivalent here — both partial-merge).

@@ -589,7 +589,7 @@ describe('Plugin API create / read / list / update / delete', () => {
   });
 });
 
-describe('Plugin API batch create', () => {
+describe('Plugin API batch writes', () => {
   it('creates many pages and reports per-item errors', async () => {
     const res = await cmsApi('POST', '/__cms/pages/batch', {
       pages: [
@@ -604,11 +604,79 @@ describe('Plugin API batch create', () => {
     expect(body.errors).toEqual([{ index: 2, error: 'forbidden_page_type' }]);
   });
 
+  it('batch-updates lect with distinct versions and reports invalid rows', async () => {
+    const first = (await (await cmsApi('POST', '/__cms/pages', {
+      page_type: 'guest', name: 'First', lect: { status: 'invited', marker: 'first' },
+    })).json() as { page: { id: number } }).page;
+    const second = (await (await cmsApi('POST', '/__cms/pages', {
+      page_type: 'guest', name: 'Second', lect: { status: 'invited', marker: 'second' },
+    })).json() as { page: { id: number } }).page;
+
+    const res = await cmsApi('PATCH', '/__cms/pages/batch', {
+      pages: [
+        { id: first.id, lect: { status: 'confirmed' }, version_action: 'archive-merge' },
+        { id: second.id, lect: { status: 'declined' }, version_action: 'archive-merge' },
+        { id: 999999999, lect: { status: 'missing' } },
+        { id: first.id, lect: { status: 'duplicate' } },
+      ],
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      count: number;
+      updated: Array<{ id: number; lect: Record<string, unknown> }>;
+      errors: Array<{ index: number; error: string }>;
+    };
+    expect(body.count).toBe(2);
+    expect(body.updated.map((page) => [page.id, page.lect.status, page.lect.marker])).toEqual([
+      [first.id, 'confirmed', 'first'],
+      [second.id, 'declined', 'second'],
+    ]);
+    expect(body.errors).toEqual([
+      { index: 2, error: 'not_found' },
+      { index: 3, error: 'duplicate_id' },
+    ]);
+
+    const rows = await env.DB.prepare(
+      `SELECT p.id, p.lect AS page_lect, v.lect AS version_lect, v.action
+       FROM draft_pages p
+       JOIN page_versions v ON v.id = p.current_page_version_id
+       WHERE p.id IN (?, ?)
+       ORDER BY p.id`,
+    ).bind(first.id, second.id).all<{ id: number; page_lect: string; version_lect: string; action: string }>();
+    expect(rows.results).toHaveLength(2);
+    for (const row of rows.results) expect(row.version_lect).toBe(row.page_lect);
+    expect(rows.results.map((row) => row.action)).toEqual(['archive-merge', 'archive-merge']);
+  });
+
+  it('enforces write scope per batch-update item', async () => {
+    const guest = (await (await cmsApi('POST', '/__cms/pages', {
+      page_type: 'guest', name: 'Writable Guest', lect: { status: 'invited' },
+    })).json() as { page: { id: number } }).page;
+    await env.DB.prepare(
+      'INSERT INTO draft_pages (name, slug, page_type, lect) VALUES (?, ?, ?, ?)',
+    ).bind('Protected Contact', `protected-${crypto.randomUUID()}`, 'contact', '{}').run();
+    const contact = await env.DB.prepare(
+      'SELECT id FROM draft_pages WHERE name = ? ORDER BY created_at DESC LIMIT 1',
+    ).bind('Protected Contact').first<{ id: number }>();
+
+    const res = await cmsApi('PATCH', '/__cms/pages/batch', {
+      pages: [
+        { id: guest.id, lect: { status: 'confirmed' } },
+        { id: contact!.id, lect: { source: 'not-allowed' } },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { count: number; errors: Array<{ index: number; error: string }> };
+    expect(body.count).toBe(1);
+    expect(body.errors).toEqual([{ index: 1, error: 'forbidden_page_type' }]);
+  });
+
   it('allocates unique slugs and versions within one batch', async () => {
     const res = await cmsApi('POST', '/__cms/pages/batch', {
       pages: [
-        { page_type: 'guest', name: 'Same Name' },
-        { page_type: 'guest', name: 'Same Name' },
+        { page_type: 'guest', name: 'Same Name', lect: { marker: 'first' } },
+        { page_type: 'guest', name: 'Same Name', lect: { marker: 'last' } },
       ],
     });
     expect(res.status).toBe(200);
@@ -626,6 +694,16 @@ describe('Plugin API batch create', () => {
       'SELECT COUNT(*) AS count FROM page_versions WHERE page_id IN (?, ?)',
     ).bind(body.created[0].id, body.created[1].id).first<{ count: number }>();
     expect(versions?.count).toBe(2);
+
+    const payloads = await env.DB.prepare(
+      `SELECT p.lect AS page_lect, v.lect AS version_lect
+       FROM draft_pages p
+       JOIN page_versions v ON v.id = p.current_page_version_id
+       WHERE p.id IN (?, ?)
+       ORDER BY p.slug`,
+    ).bind(body.created[0].id, body.created[1].id).all<{ page_lect: string; version_lect: string }>();
+    expect(payloads.results.map((row) => JSON.parse(row.page_lect).marker)).toEqual(['first', 'last']);
+    expect(payloads.results.every((row) => row.page_lect === row.version_lect)).toBe(true);
   });
 
   it('reports explicit id conflicts as per-item JSON errors in batch imports', async () => {
@@ -668,6 +746,12 @@ describe('Plugin API batch create', () => {
   });
 
   it('caps batch size to keep CMS work bounded', async () => {
+    const accepted = await cmsApi('POST', '/__cms/pages/batch', {
+      pages: Array.from({ length: 100 }, (_, index) => ({ page_type: 'guest', name: `Accepted ${index}` })),
+    });
+    expect(accepted.status).toBe(200);
+    expect((await accepted.json() as { count: number }).count).toBe(100);
+
     const res = await cmsApi('POST', '/__cms/pages/batch', {
       pages: Array.from({ length: 101 }, (_, index) => ({ page_type: 'guest', name: `G${index}` })),
     });
