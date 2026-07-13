@@ -41,6 +41,9 @@ export async function profilePage(views: Fetcher, opts: BaseTemplateProps & {
   identities: ProfileIdentity[];
   providers: ProfileProvider[];
   creditBalance: number;
+  creditTransferAction: string;
+  sharedCreditBalance: number;
+  sharedDonateAction: string;
   creditLedger: UserCreditLedgerRow[];
   creditLedgerPagination: ProfileCreditLedgerPagination;
 }): Promise<string> {
@@ -60,6 +63,9 @@ export async function profilePage(views: Fetcher, opts: BaseTemplateProps & {
     hasProviders: opts.providers.length > 0,
     providers: opts.providers,
     creditBalance: opts.creditBalance,
+    creditTransferAction: opts.creditTransferAction,
+    sharedCreditBalance: opts.sharedCreditBalance,
+    sharedDonateAction: opts.sharedDonateAction,
     hasCreditLedger: opts.creditLedger.length > 0,
     creditLedger: opts.creditLedger,
     creditLedgerPagination: opts.creditLedgerPagination,

@@ -31,7 +31,7 @@ import {
 } from '../../utils/forms';
 import { validatePageBasics } from '../../utils/validation';
 import { checkCreateLimits, createCandidate, limitViolationMessage } from '../../utils/plugin-limits';
-import { chargeCredits, pageCreateAction, pageCreateCostForType, refundCredits } from '../../utils/credits';
+import { pageCreateAction, pageCreateCostForType, refundCredits, spendCredits, type CreditSource } from '../../utils/credits';
 import {
   applyStructuredAction,
   blockNamesFor,
@@ -529,17 +529,17 @@ pagesRoutes.post('/pages/new_post/:pageType', requirePermission('content:write')
   if (violation) return c.text(limitViolationMessage(violation), 422);
 
   const cost = await pageCreateCostForType(c.env, pageType);
-  let creditCharge: { userId: number; amount: number; action: string } | null = null;
+  let creditCharge: { userId: number; amount: number; action: string; source: CreditSource } | null = null;
   if (cost.total > 0) {
     const userId = Number(c.get('user').sub);
     const action = pageCreateAction(pageType, cost);
-    const charge = await chargeCredits(c.env, {
+    const charge = await spendCredits(c.env, {
       userId, amount: cost.total, action, entityType: pageType, createdBy: String(userId),
     });
     if (!charge.ok) {
-      return c.text(`Not enough credits: creating this needs ${charge.required} credits and you have ${charge.balance}.`, 402);
+      return c.text(`Not enough credits: creating this needs ${charge.required} credits and you have ${charge.balance} (shared pool: ${charge.sharedBalance}).`, 402);
     }
-    creditCharge = { userId, amount: cost.total, action };
+    creditCharge = { userId, amount: cost.total, action, source: charge.source };
   }
 
   try {
@@ -565,6 +565,7 @@ pagesRoutes.post('/pages/new_post/:pageType', requirePermission('content:write')
         userId: creditCharge.userId,
         amount: creditCharge.amount,
         action: creditCharge.action,
+        source: creditCharge.source,
         createdBy: String(creditCharge.userId),
       });
     }
@@ -650,14 +651,14 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
   // Plugin-declared page-create costs charge the signed-in editor. Deducted
   // only when the request is otherwise valid (a validation re-render must
   // never cost credits); a failed insert below refunds.
-  let creditCharge: { userId: number; amount: number; action: string } | null = null;
+  let creditCharge: { userId: number; amount: number; action: string; source: CreditSource } | null = null;
   if (!errors.length) {
     const pageType = nullableStr(form.get('page_type')) ?? 'default';
     const cost = await pageCreateCostForType(c.env, pageType);
     if (cost.total > 0) {
       const userId = Number(c.get('user').sub);
       const action = pageCreateAction(pageType, cost);
-      const charge = await chargeCredits(c.env, {
+      const charge = await spendCredits(c.env, {
         userId,
         amount: cost.total,
         action,
@@ -667,9 +668,9 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
       if (!charge.ok) {
         errors.push(charge.error === 'unknown_user'
           ? 'Your user account could not be charged credits.'
-          : `Not enough credits: creating this needs ${charge.required} credits and you have ${charge.balance}.`);
+          : `Not enough credits: creating this needs ${charge.required} credits and you have ${charge.balance} (shared pool: ${charge.sharedBalance}).`);
       } else {
-        creditCharge = { userId, amount: cost.total, action };
+        creditCharge = { userId, amount: cost.total, action, source: charge.source };
       }
     }
   }
@@ -776,6 +777,7 @@ pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
         userId: creditCharge.userId,
         amount: creditCharge.amount,
         action: creditCharge.action,
+        source: creditCharge.source,
         createdBy: String(creditCharge.userId),
       });
     }

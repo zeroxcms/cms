@@ -24,7 +24,7 @@ import { csvDownloadResponse, exportPagesCsv } from './csv';
 import { resolveCmsConfig } from '../plugins/config';
 import { pluginNav } from '../plugins/registry';
 import { editorTaxonomy, fetchUserAvatar } from './admin-queries';
-import { getCreditBalance } from './credits';
+import { getCreditBalance, getSharedCreditBalance } from './credits';
 import { listLiveByTypes } from '../publish';
 import { draftLectProjector } from '../publish/projection';
 import type { DashboardListResult } from './admin-queries';
@@ -65,12 +65,13 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
   const user = c.get('user');
   const userRoles = user.role.split(',').map((role) => role.trim()).filter(Boolean);
   const fallbackSiteTitle = c.env.SITE_TITLE ?? '0xCMS';
-  const [userAvatar, navItems, permissions, branding, userCredits] = await Promise.all([
+  const [userAvatar, navItems, permissions, branding, userCredits, sharedCredits] = await Promise.all([
     fetchUserAvatar(c.env.DB, userIdFromContext(c)),
     pluginNav(c.env),
     userPermissions(c),
     loadAppBrandingSettings(c.env, fallbackSiteTitle),
     getCreditBalance(c.env, userIdFromContext(c)),
+    getSharedCreditBalance(c.env),
   ]);
   const sidebarSettings = await loadSidebarChromeSettings(c.env);
   const menuSettings = sidebarSettings.items;
@@ -154,6 +155,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     userRole: user.role,
     userAvatar: userAvatar ?? '',
     userCredits: userCredits ?? 0,
+    sharedCredits,
     currentUserId: String(user.sub),
     pluginNav: nav,
     pluginSettingsNav: settingsNav,

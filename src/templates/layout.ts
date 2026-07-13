@@ -64,6 +64,8 @@ export interface BaseTemplateProps extends NavFlags {
   userAvatar: string;
   /** Signed-in user's current credit balance, shown in the sidebar footer. */
   userCredits: number;
+  /** Site-wide shared credit pool balance, shown next to the user's own. */
+  sharedCredits: number;
   currentUserId: string;
   /** Navigation entries contributed by active plugins, filtered to the user's roles. */
   pluginNav: Array<{ label: string; href: string }>;
@@ -110,6 +112,7 @@ export async function adminLayout(
     userRole: base.userRole,
     userAvatar: base.userAvatar,
     userCredits: base.userCredits,
+    sharedCredits: base.sharedCredits,
     pluginNav: base.pluginNav,
     pluginSettingsNav: base.pluginSettingsNav,
     viewRevision: base.viewRevision,
@@ -139,6 +142,7 @@ export interface LayoutOptions extends NavFlags {
   userRole?: string;
   userAvatar?: string;
   userCredits?: number;
+  sharedCredits?: number;
   /** Nav entries contributed by active plugins (already role-filtered). */
   pluginNav?: Array<{ label: string; href: string }>;
   /** Plugin nav entries for the Settings group (already role-filtered). */
@@ -152,7 +156,7 @@ export interface LayoutOptions extends NavFlags {
 }
 
 export async function layout(views: Fetcher, opts: LayoutOptions): Promise<string> {
-  const { admin = false, userName = '', userRole = '', userAvatar = '', userCredits = 0 } = opts;
+  const { admin = false, userName = '', userRole = '', userAvatar = '', userCredits = 0, sharedCredits = 0 } = opts;
   const normalizedUserAvatar = userAvatar.trim();
   const hasUserAvatar = normalizedUserAvatar.length > 0;
   const userRoleLabel = userRole.split(',').map((role) => role.trim()).filter(Boolean).join(', ');
@@ -169,6 +173,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     hasUserAvatar,
     userRoleLabel,
     userCredits,
+    sharedCredits,
     userInitial: userName.trim().charAt(0).toUpperCase() || '?',
     appIcon: opts.appIcon || 'document',
     contentClass: admin ? 'md:ml-64' : '',

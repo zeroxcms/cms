@@ -5,12 +5,19 @@ import { clearConfigCache } from '../src/plugins/config';
 import { signJWT } from '../src/utils/jwt';
 import {
   adjustCredits,
+  adjustSharedCredits,
   chargeCredits,
   declaredCredits,
+  donateSharedCredits,
   getCreditBalance,
+  getSharedCreditBalance,
   loadCreditValues,
   saveCreditValues,
+  spendCredits,
+  transferCredits,
+  transferSharedCredits,
 } from '../src/utils/credits';
+import { clearRolePermissionsCache } from '../src/utils/roles';
 import type { JWTPayload, PluginManifest } from '../src/types';
 
 // Credit system: manifest-declared costs, admin-configured prices, charged by
@@ -115,6 +122,14 @@ async function seedUser(id: number, credits: number): Promise<void> {
   ).bind(id, `test:${id}`, `user${id}@example.com`, credits).run();
 }
 
+async function seedNonAdmin(id: number, credits: number, email: string, role = 'editor'): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO users (id, oauth_id, email, name, role, credits)
+     VALUES (?, ?, ?, 'Recipient', ?, ?)
+     ON CONFLICT(id) DO UPDATE SET credits = excluded.credits, role = excluded.role, email = excluded.email`,
+  ).bind(id, `test:${id}`, email, role, credits).run();
+}
+
 async function balance(id: number): Promise<number | null> {
   return getCreditBalance(env, id);
 }
@@ -123,6 +138,19 @@ async function ledgerRows(id: number): Promise<Array<{ delta: number; balance_af
   const rows = await env.DB.prepare(
     'SELECT delta, balance_after, action FROM credit_ledger WHERE user_id = ? ORDER BY id ASC',
   ).bind(id).all<{ delta: number; balance_after: number; action: string }>();
+  return rows.results;
+}
+
+async function seedSharedPool(amount: number): Promise<void> {
+  await env.DB.prepare(
+    'INSERT INTO shared_credits (id, balance) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET balance = excluded.balance',
+  ).bind(amount).run();
+}
+
+async function sharedLedgerRows(): Promise<Array<{ delta: number; balance_after: number; action: string; user_id: number | null }>> {
+  const rows = await env.DB.prepare(
+    'SELECT delta, balance_after, action, user_id FROM shared_credit_ledger ORDER BY id ASC',
+  ).all<{ delta: number; balance_after: number; action: string; user_id: number | null }>();
   return rows.results;
 }
 
@@ -135,6 +163,8 @@ beforeEach(async () => {
   await env.DB.prepare('DELETE FROM plugins').run();
   await env.DB.prepare('DELETE FROM plugin_page_type_approvals').run();
   await env.DB.prepare('DELETE FROM credit_ledger').run();
+  await env.DB.prepare('DELETE FROM shared_credit_ledger').run();
+  await seedSharedPool(0);
   await env.DB.prepare("DELETE FROM settings WHERE key LIKE 'plugin.credits.%' OR key LIKE 'plugin.limits.%'").run();
   await env.DB.prepare("DELETE FROM draft_pages WHERE page_type IN ('event','guest','mail_list','contact')").run();
   await env.DB.prepare("DELETE FROM trash_pages WHERE page_type IN ('event','guest','mail_list','contact')").run();
@@ -251,7 +281,7 @@ describe('/__cms page-create charging', () => {
     expect(res.status).toBe(402);
     const body = await res.json() as { error: string; credit: { required: number; balance: number } };
     expect(body.error).toBe('insufficient_credits');
-    expect(body.credit).toEqual({ required: 100, balance: 99 });
+    expect(body.credit).toEqual({ required: 100, balance: 99, shared_balance: 0 });
 
     const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM draft_pages WHERE page_type = 'event'")
       .first<{ n: number }>();
@@ -342,7 +372,7 @@ describe('/__cms credits endpoints', () => {
     await seedUser(PAYER_ID, 5);
     const res = await cmsApiAs(PAYER_ID, 'POST', '/__cms/credits/charge', { key: 'send_edm', quantity: 10 });
     expect(res.status).toBe(402);
-    expect((await res.json() as { credit: unknown }).credit).toEqual({ required: 20, balance: 5 });
+    expect((await res.json() as { credit: unknown }).credit).toEqual({ required: 20, balance: 5, shared_balance: 0 });
   });
 });
 
@@ -430,6 +460,110 @@ describe('admin credit management', () => {
   });
 });
 
+describe('credit transfers', () => {
+  const RECIPIENT_ID = 700;
+  const RECIPIENT_EMAIL = 'recipient@example.com';
+
+  it('moves credits and writes a paired ledger row on each side', async () => {
+    await seedUser(ADMIN_ID, 100);
+    const result = await transferCredits(env, {
+      fromUserId: ADMIN_ID, toUserId: PAYER_ID, amount: 30, note: 'thanks', createdBy: String(ADMIN_ID),
+    });
+    expect(result).toMatchObject({ ok: true, senderBalance: 70, recipientBalance: 30 });
+    expect(await balance(ADMIN_ID)).toBe(70);
+    expect(await balance(PAYER_ID)).toBe(30);
+    expect(await ledgerRows(ADMIN_ID)).toEqual([{ delta: -30, balance_after: 70, action: 'transfer:send' }]);
+    expect(await ledgerRows(PAYER_ID)).toEqual([{ delta: 30, balance_after: 30, action: 'transfer:receive' }]);
+  });
+
+  it('fails closed on insufficient balance, touching neither user', async () => {
+    await seedUser(ADMIN_ID, 10);
+    const result = await transferCredits(env, {
+      fromUserId: ADMIN_ID, toUserId: PAYER_ID, amount: 30, createdBy: String(ADMIN_ID),
+    });
+    expect(result).toMatchObject({ ok: false, error: 'insufficient_credits', balance: 10, required: 30 });
+    expect(await balance(ADMIN_ID)).toBe(10);
+    expect(await balance(PAYER_ID)).toBe(0);
+    expect(await ledgerRows(ADMIN_ID)).toEqual([]);
+    expect(await ledgerRows(PAYER_ID)).toEqual([]);
+  });
+
+  it('sends credits to another user from the profile page', async () => {
+    await seedUser(ADMIN_ID, 250);
+    await seedNonAdmin(RECIPIENT_ID, 0, RECIPIENT_EMAIL);
+    const res = await adminFetch('/admin/profile/credits/transfer', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ recipient: RECIPIENT_EMAIL, amount: '40', note: 'lunch' }),
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toContain('flash=');
+    expect(await balance(ADMIN_ID)).toBe(210);
+    expect(await balance(RECIPIENT_ID)).toBe(40);
+    expect((await ledgerRows(RECIPIENT_ID))[0]).toMatchObject({ delta: 40, action: 'transfer:receive' });
+  });
+
+  it('matches the recipient email case-insensitively', async () => {
+    await seedUser(ADMIN_ID, 100);
+    await seedNonAdmin(RECIPIENT_ID, 0, RECIPIENT_EMAIL);
+    const res = await adminFetch('/admin/profile/credits/transfer', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ recipient: 'Recipient@Example.com', amount: '5' }),
+    });
+    expect(res.headers.get('location')).toContain('flash=');
+    expect(await balance(RECIPIENT_ID)).toBe(5);
+  });
+
+  it('refuses sending to yourself, to an admin, or to an unknown email', async () => {
+    await seedUser(ADMIN_ID, 100);
+    // seedUser stores ADMIN_ID's email as user1@example.com.
+    const toSelf = await adminFetch('/admin/profile/credits/transfer', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ recipient: `user${ADMIN_ID}@example.com`, amount: '10' }),
+    });
+    expect(toSelf.headers.get('location')).toContain('yourself');
+
+    const toAdmin = await adminFetch('/admin/profile/credits/transfer', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ recipient: `user${PAYER_ID}@example.com`, amount: '10' }),
+    });
+    expect(toAdmin.headers.get('location')).toContain('administrator');
+
+    const toNobody = await adminFetch('/admin/profile/credits/transfer', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ recipient: 'ghost@example.com', amount: '10' }),
+    });
+    expect(toNobody.headers.get('location')).toContain('error=');
+
+    expect(await balance(ADMIN_ID)).toBe(100);
+  });
+
+  it('rejects a transfer that would overdraw the sender', async () => {
+    await seedUser(ADMIN_ID, 5);
+    await seedNonAdmin(RECIPIENT_ID, 0, RECIPIENT_EMAIL);
+    const res = await adminFetch('/admin/profile/credits/transfer', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ recipient: RECIPIENT_EMAIL, amount: '50' }),
+    });
+    expect(res.headers.get('location')).toContain('error=Not+enough+credits');
+    expect(await balance(ADMIN_ID)).toBe(5);
+    expect(await balance(RECIPIENT_ID)).toBe(0);
+  });
+
+  it('renders the send-credits form on the profile page', async () => {
+    await seedUser(ADMIN_ID, 100);
+    const res = await adminFetch('/admin/profile');
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('/admin/profile/credits/transfer');
+  });
+});
+
 describe('profile and plugins-manage pages', () => {
   it('shows the balance and recent activity on the profile', async () => {
     await seedUser(ADMIN_ID, 180);
@@ -484,5 +618,316 @@ describe('profile and plugins-manage pages', () => {
     });
     expect(save.status).toBe(302);
     expect(await loadCreditValues(env, PLUGIN_ID)).toEqual({ create_event: 10, send_edm: 0 });
+  });
+});
+
+describe('shared credit pool', () => {
+  it('grants and deducts atomically with a guarded ledger', async () => {
+    const grant = await adjustSharedCredits(env, { delta: 500, action: 'admin:adjust', createdBy: '1' });
+    expect(grant).toMatchObject({ ok: true, balanceAfter: 500 });
+    expect(await getSharedCreditBalance(env)).toBe(500);
+
+    const overdraw = await adjustSharedCredits(env, { delta: -600, action: 'admin:adjust', createdBy: '1' });
+    expect(overdraw).toMatchObject({ ok: false, error: 'insufficient_credits', balance: 500 });
+    expect(await getSharedCreditBalance(env)).toBe(500);
+    expect(await sharedLedgerRows()).toEqual([
+      { delta: 500, balance_after: 500, action: 'admin:adjust', user_id: null },
+    ]);
+  });
+
+  it('spendCredits charges the user when their balance covers it', async () => {
+    await seedUser(PAYER_ID, 100);
+    await seedSharedPool(100);
+    const result = await spendCredits(env, { userId: PAYER_ID, amount: 30, action: 'test:spend', createdBy: 'test' });
+    expect(result).toMatchObject({ ok: true, source: 'user', balanceAfter: 70 });
+    expect(await getSharedCreditBalance(env)).toBe(100);
+    expect(await sharedLedgerRows()).toEqual([]);
+  });
+
+  it('spendCredits falls back to the pool for the full amount when the user is short', async () => {
+    await seedUser(PAYER_ID, 10);
+    await seedSharedPool(100);
+    const result = await spendCredits(env, { userId: PAYER_ID, amount: 30, action: 'test:spend', createdBy: 'test' });
+    expect(result).toMatchObject({ ok: true, source: 'shared', balanceAfter: 70 });
+    // All-or-nothing per pool: the user's own 10 credits are untouched.
+    expect(await balance(PAYER_ID)).toBe(10);
+    expect(await ledgerRows(PAYER_ID)).toEqual([]);
+    expect(await sharedLedgerRows()).toEqual([
+      { delta: -30, balance_after: 70, action: 'test:spend', user_id: PAYER_ID },
+    ]);
+  });
+
+  it('spendCredits fails closed when neither balance covers it', async () => {
+    await seedUser(PAYER_ID, 10);
+    await seedSharedPool(20);
+    const result = await spendCredits(env, { userId: PAYER_ID, amount: 30, action: 'test:spend', createdBy: 'test' });
+    expect(result).toMatchObject({ ok: false, error: 'insufficient_credits', balance: 10, sharedBalance: 20, required: 30 });
+    expect(await balance(PAYER_ID)).toBe(10);
+    expect(await getSharedCreditBalance(env)).toBe(20);
+  });
+
+  it('spendCredits never lets an unknown user drain the pool', async () => {
+    await seedSharedPool(100);
+    const result = await spendCredits(env, { userId: 999999, amount: 30, action: 'test:spend', createdBy: 'test' });
+    expect(result).toMatchObject({ ok: false, error: 'unknown_user' });
+    expect(await getSharedCreditBalance(env)).toBe(100);
+  });
+
+  it('donateSharedCredits moves a user\'s own credits into the pool with paired ledger rows', async () => {
+    await seedUser(PAYER_ID, 100);
+    const result = await donateSharedCredits(env, { fromUserId: PAYER_ID, amount: 40, note: 'chip in', createdBy: String(PAYER_ID) });
+    expect(result).toMatchObject({ ok: true, balanceAfter: 60, sharedBalance: 40 });
+    expect(await balance(PAYER_ID)).toBe(60);
+    expect(await getSharedCreditBalance(env)).toBe(40);
+    expect(await ledgerRows(PAYER_ID)).toEqual([{ delta: -40, balance_after: 60, action: 'shared:donate' }]);
+    expect(await sharedLedgerRows()).toEqual([
+      { delta: 40, balance_after: 40, action: 'shared:donate', user_id: PAYER_ID },
+    ]);
+  });
+
+  it('donateSharedCredits fails closed when the donor is short', async () => {
+    await seedUser(PAYER_ID, 10);
+    const result = await donateSharedCredits(env, { fromUserId: PAYER_ID, amount: 40, createdBy: String(PAYER_ID) });
+    expect(result).toMatchObject({ ok: false, error: 'insufficient_credits', balance: 10, required: 40 });
+    expect(await balance(PAYER_ID)).toBe(10);
+    expect(await getSharedCreditBalance(env)).toBe(0);
+    expect(await sharedLedgerRows()).toEqual([]);
+  });
+
+  it('transferSharedCredits moves pool credits to a user with paired ledger rows', async () => {
+    await seedSharedPool(200);
+    const result = await transferSharedCredits(env, { toUserId: PAYER_ID, amount: 80, note: 'budget', createdBy: '1' });
+    expect(result).toMatchObject({ ok: true, sharedBalance: 120, recipientBalance: 80 });
+    expect(await balance(PAYER_ID)).toBe(80);
+    expect(await sharedLedgerRows()).toEqual([
+      { delta: -80, balance_after: 120, action: 'shared:send', user_id: PAYER_ID },
+    ]);
+    expect(await ledgerRows(PAYER_ID)).toEqual([
+      { delta: 80, balance_after: 80, action: 'shared:receive' },
+    ]);
+  });
+
+  it('transferSharedCredits fails closed when the pool is short or the user unknown', async () => {
+    await seedSharedPool(50);
+    const short = await transferSharedCredits(env, { toUserId: PAYER_ID, amount: 80, createdBy: '1' });
+    expect(short).toMatchObject({ ok: false, error: 'insufficient_credits', balance: 50, required: 80 });
+    expect(await getSharedCreditBalance(env)).toBe(50);
+    expect(await balance(PAYER_ID)).toBe(0);
+
+    // Unknown recipient: the pool debit is auto-refunded, never destroyed.
+    const ghost = await transferSharedCredits(env, { toUserId: 999999, amount: 30, createdBy: '1' });
+    expect(ghost).toMatchObject({ ok: false, error: 'unknown_user' });
+    expect(await getSharedCreditBalance(env)).toBe(50);
+  });
+});
+
+describe('shared pool at charge sites', () => {
+  it('covers a /__cms page create the user cannot afford', async () => {
+    await seedUser(PAYER_ID, 40);
+    await seedSharedPool(150);
+    const res = await cmsApiAs(PAYER_ID, 'POST', '/__cms/pages', { page_type: 'event', name: 'Pooled' });
+    expect(res.status).toBe(201);
+    expect(await balance(PAYER_ID)).toBe(40);
+    expect(await ledgerRows(PAYER_ID)).toEqual([]);
+    expect(await sharedLedgerRows()).toEqual([
+      { delta: -100, balance_after: 50, action: 'events:create_event', user_id: PAYER_ID },
+    ]);
+  });
+
+  it('rejects with both balances when neither covers a create', async () => {
+    await seedUser(PAYER_ID, 40);
+    await seedSharedPool(60);
+    const res = await cmsApiAs(PAYER_ID, 'POST', '/__cms/pages', { page_type: 'event', name: 'Broke' });
+    expect(res.status).toBe(402);
+    const body = await res.json() as { credit: unknown };
+    expect(body.credit).toEqual({ required: 100, balance: 40, shared_balance: 60 });
+    expect(await getSharedCreditBalance(env)).toBe(60);
+  });
+
+  it('covers a metered charge and reports the source', async () => {
+    await seedUser(PAYER_ID, 5);
+    await seedSharedPool(100);
+    const res = await cmsApiAs(PAYER_ID, 'POST', '/__cms/credits/charge', { key: 'send_edm', quantity: 30 });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, charged: 60, balance: 5, source: 'shared' });
+    expect(await getSharedCreditBalance(env)).toBe(40);
+  });
+
+  it('quotes affordability against the pool too', async () => {
+    await seedUser(PAYER_ID, 5);
+    await seedSharedPool(200);
+    const res = await cmsApiAs(PAYER_ID, 'GET', '/__cms/credits/quote?key=send_edm&quantity=60');
+    const body = await res.json() as Record<string, unknown>;
+    expect(body).toMatchObject({ total: 120, balance: 5, shared_balance: 200, affordable: true });
+  });
+
+  it('covers an admin editor create when the editor is short', async () => {
+    await seedUser(ADMIN_ID, 10);
+    await seedSharedPool(300);
+    const res = await adminFetch('/admin/pages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ name: 'Pooled Event', slug: 'pooled-event', page_type: 'event' }),
+    });
+    expect(res.status).toBe(302);
+    expect(await balance(ADMIN_ID)).toBe(10);
+    expect(await getSharedCreditBalance(env)).toBe(200);
+    expect((await sharedLedgerRows())[0]).toMatchObject({ delta: -100, action: 'events:create_event', user_id: ADMIN_ID });
+  });
+});
+
+describe('shared credit administration', () => {
+  it('adjusts the pool from the users admin with a mandatory note', async () => {
+    const grant = await adminFetch('/admin/users/shared-credits', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ amount: '500', note: 'Quarterly budget' }),
+    });
+    expect(grant.status).toBe(302);
+    expect(grant.headers.get('location')).toContain('flash=');
+    expect(await getSharedCreditBalance(env)).toBe(500);
+
+    const noNote = await adminFetch('/admin/users/shared-credits', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ amount: '50', note: '' }),
+    });
+    expect(noNote.headers.get('location')).toContain('error=');
+
+    const overdraw = await adminFetch('/admin/users/shared-credits', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ amount: '-900', note: 'Clawback' }),
+    });
+    expect(overdraw.headers.get('location')).toContain('error=');
+    expect(await getSharedCreditBalance(env)).toBe(500);
+  });
+
+  it('shows the pool balance and ledger on the users admin', async () => {
+    await seedSharedPool(0);
+    await adjustSharedCredits(env, { delta: 250, action: 'admin:adjust', note: 'seed', createdBy: '1' });
+    const res = await adminFetch('/admin/users');
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('sharedCreditBalance');
+    expect(html).toContain('/admin/users/shared-credits');
+  });
+
+  it('lets a user donate their own credits to the pool from the profile', async () => {
+    await seedUser(ADMIN_ID, 100);
+    const res = await adminFetch('/admin/profile/credits/shared', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ amount: '60', note: 'chip in' }),
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toContain('flash=');
+    expect(await balance(ADMIN_ID)).toBe(40);
+    expect(await getSharedCreditBalance(env)).toBe(60);
+    expect((await ledgerRows(ADMIN_ID))[0]).toMatchObject({ delta: -60, action: 'shared:donate' });
+    expect(await sharedLedgerRows()).toEqual([
+      { delta: 60, balance_after: 60, action: 'shared:donate', user_id: ADMIN_ID },
+    ]);
+  });
+
+  it('rejects a donation the donor cannot cover or with a non-positive amount', async () => {
+    await seedUser(ADMIN_ID, 10);
+    await seedSharedPool(0);
+    const short = await adminFetch('/admin/profile/credits/shared', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ amount: '60' }),
+    });
+    expect(short.headers.get('location')).toContain('error=');
+
+    const zero = await adminFetch('/admin/profile/credits/shared', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ amount: '0' }),
+    });
+    expect(zero.headers.get('location')).toContain('error=');
+    expect(await balance(ADMIN_ID)).toBe(10);
+    expect(await getSharedCreditBalance(env)).toBe(0);
+
+    const page = await adminFetch('/admin/profile');
+    expect(await page.text()).toContain('/admin/profile/credits/shared');
+  });
+
+  it('grants pool credits to a user from the user edit page', async () => {
+    await seedSharedPool(200);
+    const res = await adminFetch(`/admin/users/${PAYER_ID}/credits/shared`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ amount: '60', note: 'campaign budget' }),
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toContain('flash=');
+    expect(await getSharedCreditBalance(env)).toBe(140);
+    expect(await balance(PAYER_ID)).toBe(60);
+    expect((await ledgerRows(PAYER_ID))[0]).toMatchObject({ delta: 60, action: 'shared:receive' });
+    expect(await sharedLedgerRows()).toEqual([
+      { delta: -60, balance_after: 140, action: 'shared:send', user_id: PAYER_ID },
+    ]);
+
+    // The pool cannot be overdrawn by a grant either.
+    const short = await adminFetch(`/admin/users/${PAYER_ID}/credits/shared`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ amount: '900' }),
+    });
+    expect(short.headers.get('location')).toContain('error=');
+    expect(await getSharedCreditBalance(env)).toBe(140);
+
+    const editPage = await adminFetch(`/admin/users/${PAYER_ID}/edit`);
+    const html = await editPage.text();
+    expect(html).toContain('"canShareCredits":true');
+    expect(html).toContain(`/admin/users/${PAYER_ID}/credits/shared`);
+  });
+
+  it('grants the shared grant to a custom role holding only credits:share, and 403s without it', async () => {
+    await seedSharedPool(200);
+    await seedNonAdmin(ADMIN_ID, 0, `user${ADMIN_ID}@example.com`, 'supporter');
+    await env.DB.prepare("INSERT OR IGNORE INTO roles (name, label, builtin) VALUES ('supporter', 'Supporter', 0)").run();
+    await env.DB.prepare("INSERT OR IGNORE INTO role_permissions (role, permission) VALUES ('supporter', 'credits:share')").run();
+    clearRolePermissionsCache();
+
+    try {
+      // credits:share alone is enough — no users:manage needed for the grant.
+      const allowed = await worker.fetch(new Request(`http://localhost/admin/users/${PAYER_ID}/credits/shared`, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: {
+          Cookie: await authCookie('supporter'),
+          'Sec-Fetch-Site': 'same-origin',
+          'CF-Connecting-IP': '10.9.0.1',
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ amount: '30' }),
+      }));
+      expect(allowed.status).toBe(302);
+      expect(await balance(PAYER_ID)).toBe(30);
+      expect(await getSharedCreditBalance(env)).toBe(170);
+
+      await env.DB.prepare("DELETE FROM role_permissions WHERE role = 'supporter'").run();
+      clearRolePermissionsCache();
+      const denied = await worker.fetch(new Request(`http://localhost/admin/users/${PAYER_ID}/credits/shared`, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: {
+          Cookie: await authCookie('supporter,editor'),
+          'Sec-Fetch-Site': 'same-origin',
+          'CF-Connecting-IP': '10.9.0.2',
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ amount: '30' }),
+      }));
+      expect(denied.status).toBe(403);
+      expect(await getSharedCreditBalance(env)).toBe(170);
+    } finally {
+      await env.DB.prepare("DELETE FROM role_permissions WHERE role = 'supporter'").run();
+      await env.DB.prepare("DELETE FROM roles WHERE name = 'supporter'").run();
+      await seedNonAdmin(ADMIN_ID, 0, `user${ADMIN_ID}@example.com`, 'admin');
+      clearRolePermissionsCache();
+    }
   });
 });

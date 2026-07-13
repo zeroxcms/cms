@@ -2287,7 +2287,7 @@ describe('permission-aware admin UI', () => {
     expect(adminPayload.layoutData.canManageRoles).toBe(true);
     expect(adminPayload.layoutData.canManageMenu).toBe(true);
     expect(adminPayload.layoutData.sidebarSettingsNav).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'Users' }),
+      expect.objectContaining({ label: 'Users & Credits' }),
       expect.objectContaining({ label: 'Roles' }),
       expect.objectContaining({ label: 'System' }),
     ]));

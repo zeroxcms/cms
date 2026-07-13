@@ -2,6 +2,9 @@ import { adminLayout, type BaseTemplateProps } from './layout';
 import { renderView } from './liquid';
 import type { CreditLedgerRow } from '../utils/credits';
 
+/** The display-relevant columns shared by credit_ledger and shared_credit_ledger rows. */
+type CreditLedgerViewSource = Pick<CreditLedgerRow, 'delta' | 'balance_after' | 'action' | 'note' | 'created_by' | 'created_at'>;
+
 export async function usersPage(views: Fetcher, opts: BaseTemplateProps & {
   users: Array<{
     id: number;
@@ -15,6 +18,9 @@ export async function usersPage(views: Fetcher, opts: BaseTemplateProps & {
   }>;
   flash?: string;
   error?: string;
+  sharedCreditBalance: number;
+  sharedCreditAction: string;
+  sharedCreditLedger: UserCreditLedgerRow[];
 }): Promise<string> {
   const { users } = opts;
   const body = await renderView(views, '/templates/users.json', {
@@ -24,6 +30,10 @@ export async function usersPage(views: Fetcher, opts: BaseTemplateProps & {
     hasError: !!opts.error,
     hasUsers: users.length > 0,
     users,
+    sharedCreditBalance: opts.sharedCreditBalance,
+    sharedCreditAction: opts.sharedCreditAction,
+    hasSharedCreditLedger: opts.sharedCreditLedger.length > 0,
+    sharedCreditLedger: opts.sharedCreditLedger,
   });
   return adminLayout(views, opts, { title: 'Users', body });
 }
@@ -38,9 +48,9 @@ export interface UserCreditLedgerRow {
   createdAt: string;
 }
 
-/** Maps a credit_ledger row to the display shape shared by the users admin
- *  and the profile page. */
-export function creditLedgerRowForView(row: CreditLedgerRow): UserCreditLedgerRow {
+/** Maps a credit_ledger or shared_credit_ledger row to the display shape
+ *  shared by the users admin and the profile page. */
+export function creditLedgerRowForView(row: CreditLedgerViewSource): UserCreditLedgerRow {
   return {
     delta: row.delta > 0 ? `+${row.delta}` : String(row.delta),
     isSpend: row.delta < 0,
@@ -61,6 +71,9 @@ export async function userFormPage(views: Fetcher, opts: BaseTemplateProps & {
   roleOptions: Array<{ value: string; label: string; checked: boolean }>;
   creditBalance: number;
   creditAdjustAction: string;
+  canShareCredits: boolean;
+  sharedCreditBalance: number;
+  sharedGrantAction: string;
   creditLedger: UserCreditLedgerRow[];
 }): Promise<string> {
   const { id, name, email, error, flash, roleOptions } = opts;
@@ -75,6 +88,9 @@ export async function userFormPage(views: Fetcher, opts: BaseTemplateProps & {
     roleOptions,
     creditBalance: opts.creditBalance,
     creditAdjustAction: opts.creditAdjustAction,
+    canShareCredits: opts.canShareCredits,
+    sharedCreditBalance: opts.sharedCreditBalance,
+    sharedGrantAction: opts.sharedGrantAction,
     hasCreditLedger: opts.creditLedger.length > 0,
     creditLedger: opts.creditLedger,
   });

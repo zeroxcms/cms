@@ -32,6 +32,7 @@ export const PERMISSIONS = [
   'blocktype:write',  // create / edit / delete database-defined block types
   'users:manage',     // view users and assign their roles
   'roles:manage',     // create / edit / delete roles and their permissions
+  'credits:share',    // transfer credits from the shared pool to a user
 ] as const;
 
 export type Permission = typeof PERMISSIONS[number];
@@ -55,6 +56,7 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   'blocktype:write': 'Manage block types',
   'users:manage': 'Manage users and their roles',
   'roles:manage': 'Manage roles and permissions',
+  'credits:share': 'Transfer shared credits to a user',
 };
 
 /** A role with a stored permission set (custom role, or a customized built-in). */

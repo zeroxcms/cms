@@ -13,7 +13,7 @@ export const SIDEBAR_MENU_ITEMS = [
   { key: 'taxonomies', label: 'Taxonomies', description: 'Taxonomy settings link.', href: '/admin/taxonomies', icon: 'list-filter', group: 'settings', defaultWeight: 10 },
   { key: 'pageTypes', label: 'Page Types', description: 'Database-defined page type settings link.', href: '/admin/page_types', icon: 'list', group: 'settings', defaultWeight: 20 },
   { key: 'blockTypes', label: 'Block Types', description: 'Database-defined block settings link.', href: '/admin/block_types', icon: 'blocks', group: 'settings', defaultWeight: 30 },
-  { key: 'users', label: 'Users', description: 'User management link for permitted roles.', href: '/admin/users', icon: 'users', group: 'settings', defaultWeight: 40 },
+  { key: 'users', label: 'Users & Credits', description: 'User and credit management link for permitted roles.', href: '/admin/users', icon: 'users', group: 'settings', defaultWeight: 40 },
   { key: 'roles', label: 'Roles', description: 'Role and permission management link.', href: '/admin/roles', icon: 'shield-check', group: 'settings', defaultWeight: 50 },
   { key: 'plugins', label: 'Plugins', description: 'Plugin registry settings link.', href: '/admin/plugins-manage', icon: 'beaker', group: 'settings', defaultWeight: 60 },
   { key: 'system', label: 'System', description: 'App branding, menu visibility, and menu order.', href: '/admin/settings/system', icon: 'settings', group: 'settings', defaultWeight: 70 },

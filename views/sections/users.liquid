@@ -9,6 +9,63 @@
   {% if hasError %}
     <div data-users-alert class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ error | escape }}</div>
   {% endif %}
+
+  <div class="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 p-5 sm:p-6">
+    <div class="mb-4">
+      <h3 class="text-lg font-semibold text-gray-900">Shared credits</h3>
+      <p class="mt-1 text-sm text-gray-500">A site-wide pool that covers spends a user's own balance can't. Anyone can donate their own credits into it from their profile; holders of the "Transfer shared credits to a user" permission can grant pool credits from a user's edit page.</p>
+    </div>
+    <p class="text-2xl font-bold text-gray-900">{{ sharedCreditBalance }}</p>
+
+    <form method="POST" action="{{ sharedCreditAction | escape }}"
+          data-confirm="Apply this shared-pool adjustment?"
+          class="mt-5 max-w-md space-y-3 border-t border-gray-100 pt-5">
+      <h4 class="text-sm font-semibold text-gray-900">Adjust pool</h4>
+      <p class="text-xs text-gray-500">Positive grants, negative deducts. The pool can never go below zero.</p>
+      <label class="block">
+        <span class="block text-sm font-medium text-gray-700 mb-1">Amount</span>
+        <input name="amount" type="number" step="1" required placeholder="e.g. 500 or -100"
+               class="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+      </label>
+      <label class="block">
+        <span class="block text-sm font-medium text-gray-700 mb-1">Note</span>
+        <input name="note" type="text" maxlength="300" required placeholder="Why the pool is changing"
+               class="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+      </label>
+      <button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white hover:bg-indigo-700">Adjust pool</button>
+    </form>
+
+    {% if hasSharedCreditLedger %}
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[560px] text-left text-sm">
+          <thead class="bg-gray-50 text-left text-xs uppercase text-gray-500">
+            <tr>
+              <th class="px-4 py-2">When</th>
+              <th class="px-4 py-2">Action</th>
+              <th class="px-4 py-2">Change</th>
+              <th class="px-4 py-2">Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in sharedCreditLedger %}
+              <tr class="border-t border-gray-100">
+                <td class="px-4 py-3 text-xs text-gray-500">{{ entry.createdAt | escape }}</td>
+                <td class="px-4 py-3">
+                  <span class="font-mono text-xs">{{ entry.action | escape }}</span>
+                  {% if entry.note != '' %}<div class="text-xs text-gray-500 mt-0.5">{{ entry.note | escape }}</div>{% endif %}
+                </td>
+                <td class="px-4 py-3 text-sm {% if entry.isSpend %}text-red-700{% else %}text-green-700{% endif %}">{{ entry.delta | escape }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700">{{ entry.balanceAfter }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="mt-3 text-sm text-gray-500">No shared-credit activity yet.</p>
+    {% endif %}
+  </div>
+
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
     <table class="w-full min-w-[680px] text-left" data-privacy-table>
       <thead class="bg-gray-50 border-b border-gray-200">

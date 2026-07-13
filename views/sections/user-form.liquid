@@ -44,6 +44,29 @@
       <button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Apply adjustment</button>
     </form>
 
+    {% if canShareCredits %}
+      <form method="POST" action="{{ sharedGrantAction | escape }}"
+            data-confirm="Grant shared-pool credits to this user?"
+            class="mt-5 space-y-3 border-t border-gray-100 pt-5">
+        <h4 class="text-sm font-semibold text-gray-900">Grant from shared pool</h4>
+        <p class="text-xs text-gray-500">
+          Shared pool balance: <span class="font-semibold text-gray-900">{{ sharedCreditBalance }}</span>.
+          Move credits from the site-wide pool into this user's balance.
+        </p>
+        <label class="block">
+          <span class="block text-sm font-medium text-gray-700 mb-1">Amount</span>
+          <input name="amount" type="number" step="1" min="1" required placeholder="e.g. 100"
+                 class="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+        </label>
+        <label class="block">
+          <span class="block text-sm font-medium text-gray-700 mb-1">Note <span class="text-gray-400">(optional)</span></span>
+          <input name="note" type="text" maxlength="300" placeholder="What this grant is for"
+                 class="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+        </label>
+        <button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Grant credits</button>
+      </form>
+    {% endif %}
+
     {% if hasCreditLedger %}
       <div class="mt-4 overflow-x-auto">
         <table class="w-full min-w-[560px] text-left text-sm">

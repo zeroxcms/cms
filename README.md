@@ -12,6 +12,7 @@ Content management system on Workers
 - **Tailwind CSS + VanillaJS** admin UI with inline HTML toolbar for content editing
 - **Plugins** – extend the CMS with separate Worker plugins (lifecycle hooks, content types, fields/blocks, admin pages, publish targets). See [Plugins](#plugins).
 - **Pluggable publish targets** – publishing fans out to one or more adapters: the published D1 database (default), static JSON in an R2 bucket, or any plugin Worker (IPFS, webhooks, search indexes). See [Publish targets](#publish-targets).
+- **Credits** – per-user balances that meter chargeable plugin actions; atomic, overdraft-proof, ledger-audited, with admin grants, user-to-user transfers, and a shared site-wide pool that covers users who run out. See [Credits](#credits).
 
 ---
 
@@ -414,6 +415,47 @@ served on the CMS origin.
 
 ---
 
+## Credits
+
+Some actions cost **credits**, a per-user balance the host meters and charges.
+Plugins declare their chargeable actions in the manifest (`credits`); an admin
+sets prices under **Plugins → Credits**. `page_create` costs are charged
+automatically by the host every time a page of that type is created (both the
+`/__cms` write-back API and the built-in editor); `metered` costs are reported
+by the plugin via `POST /__cms/credits/charge`. Charging is atomic and
+overdraft-proof — a balance can never go below zero — and every change is
+appended to the `credit_ledger` audit trail shown on the profile page.
+
+**Managing balances (admin).** From **Users → _(a user)_ → Credits**, an admin
+grants or deducts credits with a mandatory note. Deductions use the same
+overdraft guard as spends.
+
+**Transferring credits (any admin-area user).** From your own **Profile →
+Credits**, you can send credits to another user by email. The move is atomic
+and overdraft-guarded, and writes a paired ledger row on each side
+(`transfer:send` / `transfer:receive`). Two rules apply: you cannot send to
+yourself, and you cannot send to an administrator — admins manage credits
+through the users admin above rather than by receiving transfers.
+
+**Shared credit pool.** Besides per-user balances there is one site-wide pool
+(`shared_credits`) with its own append-only ledger — it belongs to all users.
+When a charged action costs more than the acting user's own balance, the pool
+pays the **full** amount instead (all-or-nothing per pool, never split),
+recorded in the shared ledger with that user as beneficiary; a spend fails
+with 402 only when neither balance covers it. Credits flow **into** the pool
+two ways: any user can donate their own credits from their **Profile**
+(`shared:donate`, paired rows on both ledgers), and admins top it up — or
+claw it back, note required — from the **Users** admin. Credits flow **out**
+only through the automatic fallback above or through the privileged grant:
+holders of the `credits:share` permission ("Transfer shared credits to a
+user") get a **Grant from shared pool** form on a user's edit page that moves
+pool credits into that user's balance (`shared:send` / `shared:receive`) —
+users can never pull pool credits into their own account themselves. Admins
+always hold the permission, and it can be granted to any custom role under
+**Roles**.
+
+---
+
 ## Database schema
 
 ### CMS database (`DB`)
@@ -428,12 +470,15 @@ served on the CMS origin.
 | `taxonomies` | Taxonomy definitions (groupings that tags belong to) |
 | `tags` | Shared tag reference table (terms within a taxonomy) |
 | `media_files` | Metadata for files uploaded to private R2 |
+| `credit_ledger` | Append-only log of every credit change (spends, grants, transfers) |
+| `shared_credits` | Single-row balance of the site-wide shared credit pool |
+| `shared_credit_ledger` | Append-only log of every shared-pool change, with the beneficiary user |
 
 ### Auth tables (`DB`)
 
 | Table | Purpose |
 |-------|---------|
-| `users` | OAuth user profiles + role assignment |
+| `users` | OAuth user profiles + role assignment + credit balance |
 | `user_oauth_identities` | Linked OAuth provider identities for each user |
 | `sessions` | Hashed refresh-token JTIs for revocation |
 

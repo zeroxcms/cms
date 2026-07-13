@@ -2,10 +2,14 @@ import { Hono } from 'hono';
 import { profilePage } from '../../templates/profile';
 import type { Env, Variables, User } from '../../types';
 import { renderPage } from '../../utils/admin-render';
-import { ROLE_LABELS } from '../../utils/roles';
+import { ROLE_LABELS, splitRoles } from '../../utils/roles';
 import { allRoleOptions } from '../../utils/role-store';
-import { countCreditLedger, listCreditLedger } from '../../utils/credits';
+import { countCreditLedger, donateSharedCredits, getSharedCreditBalance, listCreditLedger, transferCredits } from '../../utils/credits';
 import { creditLedgerRowForView } from '../../templates/users';
+import { logAudit } from '../../utils/audit';
+
+const CREDIT_TRANSFER_ACTION = '/admin/profile/credits/transfer';
+const SHARED_DONATE_ACTION = '/admin/profile/credits/shared';
 
 export const profileRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -90,6 +94,7 @@ profileRoutes.get('/profile', async (c) => {
     limit: CREDIT_LEDGER_PAGE_SIZE,
     offset: (creditPage - 1) * CREDIT_LEDGER_PAGE_SIZE,
   });
+  const sharedCreditBalance = await getSharedCreditBalance(c.env);
 
   const byOAuthId = new Map<string, OAuthIdentityRow>();
   for (const identity of identityRows.results) {
@@ -133,6 +138,9 @@ profileRoutes.get('/profile', async (c) => {
     identities,
     providers,
     creditBalance: user.credits ?? 0,
+    creditTransferAction: CREDIT_TRANSFER_ACTION,
+    sharedCreditBalance,
+    sharedDonateAction: SHARED_DONATE_ACTION,
     creditLedger: creditLedger.map(creditLedgerRowForView),
     creditLedgerPagination: {
       page: creditPage,
@@ -146,6 +154,88 @@ profileRoutes.get('/profile', async (c) => {
       nextHref: profileCreditPageHref(creditPage + 1),
     },
   });
+});
+
+// Send credits to another user. Recipients are looked up by email and must be
+// a different, non-admin user (admins manage credits via the users admin, not
+// by receiving transfers). The move is atomic and overdraft-guarded in
+// transferCredits — a balance can never go below zero.
+profileRoutes.post('/profile/credits/transfer', async (c) => {
+  const userId = Number(c.get('user').sub);
+  const back = '/admin/profile';
+  const form = await c.req.formData();
+  const email = String(form.get('recipient') ?? '').trim().toLowerCase();
+  const amount = Math.trunc(Number(form.get('amount')));
+  const note = String(form.get('note') ?? '').trim().slice(0, 300);
+
+  if (!email) return c.redirect(`${back}?error=Enter+the+recipient+email`);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return c.redirect(`${back}?error=Enter+a+positive+amount`);
+  }
+
+  const recipient = await c.env.DB.prepare(
+    'SELECT id, email, role FROM users WHERE lower(email) = ?',
+  ).bind(email).first<Pick<User, 'id' | 'email' | 'role'>>();
+  if (!recipient) return c.redirect(`${back}?error=No+user+with+that+email`);
+  if (recipient.id === userId) {
+    return c.redirect(`${back}?error=You+cannot+send+credits+to+yourself`);
+  }
+  if (splitRoles(recipient.role).includes('admin')) {
+    return c.redirect(`${back}?error=Credits+cannot+be+sent+to+an+administrator`);
+  }
+
+  const result = await transferCredits(c.env, {
+    fromUserId: userId,
+    toUserId: recipient.id,
+    amount,
+    note: note || undefined,
+    createdBy: c.get('user').sub,
+  });
+  if (!result.ok) {
+    return c.redirect(result.error === 'insufficient_credits'
+      ? `${back}?error=Not+enough+credits+(balance+${result.balance})`
+      : `${back}?error=Transfer+failed`);
+  }
+
+  logAudit(c, 'user.credits.transfer', 'user', recipient.id, {
+    amount, from: userId, balance_after: result.senderBalance,
+  });
+  return c.redirect(`${back}?flash=${encodeURIComponent(`Sent ${amount} credits to ${recipient.email}`)}`);
+});
+
+// Donate credits from your OWN balance into the shared pool. The pool is for
+// all users (it covers charged actions when someone's balance runs out), so
+// there is no recipient to pick and no permission needed — the donation is
+// overdraft-guarded like any spend and ledger-audited on both sides
+// ('shared:donate'). Moving credits OUT of the pool to a user is the
+// privileged direction, gated by 'credits:share' in the users admin.
+profileRoutes.post('/profile/credits/shared', async (c) => {
+  const userId = Number(c.get('user').sub);
+  const back = '/admin/profile';
+  const form = await c.req.formData();
+  const amount = Math.trunc(Number(form.get('amount')));
+  const note = String(form.get('note') ?? '').trim().slice(0, 300);
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return c.redirect(`${back}?error=Enter+a+positive+amount`);
+  }
+
+  const result = await donateSharedCredits(c.env, {
+    fromUserId: userId,
+    amount,
+    note: note || undefined,
+    createdBy: c.get('user').sub,
+  });
+  if (!result.ok) {
+    return c.redirect(result.error === 'insufficient_credits'
+      ? `${back}?error=Not+enough+credits+(balance+${result.balance})`
+      : `${back}?error=Donation+failed`);
+  }
+
+  logAudit(c, 'user.credits.donate', 'user', userId, {
+    amount, balance_after: result.balanceAfter, shared_balance_after: result.sharedBalance,
+  });
+  return c.redirect(`${back}?flash=${encodeURIComponent(`Moved ${amount} credits into the shared pool`)}`);
 });
 
 profileRoutes.post('/profile/identities/:id/disconnect', async (c) => {

@@ -59,12 +59,14 @@ import {
   type LimitViolation,
 } from '../utils/plugin-limits';
 import {
-  chargeCredits,
   effectiveCreditsForPlugin,
   getCreditBalance,
+  getSharedCreditBalance,
   pageCreateAction,
   pageCreateCostForType,
   refundCredits,
+  spendCredits,
+  type CreditSource,
 } from '../utils/credits';
 
 export const cmsApiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -422,7 +424,7 @@ function emitPluginHooks(c: AppContext, event: HookEvent, pages: HookPage[], plu
 
 type CreateResult =
   | { ok: true; page: ApiPage }
-  | { ok: false; status: number; error: string; page_type?: string; message?: string; violation?: LimitViolation; credit?: { required: number; balance: number } };
+  | { ok: false; status: number; error: string; page_type?: string; message?: string; violation?: LimitViolation; credit?: { required: number; balance: number; shared_balance?: number } };
 
 /**
  * The user a plugin acts on behalf of, echoed back from the `x-cms-user`
@@ -599,8 +601,9 @@ async function createPage(
   const payer = actingUserId(c);
   const chargeAction = pageCreateAction(preparedInput.pageType, cost);
   let charged = 0;
+  let chargeSource: CreditSource = 'user';
   if (cost.total > 0 && payer !== null) {
-    const charge = await chargeCredits(c.env, {
+    const charge = await spendCredits(c.env, {
       userId: payer,
       amount: cost.total,
       action: chargeAction,
@@ -614,10 +617,11 @@ async function createPage(
         ok: false,
         status: 402,
         error: 'insufficient_credits',
-        credit: { required: charge.required, balance: charge.balance },
+        credit: { required: charge.required, balance: charge.balance, shared_balance: charge.sharedBalance },
       };
     }
     charged = cost.total;
+    chargeSource = charge.source;
   }
 
   try {
@@ -648,7 +652,7 @@ async function createPage(
       .first<Page>();
     if (!row) {
       if (charged && payer !== null) {
-        await refundCredits(c.env, { userId: payer, amount: charged, action: chargeAction, pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
+        await refundCredits(c.env, { userId: payer, amount: charged, action: chargeAction, source: chargeSource, pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
       }
       return { ok: false, status: 500, error: 'create_failed' };
     }
@@ -660,7 +664,7 @@ async function createPage(
     return { ok: true, page: serializePage(row) };
   } catch (error) {
     if (charged && payer !== null) {
-      await refundCredits(c.env, { userId: payer, amount: charged, action: chargeAction, pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
+      await refundCredits(c.env, { userId: payer, amount: charged, action: chargeAction, source: chargeSource, pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
     }
     console.error('Plugin API create failed', error);
     return { ok: false, status: 500, error: 'create_failed' };
@@ -814,6 +818,7 @@ cmsApiRoutes.get('/credits', async (c) => {
   const credits = await effectiveCreditsForPlugin(c.env, auth.plugin);
   return c.json({
     balance: payer !== null ? await getCreditBalance(c.env, payer) : null,
+    shared_balance: await getSharedCreditBalance(c.env),
     credits: credits.map((credit) => ({
       key: credit.def.key,
       label: credit.def.label,
@@ -844,6 +849,7 @@ cmsApiRoutes.get('/credits/quote', async (c) => {
 
   const payer = actingUserId(c);
   const balance = payer !== null ? await getCreditBalance(c.env, payer) : null;
+  const sharedBalance = await getSharedCreditBalance(c.env);
   const total = credit.value * quantity;
   return c.json({
     key,
@@ -851,7 +857,10 @@ cmsApiRoutes.get('/credits/quote', async (c) => {
     quantity,
     total,
     balance,
-    affordable: total === 0 || (balance !== null && balance >= total),
+    shared_balance: sharedBalance,
+    // The shared pool covers a spend the user can't afford, so either balance
+    // covering the total makes it affordable.
+    affordable: total === 0 || (balance !== null && balance >= total) || sharedBalance >= total,
   });
 });
 
@@ -885,7 +894,7 @@ cmsApiRoutes.post('/credits/charge', async (c) => {
     return c.json({ ok: true, charged: 0, balance: await getCreditBalance(c.env, payer) });
   }
 
-  const charge = await chargeCredits(c.env, {
+  const charge = await spendCredits(c.env, {
     userId: payer,
     amount: total,
     action: `${auth.pluginId}:${key}`,
@@ -898,11 +907,14 @@ cmsApiRoutes.post('/credits/charge', async (c) => {
   if (!charge.ok) {
     if (charge.error === 'unknown_user') return c.json({ error: 'unknown_acting_user' }, 400);
     return c.json(
-      { error: 'insufficient_credits', credit: { required: charge.required, balance: charge.balance } },
+      { error: 'insufficient_credits', credit: { required: charge.required, balance: charge.balance, shared_balance: charge.sharedBalance } },
       402,
     );
   }
-  return c.json({ ok: true, charged: total, balance: charge.balanceAfter });
+  // `balance` stays the user's own balance either way; when the shared pool
+  // paid, the user's balance is unchanged and must be re-read.
+  const balance = charge.source === 'user' ? charge.balanceAfter : await getCreditBalance(c.env, payer);
+  return c.json({ ok: true, charged: total, balance, source: charge.source });
 });
 
 // List pages of a content type the plugin owns.
@@ -1201,8 +1213,9 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
     }
     const payer = actingUserId(c);
     let charged = 0;
+    let chargeSource: CreditSource = 'user';
     if (totalCost > 0 && payer !== null) {
-      const charge = await chargeCredits(c.env, {
+      const charge = await spendCredits(c.env, {
         userId: payer,
         amount: totalCost,
         action: 'page_create:batch',
@@ -1213,11 +1226,12 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
       if (!charge.ok) {
         if (charge.error === 'unknown_user') return c.json({ error: 'unknown_acting_user' }, 400);
         return c.json(
-          { error: 'insufficient_credits', credit: { required: charge.required, balance: charge.balance } },
+          { error: 'insufficient_credits', credit: { required: charge.required, balance: charge.balance, shared_balance: charge.sharedBalance } },
           402,
         );
       }
       charged = totalCost;
+      chargeSource = charge.source;
     }
 
     const usedSlugs = await existingSlugSet(c.env.DB, finalized.map((item) => item.baseSlug));
@@ -1266,7 +1280,7 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
       await c.env.DB.batch(statements);
     } catch (error) {
       if (charged && payer !== null) {
-        await refundCredits(c.env, { userId: payer, amount: charged, action: 'page_create:batch', pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
+        await refundCredits(c.env, { userId: payer, amount: charged, action: 'page_create:batch', source: chargeSource, pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
       }
       console.error('Plugin API batch create failed', error);
       return c.json({ error: 'create_failed' }, 500);
@@ -1344,8 +1358,9 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
   const payer = actingUserId(c);
   const cloneAction = pageCreateAction(pageType, cloneCost);
   let chargedClones = 0;
+  let cloneChargeSource: CreditSource = 'user';
   if (remaining > 0 && cloneCost.total > 0 && payer !== null) {
-    const charge = await chargeCredits(c.env, {
+    const charge = await spendCredits(c.env, {
       userId: payer,
       amount: cloneCost.total * remaining,
       action: cloneAction,
@@ -1357,11 +1372,12 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
     if (!charge.ok) {
       if (charge.error === 'unknown_user') return c.json({ error: 'unknown_acting_user' }, 400);
       return c.json(
-        { error: 'insufficient_credits', credit: { required: charge.required, balance: charge.balance } },
+        { error: 'insufficient_credits', credit: { required: charge.required, balance: charge.balance, shared_balance: charge.sharedBalance } },
         402,
       );
     }
     chargedClones = remaining;
+    cloneChargeSource = charge.source;
   }
   let copied = 0;
   let done = false;
@@ -1423,6 +1439,7 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
         userId: payer,
         amount: cloneCost.total * (chargedClones - copied),
         action: cloneAction,
+        source: cloneChargeSource,
         pluginId: auth.pluginId,
         createdBy: `plugin:${auth.pluginId}`,
       });
@@ -1436,6 +1453,7 @@ cmsApiRoutes.post('/pages/duplicate', async (c) => {
       userId: payer,
       amount: cloneCost.total * (chargedClones - copied),
       action: cloneAction,
+      source: cloneChargeSource,
       pluginId: auth.pluginId,
       createdBy: `plugin:${auth.pluginId}`,
     });
