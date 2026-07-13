@@ -1,5 +1,6 @@
 // ============================================================
-// Plugin quota limits — manifest-declared, admin-configured, host-enforced.
+// Plugin limits — manifest-declared and admin-configured. Page quotas are
+// host-enforced; plugins consume operational limits such as per_second.
 //
 // A plugin's manifest only *declares* which limits exist (PluginManifest.
 // limits): a key, the page type it bounds, and how existing pages are counted
@@ -31,7 +32,7 @@ export const MAX_DECLARED_LIMITS = 20;
 
 const LIMIT_KEY_RE = /^[a-z0-9_]{1,64}$/;
 const POINTER_KEY_RE = /^[a-z0-9_-]{1,64}$/i;
-const SCOPES = new Set<PluginLimitScope>(['total', 'per_parent', 'per_pointer']);
+const SCOPES = new Set<PluginLimitScope>(['total', 'per_parent', 'per_pointer', 'per_second']);
 
 export function limitsSettingKey(pluginId: string): string {
   return `plugin.limits.${pluginId}`;
@@ -42,7 +43,7 @@ export interface NormalizedLimitDef {
   key: string;
   label: string;
   description: string;
-  pageType: string;
+  pageType: string | null;
   scope: PluginLimitScope;
   /** Set exactly when scope is 'per_pointer'. */
   pointerKey: string | null;
@@ -122,8 +123,8 @@ export function declaredLimits(manifest: PluginManifest, allowedTypes: Set<strin
     if (!raw || typeof raw !== 'object') continue;
     const def = raw as PluginLimitDef;
     if (typeof def.key !== 'string' || !LIMIT_KEY_RE.test(def.key) || seen.has(def.key)) continue;
-    if (typeof def.page_type !== 'string' || !allowedTypes.has(def.page_type)) continue;
     if (!SCOPES.has(def.scope as PluginLimitScope)) continue;
+    if (def.scope !== 'per_second' && (typeof def.page_type !== 'string' || !allowedTypes.has(def.page_type))) continue;
     const pointerKey = typeof def.pointer_key === 'string' && POINTER_KEY_RE.test(def.pointer_key)
       ? def.pointer_key
       : null;
@@ -134,7 +135,7 @@ export function declaredLimits(manifest: PluginManifest, allowedTypes: Set<strin
       key: def.key,
       label: typeof def.label === 'string' && def.label.trim() ? def.label.trim().slice(0, 120) : def.key,
       description: typeof def.description === 'string' ? def.description.trim().slice(0, 500) : '',
-      pageType: def.page_type,
+      pageType: def.scope === 'per_second' ? null : def.page_type!,
       scope: def.scope,
       pointerKey: def.scope === 'per_pointer' ? pointerKey : null,
       defaultValue: coerceLimitNumber(def.default),
@@ -191,7 +192,7 @@ export async function limitsForPageType(env: Env, pageType: string): Promise<Eff
   const out: EffectiveLimit[] = [];
   for (const plugin of plugins) {
     // Cheap pre-filter before touching D1: does the manifest even mention the type?
-    const mentions = (plugin.manifest.limits ?? []).some((def) => def?.page_type === pageType);
+    const mentions = (plugin.manifest.limits ?? []).some((def) => def?.scope !== 'per_second' && def?.page_type === pageType);
     if (!mentions) continue;
     for (const limit of await effectiveLimitsForPlugin(env, plugin)) {
       if (limit.def.pageType === pageType) out.push(limit);

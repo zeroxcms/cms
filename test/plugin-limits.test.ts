@@ -32,6 +32,7 @@ const MANIFEST = {
     },
   },
   limits: [
+    { key: 'send_email_per_second', label: 'Emails per second', scope: 'per_second', default: 1 },
     { key: 'max_events', label: 'Maximum events', page_type: 'event', scope: 'total', default: 2 },
     { key: 'max_guests_per_list', label: 'Max guests per list', page_type: 'guest', scope: 'per_pointer', pointer_key: 'mail_list', default: 3 },
     // No default → unlimited until an admin configures a value.
@@ -124,7 +125,7 @@ describe('declaredLimits validation', () => {
 
   it('keeps valid limits and drops ones on non-owned page types', () => {
     const defs = declaredLimits(MANIFEST, allowed);
-    expect(defs.map((def) => def.key)).toEqual(['max_events', 'max_guests_per_list', 'max_guests']);
+    expect(defs.map((def) => def.key)).toEqual(['send_email_per_second', 'max_events', 'max_guests_per_list', 'max_guests']);
     expect(defs.find((def) => def.key === 'sabotage')).toBeUndefined();
   });
 
@@ -135,6 +136,8 @@ describe('declaredLimits validation', () => {
     expect(perList.defaultValue).toBe(3);
     const total = defs.find((def) => def.key === 'max_guests')!;
     expect(total.defaultValue).toBeNull();
+    const sendRate = defs.find((def) => def.key === 'send_email_per_second')!;
+    expect(sendRate).toMatchObject({ pageType: null, scope: 'per_second', defaultValue: 1 });
   });
 
   it('drops malformed entries: bad scope, missing pointer_key, duplicate keys, bad defaults', () => {
@@ -251,7 +254,10 @@ describe('GET /__cms/limits', () => {
     const { limits } = await res.json() as { limits: Array<Record<string, unknown>> };
 
     const keys = limits.map((limit) => limit.key);
-    expect(keys).toEqual(['max_events', 'max_guests_per_list', 'max_guests']);
+    expect(keys).toEqual(['send_email_per_second', 'max_events', 'max_guests_per_list', 'max_guests']);
+
+    const sendRate = limits.find((limit) => limit.key === 'send_email_per_second')!;
+    expect(sendRate).toMatchObject({ page_type: null, scope: 'per_second', value: 1, usage: null });
 
     const events = limits.find((limit) => limit.key === 'max_events')!;
     expect(events).toMatchObject({ value: 2, configured: false, usage: 1, scope: 'total' });

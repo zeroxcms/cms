@@ -375,10 +375,11 @@ pluginsManageRoutes.post('/plugins-manage/:id/assets/revoke', async (c) => {
 
 // ── Quota limits ───────────────────────────────────────────────────────────
 // A plugin's manifest only *declares* which limits exist (PluginManifest.
-// limits). The values configured here are stored in the settings table and
-// enforced by the host on every page-create path. See utils/plugin-limits.ts.
+// limits). Values are stored in settings. The host enforces page quotas on
+// creates; plugins enforce operational limits. See utils/plugin-limits.ts.
 
 function scopeLabel(def: NormalizedLimitDef): string {
+  if (def.scope === 'per_second') return 'Per second';
   if (def.scope === 'per_parent') return 'Per parent page';
   if (def.scope === 'per_pointer') return `Per ${def.pointerKey}`;
   return 'Total';
@@ -412,14 +413,16 @@ pluginsManageRoutes.get('/plugins-manage/:id/limits', async (c) => {
     const configured = def.key in values;
     const effective = configured ? values[def.key] : def.defaultValue;
     // Scoped usage varies per parent/collection, so only totals are shown here.
-    const usageLabel = def.scope === 'total'
+    const usageLabel = def.scope === 'per_second'
+      ? 'not counted by CMS'
+      : def.scope === 'total'
       ? String(await countLimitUsage(c.env.DB, def, null))
       : 'varies by group';
     return {
       key: def.key,
       label: def.label,
       description: def.description,
-      pageType: def.pageType,
+      pageType: def.pageType ?? 'email delivery',
       scopeLabel: scopeLabel(def),
       defaultLabel: limitLabel(def.defaultValue),
       effectiveLabel: limitLabel(effective) + (configured ? '' : ' (default)'),

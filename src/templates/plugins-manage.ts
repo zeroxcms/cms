@@ -168,7 +168,7 @@ export async function pluginLimitsPage(views: Fetcher, opts: BaseTemplateProps &
 }): Promise<string> {
   const { pluginLabel, unreachable, limits, saveAction, flash } = opts;
   const flashMessage = flash === 'saved'
-    ? 'Limits saved. They now apply to every create path, including the admin editor.'
+    ? 'Limits saved. Page quotas apply to every create path; operational limits apply in the plugin.'
     : '';
 
   const body = await renderView(views, '/templates/plugin-limits.json', {

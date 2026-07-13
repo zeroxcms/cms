@@ -334,10 +334,11 @@ export interface PluginManifest {
   assets?: Array<{ path: string; label?: string }>;
   /**
    * Quota definitions this plugin exposes for admin configuration. The plugin
-   * only *declares* which limits exist (key, target page type, counting scope,
-   * optional default); the CMS stores the configured values in the `settings`
-   * table and enforces them on every page-create path — both the /__cms
-   * write-back API and the built-in admin editor. See utils/plugin-limits.ts.
+   * only *declares* which limits exist (key, counting scope, optional target
+   * page type/default); the CMS stores configured values in the `settings`
+   * table. It enforces page quotas on every create path; plugins enforce
+   * operational limits such as per-second delivery rates. See
+   * utils/plugin-limits.ts.
    */
   limits?: PluginLimitDef[];
   /**
@@ -351,7 +352,7 @@ export interface PluginManifest {
 }
 
 /** How a declared plugin limit counts existing pages. */
-export type PluginLimitScope = 'total' | 'per_parent' | 'per_pointer';
+export type PluginLimitScope = 'total' | 'per_parent' | 'per_pointer' | 'per_second';
 
 /** A quota declared in a plugin manifest (see PluginManifest.limits). */
 export interface PluginLimitDef {
@@ -363,11 +364,13 @@ export interface PluginLimitDef {
   description?: string;
   /** Page type whose creation this limit bounds. Must be a type the plugin owns
    *  via its blueprint or may write via an approved writeType. */
-  page_type: string;
+  page_type?: string;
   /**
    * Counting scope: 'total' counts all pages of the type; 'per_parent' counts
    * siblings under one parent page (page_id); 'per_pointer' counts pages
    * sharing one `_pointers.<pointer_key>` value (e.g. guests in a guest list).
+   * 'per_second' is an operational limit read and enforced by the plugin; it
+   * does not apply to page creation and does not require page_type.
    */
   scope: PluginLimitScope;
   /** Required when scope is 'per_pointer': the `_pointers` key pages group by. */
