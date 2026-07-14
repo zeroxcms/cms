@@ -655,9 +655,6 @@ describe('admin routes', () => {
     { name: 'GET /admin/pages/search/:pageType', path: '/admin/pages/search/default?search=About', authenticated: true, expectedStatus: 302, location: '/admin/advanced-search/default?operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=About&path1=' },
     { name: 'GET /admin/pages/create_by_type/:pageType', path: '/admin/pages/create_by_type/default', authenticated: true, expectedStatus: 302, location: '/admin/pages/new?page_type=default' },
     { name: 'POST /admin/pages/new_post/:pageType', method: 'POST', path: '/admin/pages/new_post/default', body: form({ name: 'Quick Page', slug: 'quick-page' }), authenticated: true, expectedStatus: 302, location: /^\/admin\/pages\/\d+\/edit$/ },
-    { name: 'GET /admin/pages/import/:pageType', path: '/admin/pages/import/default', authenticated: true, expectedStatus: 200 },
-    { name: 'POST /admin/pages/import/:pageType', method: 'POST', path: '/admin/pages/import/default', body: form({ items: JSON.stringify([{ name: 'Imported', slug: 'imported', lect: { name: { en: 'Imported' } } }]) }), authenticated: true, expectedStatus: 302, location: '/admin/pages/list/default?flash=1+item(s)+imported' },
-    { name: 'GET /admin/pages/import-v2/:pageType', path: '/admin/pages/import-v2/default', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/pages/new', path: '/admin/pages/new', authenticated: true, expectedStatus: 200 },
     { name: 'POST /admin/pages', method: 'POST', path: '/admin/pages', body: form({ name: 'Created', slug: 'created', page_type: 'default' }), authenticated: true, expectedStatus: 302, location: '/admin?flash=Page+created+successfully' },
     { name: 'GET /admin/pages/:id/edit', path: '/admin/pages/101/edit', authenticated: true, expectedStatus: 200 },
@@ -1501,80 +1498,8 @@ describe('admin routes', () => {
     expect(tables.results).toEqual([]);
   });
 
-  it('POST /admin/pages/import-v2/:pageType shows a confirmation page before importing', async () => {
-    const response = await fetchWorker('/admin/pages/import-v2/default', {
-      method: 'POST',
-      body: form({ csv: 'name,slug\nFresh CSV,fresh-csv\nAbout,about' }),
-      headers: { Cookie: await authCookie() },
-    });
-    const data = bodyData(await response.text());
 
-    expect(response.status).toBe(200);
-    expect(data.isConfirmImport).toBe(true);
-    expect(JSON.stringify(data.importModeOptions)).toContain('New + Add Missing Fields');
-    expect(JSON.stringify(data.importModeOptions)).toContain('Treat All Rows As New Pages');
-    expect(JSON.stringify(data.newRows)).toContain('Fresh CSV');
-    expect(data.existingRows).toMatchObject([{ existingId: 101, existingName: 'About' }]);
-    expect(await env.DB.prepare('SELECT id FROM draft_pages WHERE slug = ?')
-      .bind('fresh-csv')
-      .first<{ id: number }>()).toBeNull();
-  });
 
-  it('POST /admin/pages/import-v2/:pageType/confirm imports confirmed CSV rows', async () => {
-    const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
-      method: 'POST',
-      body: form({ action: 'new-overwrite', csv: 'name,slug\nFresh CSV,fresh-csv\nAbout Updated,about' }),
-      headers: { Cookie: await authCookie() },
-    });
-
-    expect(response.status).toBe(302);
-    expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=1+created,+1+updated,+0+skipped');
-    expect(await env.DB.prepare('SELECT name, page_type FROM draft_pages WHERE slug = ?')
-      .bind('fresh-csv')
-      .first<{ name: string; page_type: string }>()).toEqual({ name: 'Fresh CSV', page_type: 'default' });
-    expect(await env.DB.prepare('SELECT name FROM draft_pages WHERE id = ?')
-      .bind(101)
-      .first<{ name: string }>()).toEqual({ name: 'About Updated' });
-  });
-
-  it('POST /admin/pages/import-v2/:pageType/confirm bulk creates page versions', async () => {
-    const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
-      method: 'POST',
-      body: form({ action: 'new', csv: 'name,slug\nBulk One,bulk-one\nBulk Two,bulk-two\nBulk Three,bulk-three' }),
-      headers: { Cookie: await authCookie() },
-    });
-
-    expect(response.status).toBe(302);
-    expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=3+created,+0+updated,+0+skipped');
-
-    const pages = await env.DB.prepare(
-      `SELECT id, current_page_version_id
-       FROM draft_pages
-       WHERE slug IN (?, ?, ?)
-       ORDER BY slug ASC`,
-    )
-      .bind('bulk-one', 'bulk-three', 'bulk-two')
-      .all<{ id: number; current_page_version_id: number }>();
-    const pageIds = pages.results.map((page) => page.id);
-    const versions = await env.DB.prepare(
-      `SELECT id, page_id, action
-       FROM page_versions
-       WHERE page_id IN (?, ?, ?)
-       ORDER BY page_id ASC`,
-    )
-      .bind(...pageIds)
-      .all<{ id: number; page_id: number; action: string }>();
-    const versionByPage = new Map(versions.results.map((version) => [version.page_id, version]));
-
-    expect(pages.results).toHaveLength(3);
-    expect(versions.results).toHaveLength(3);
-    for (const page of pages.results) {
-      expect(versionByPage.get(page.id)).toMatchObject({
-        id: page.current_page_version_id,
-        action: 'import',
-      });
-    }
-  });
 
   it('preserves the page id and version history across a delete → restore cycle', async () => {
     const cookie = await authCookie();
@@ -1616,107 +1541,12 @@ describe('admin routes', () => {
     expect(await env.DB.prepare('SELECT id FROM trash_pages WHERE uuid = ?').bind('page-uuid-101').first()).toBeNull();
   });
 
-  it('POST /admin/pages/import-v2/:pageType/confirm can import new rows only', async () => {
-    const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
-      method: 'POST',
-      body: form({ action: 'new', csv: 'name,slug\nFresh CSV,fresh-csv\nAbout Updated,about' }),
-      headers: { Cookie: await authCookie() },
-    });
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=1+created,+0+updated,+1+skipped');
-    expect(await env.DB.prepare('SELECT name FROM draft_pages WHERE slug = ?')
-      .bind('fresh-csv')
-      .first<{ name: string }>()).toEqual({ name: 'Fresh CSV' });
-    expect(await env.DB.prepare('SELECT name FROM draft_pages WHERE id = ?')
-      .bind(101)
-      .first<{ name: string }>()).toEqual({ name: 'About' });
-  });
 
-  it('POST /admin/pages/import-v2/:pageType/confirm can append missing fields without replacing existing values', async () => {
-    const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
-      method: 'POST',
-      body: form({ action: 'new-append', csv: 'name,slug,body,link\nAbout Updated,about,Replacement body,Homepage' }),
-      headers: { Cookie: await authCookie() },
-    });
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=0+created,+1+updated,+0+skipped');
-    const page = await env.DB.prepare('SELECT name, lect FROM draft_pages WHERE id = ?')
-      .bind(101)
-      .first<{ name: string; lect: string }>();
-    const lect = JSON.parse(page?.lect ?? '{}') as { body?: Record<string, string>; link?: Record<string, string> };
-    expect(page?.name).toBe('About');
-    expect(lect.body?.[cmsConfig.defaultLanguage]).toBe('About body');
-    expect(lect.link?.[cmsConfig.defaultLanguage]).toBe('Homepage');
-  });
 
-  it('GET /admin/advanced-search-export/:pageType exports localized fields for every language', async () => {
-    const response = await fetchWorker('/admin/advanced-search-export/default?operator=AND&sort=updated_at&order=DESC&search1=About&path1=', {
-      headers: { Cookie: await authCookie() },
-    });
-    const csv = await response.text();
-    const [header] = csv.replace(/^\uFEFF/, '').split('\n');
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Type')).toContain('text/csv');
-    expect(header).toContain(cmsConfig.languages.map((language) => `name.${language}`).join(','));
-    expect(header).toContain(cmsConfig.languages.map((language) => `body.${language}`).join(','));
-    for (const language of cmsConfig.languages) {
-      expect(header).toContain(`link.label.${language}`);
-      expect(header).toContain(`link.url.${language}`);
-    }
-    for (const value of Object.values(localizedFixture('About body'))) {
-      expect(csv).toContain(value);
-    }
-    expect(csv).toContain('Click Now');
-    expect(csv).toContain('https://example.com');
-  });
-
-  it('GET /admin/pages/export exports all draft pages', async () => {
-    const companyLect = blueprintToLect('company', cmsConfig.blueprint, cmsConfig.defaultLanguage);
-    companyLect.name = localizedFixture('Acme');
-    companyLect.address = localizedFixture('Acme Address');
-    await env.DB.prepare(
-      `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(103, 'page-uuid-103', 'Acme', 'acme', 6, 'company', stringifyLect(companyLect), 1, '1')
-      .run();
-
-    const response = await fetchWorker('/admin/pages/export?r=test', {
-      headers: { Cookie: await authCookie() },
-    });
-    const csv = await response.text();
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="pages-export-test.csv"; filename*=UTF-8\'\'pages-export-test.csv');
-    expect(csv).toContain('About');
-    expect(csv).toContain('Acme');
-  });
-
-  it('GET /admin/pages/export/:pageType exports one draft page type', async () => {
-    const companyLect = blueprintToLect('company', cmsConfig.blueprint, cmsConfig.defaultLanguage);
-    companyLect.name = localizedFixture('Acme');
-    await env.DB.prepare(
-      `INSERT INTO draft_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(103, 'page-uuid-103', 'Acme', 'acme', 6, 'company', stringifyLect(companyLect), 1, '1')
-      .run();
-
-    const response = await fetchWorker('/admin/pages/export/default?r=test', {
-      headers: { Cookie: await authCookie() },
-    });
-    const csv = await response.text();
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Disposition')).toBe('attachment; filename="default-export-test.csv"; filename*=UTF-8\'\'default-export-test.csv');
-    expect(csv).toContain('About');
-    expect(csv).not.toContain('Acme');
-  });
-
-  it('shows CSV import and export links on the dashboard and page-type list', async () => {
+  it('hides CSV import and export buttons when the import-export plugin is absent', async () => {
     const [dashboard, pageTypeList] = await Promise.all([
       fetchWorker('/admin', { headers: { Cookie: await authCookie() } }),
       fetchWorker('/admin/pages/list/default', { headers: { Cookie: await authCookie() } }),
@@ -1725,10 +1555,10 @@ describe('admin routes', () => {
     const dashboardData = bodyData(await dashboard.text());
     const pageTypeListData = bodyData(await pageTypeList.text());
 
-    expect(dashboardData.importHref).toBe('/admin/pages/import-v2/default');
-    expect(dashboardData.exportHref).toBe('/admin/pages/export');
-    expect(pageTypeListData.importHref).toBe('/admin/pages/import-v2/default');
-    expect(pageTypeListData.exportHref).toBe('/admin/pages/export/default');
+    expect(dashboardData.importHref).toBe('');
+    expect(dashboardData.hasImportHref).toBe(false);
+    expect(pageTypeListData.importHref).toBe('');
+    expect(pageTypeListData.exportHref).toBe('');
   });
 
   it('GET /admin filters pages by draft or live status', async () => {
@@ -1854,55 +1684,7 @@ describe('admin routes', () => {
     expect(data.nextHref).toBe('/admin/pages/list/company?page=3&pagesize=25');
   });
 
-  it('POST /admin/pages/import-v2/:pageType/confirm imports explicit localized CSV columns', async () => {
-    const nameHeaders = cmsConfig.languages.map((language) => `name.${language}`);
-    const bodyHeaders = cmsConfig.languages.map((language) => `body.${language}`);
-    const importedNames = localizedFixture('Localized');
-    const importedBodies = localizedFixture('Body');
-    const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
-      method: 'POST',
-      body: form({
-        action: 'new',
-        csv: [
-          ['name', 'slug', ...nameHeaders, ...bodyHeaders].join(','),
-          [
-            'Localized',
-            'localized',
-            ...cmsConfig.languages.map((language) => importedNames[language]),
-            ...cmsConfig.languages.map((language) => importedBodies[language]),
-          ].join(','),
-        ].join('\n'),
-      }),
-      headers: { Cookie: await authCookie() },
-    });
-    const page = await env.DB.prepare('SELECT lect FROM draft_pages WHERE slug = ?')
-      .bind('localized')
-      .first<{ lect: string }>();
-    const lect = JSON.parse(page?.lect ?? '{}') as {
-      name?: Record<string, string>;
-      body?: Record<string, string>;
-    };
 
-    expect(response.status).toBe(302);
-    for (const language of cmsConfig.languages) {
-      expect(lect.name?.[language]).toBe(importedNames[language]);
-      expect(lect.body?.[language]).toBe(importedBodies[language]);
-    }
-  });
-
-  it('POST /admin/pages/import-v2/:pageType/confirm can treat matching rows as new pages', async () => {
-    const response = await fetchWorker('/admin/pages/import-v2/default/confirm', {
-      method: 'POST',
-      body: form({ action: 'force-new', csv: 'name,slug\nAbout Copy,about' }),
-      headers: { Cookie: await authCookie() },
-    });
-
-    expect(response.status).toBe(302);
-    expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=1+created,+0+updated,+0+skipped');
-    expect((await env.DB.prepare('SELECT id FROM draft_pages WHERE slug = ? ORDER BY id ASC')
-      .bind('about')
-      .all()).results).toHaveLength(2);
-  });
 
   it('redirects anonymous admin requests to login', async () => {
     const response = await fetchWorker('/admin');
@@ -1971,16 +1753,6 @@ describe('admin routes', () => {
     });
   });
 
-  it('rejects malformed legacy JSON imports without a server error', async () => {
-    const response = await fetchWorker('/admin/pages/import/default', {
-      method: 'POST',
-      body: form({ items: '{not json' }),
-      headers: { Cookie: await authCookie() },
-    });
-
-    expect(response.status).toBe(302);
-    expect(response.headers.get('Location')).toBe('/admin/pages/list/default?flash=Invalid+JSON+import+payload');
-  });
 
   it('POST /admin/api/presence/:pageId stores sanitized presence in the page Durable Object', async () => {
     const response = await fetchWorker('/admin/api/presence/101', {

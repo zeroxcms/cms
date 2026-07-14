@@ -18,20 +18,17 @@ import {
   advancedSearchTargetPageTypes,
   parseAdvancedSearchCriteria,
   performAdvancedSearch,
-  uniqueSorted,
 } from './search';
-import { csvDownloadResponse, exportPagesCsv } from './csv';
 import { resolveCmsConfig } from '../plugins/config';
-import { pluginNav } from '../plugins/registry';
+import { pluginById, pluginNav } from '../plugins/registry';
 import { editorTaxonomy, fetchUserAvatar } from './admin-queries';
 import { getCreditBalance, getSharedCreditBalance } from './credits';
 import { listLiveByTypes } from '../publish';
 import { draftLectProjector } from '../publish/projection';
 import type { DashboardListResult } from './admin-queries';
 import { withLiveStatus } from './page-logic';
-import { strParam } from './forms';
 import { effectivePermissions, resolveRolePermissions } from './roles';
-import type { Page, Permission } from '../types';
+import type { Permission } from '../types';
 import { viewRevision } from './view-revision';
 import {
   SIDEBAR_MENU_ITEMS,
@@ -224,62 +221,30 @@ export function dashboardPagination(
   };
 }
 
-export async function exportPageList(c: AppContext, pageType?: string): Promise<Response> {
-  const config = await resolveCmsConfig(c.env);
-  const selectedPageType = strParam(pageType);
-  const pages = selectedPageType
-    ? await c.env.DB.prepare(
-        'SELECT * FROM draft_pages WHERE page_type = ? ORDER BY weight ASC, name ASC',
-      )
-        .bind(selectedPageType)
-        .all<Page>()
-    : await c.env.DB.prepare(
-        'SELECT * FROM draft_pages ORDER BY page_type ASC, weight ASC, name ASC',
-      ).all<Page>();
-  const pageTypes = selectedPageType
-    ? [selectedPageType]
-    : uniqueSorted([
-        ...advancedSearchPageTypes(config),
-        ...pages.results.map((page) => page.page_type ?? ''),
-      ]);
-  const csv = await exportPagesCsv(c.env.DB, pages.results, pageTypes, config);
-  const stamp = c.req.query('r') || new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `${selectedPageType || 'pages'}-export-${stamp}.csv`;
+/** Manifest id of the plugin that owns CSV import/export since its extraction. */
+export const IMPORT_EXPORT_PLUGIN_ID = 'import-export';
 
-  return csvDownloadResponse(csv, filename);
+/** The plugin's admin base path when it is registered and enabled, else ''. */
+export async function importExportPluginBase(env: AppContext['env']): Promise<string> {
+  const plugin = await pluginById(env, IMPORT_EXPORT_PLUGIN_ID);
+  return plugin ? `/admin/plugins/${IMPORT_EXPORT_PLUGIN_ID}` : '';
 }
 
-export async function exportAdvancedSearch(c: AppContext, defaultPageType = 'all', canSelectPageType = true): Promise<Response> {
-  const config = await resolveCmsConfig(c.env);
-  const criteria = parseAdvancedSearchCriteria(c.req.url);
-  const selectedPageType = canSelectPageType
-    ? advancedSearchSelectedPageType(c.req.query('page_type'), defaultPageType, config)
-    : advancedSearchSelectedPageType(undefined, defaultPageType, config);
-  const pageTypes = advancedSearchTargetPageTypes(selectedPageType, config);
-  const operator = advancedSearchOperator(c.req.query('operator'));
-  const sort = advancedSearchSort(c.req.query('sort'));
-  const order = advancedSearchOrder(c.req.query('order'));
-  const result = criteria.length
-    ? await performAdvancedSearch(c.env.DB, pageTypes, criteria, operator, {
-        limit: 10000,
-        page: 1,
-        sort,
-        order,
-      })
-    : {
-        results: [],
-        pagination: {
-          total: 0,
-          totalPages: 1,
-          currentPage: 1,
-          limit: 10000,
-        },
-      };
-  const csv = await exportPagesCsv(c.env.DB, result.results, pageTypes, config);
-  const stamp = c.req.query('r') || new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `${selectedPageType === 'all' ? 'pages' : selectedPageType}-export-${stamp}.csv`;
-
-  return csvDownloadResponse(csv, filename);
+/**
+ * Dashboard Import/Export button targets. CSV import/export moved into the
+ * import-export plugin — the buttons deep-link there when it's installed and
+ * disappear (empty hrefs) when it isn't.
+ */
+export async function importExportHrefs(
+  env: AppContext['env'],
+  pageType?: string,
+): Promise<{ importHref: string; exportHref: string }> {
+  const base = await importExportPluginBase(env);
+  if (!base) return { importHref: '', exportHref: '' };
+  return {
+    importHref: pageType ? `${base}/import/${encodeURIComponent(pageType)}` : base,
+    exportHref: pageType ? `${base}/export?page_type=${encodeURIComponent(pageType)}` : `${base}/export`,
+  };
 }
 
 export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all', canSelectPageType = true) {
@@ -323,9 +288,11 @@ export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all
   const routeBase = selectedPageType === 'all'
     ? '/admin/advanced-search'
     : `/admin/advanced-search/${encodeURIComponent(selectedPageType)}`;
-  const exportBase = selectedPageType === 'all'
-    ? '/admin/advanced-search-export'
-    : `/admin/advanced-search-export/${encodeURIComponent(selectedPageType)}`;
+  // CSV export lives in the import-export plugin now; the button only shows
+  // when that plugin is registered and enabled.
+  const exportBase = (await importExportPluginBase(c.env))
+    ? `/admin/plugins/${IMPORT_EXPORT_PLUGIN_ID}/export-search?page_type=${encodeURIComponent(selectedPageType)}`
+    : '';
   const queryWithoutPage = advancedSearchQueryString(criteria, operator, pageSize, { sort, order });
   const pageQuery = (page: number) => advancedSearchQueryString(criteria, operator, pageSize, {
     sort,
@@ -362,7 +329,8 @@ export async function renderAdvancedSearch(c: AppContext, defaultPageType = 'all
       previousHref: result.pagination.currentPage > 1 ? `${routeBase}?${pageQuery(result.pagination.currentPage - 1)}` : '',
       nextHref: result.pagination.currentPage < result.pagination.totalPages ? `${routeBase}?${pageQuery(result.pagination.currentPage + 1)}` : '',
       resetHref: routeBase,
-      exportHref: `${exportBase}?${queryWithoutPage}`,
+      exportHref: exportBase ? `${exportBase}&${queryWithoutPage}` : '',
+      hasExportHref: !!exportBase,
       bulkAction: `${routeBase}/bulk?${queryWithoutPage}`,
       currentHref: `${routeBase}?${pageQuery(result.pagination.currentPage)}`,
       queryWithoutPage,

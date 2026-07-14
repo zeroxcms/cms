@@ -1,4 +1,5 @@
-// Advanced search pages and CSV exports.
+// Advanced search pages and bulk actions. (CSV export moved to the
+// import-export plugin; renderAdvancedSearch links there when it's installed.)
 
 import { Hono } from 'hono';
 import { resolveCmsConfig } from '../../plugins/config';
@@ -9,7 +10,7 @@ import {
   type AdvancedSearchBulkAction,
 } from '../../utils/admin-jobs';
 import { runCmsAdminJob } from '../../utils/admin-job-runner';
-import { exportAdvancedSearch, renderAdvancedSearch, userCan } from '../../utils/admin-render';
+import { renderAdvancedSearch, userCan } from '../../utils/admin-render';
 import type { AppContext } from '../../utils/context';
 import { appendQuery, safeAdminReturnPath, str } from '../../utils/forms';
 import {
@@ -24,13 +25,6 @@ export const searchRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 searchRoutes.get('/advanced-search', (c) => renderAdvancedSearch(c));
 
 searchRoutes.post('/advanced-search/bulk', (c) => bulkAdvancedSearch(c));
-
-searchRoutes.get('/advanced-search-export', (c) => exportAdvancedSearch(c));
-
-searchRoutes.get('/advanced-search-export/:pageType', (c) => {
-  const pageType = c.req.param('pageType');
-  return exportAdvancedSearch(c, pageType, false);
-});
 
 searchRoutes.get('/advanced-search/:pageType', (c) => {
   const pageType = c.req.param('pageType');

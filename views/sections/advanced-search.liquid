@@ -5,13 +5,15 @@
       <p class="mt-1 text-sm text-gray-500">{{ resultCountLabel | escape }}</p>
     </div>
     <div class="flex flex-col gap-2 sm:flex-row">
-      <a href="{{ exportHref | escape }}"
-         title="Export"
-         aria-label="Export"
-         class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#download"></use></svg>
-        <span class="hidden lg:inline">Export</span>
-      </a>
+      {% if hasExportHref %}
+        <a href="{{ exportHref | escape }}"
+           title="Export"
+           aria-label="Export"
+           class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#download"></use></svg>
+          <span class="hidden lg:inline">Export</span>
+        </a>
+      {% endif %}
       <a href="{{ listHref | escape }}"
          title="List"
          aria-label="List"

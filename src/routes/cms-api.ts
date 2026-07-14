@@ -37,12 +37,13 @@ import { deliverHooks, type HookEvent, type HookPage } from '../plugins/hooks';
 import { blueprintToLect, mergeLects, safeParseLect, stringifyLect } from '../utils/lect';
 import type { Lect } from '../utils/lect';
 import { withDraftMetadata } from '../utils/page-logic';
-import { ensureUniqueDraftSlug, trashDraftPage, trashDraftPages } from '../utils/admin-queries';
+import { editorTaxonomy, ensureTagByName, ensureUniqueDraftSlug, trashDraftPage, trashDraftPages } from '../utils/admin-queries';
 import { slugify } from '../utils/forms';
 import { chineseSearchVariants } from '../utils/chinese';
 import {
   advancedSearchOperator,
   advancedSearchOrder,
+  advancedSearchPathSpecs,
   advancedSearchSort,
   performAdvancedSearch,
   type AdvancedSearchCriterion,
@@ -123,6 +124,15 @@ interface ApiPage {
   lect: Lect;
   /** Present when the caller requests live status on a full page list. */
   isPublished?: boolean;
+  /** Present when the caller requests include_tags on a list/search. */
+  tags?: ApiPageTag[];
+}
+
+interface ApiPageTag {
+  id: number;
+  name: string;
+  taxonomy: string;
+  taxonomy_slug: string;
 }
 
 interface PluginAuth {
@@ -920,6 +930,103 @@ cmsApiRoutes.post('/credits/charge', async (c) => {
 });
 
 // List pages of a content type the plugin owns.
+/** Tags for a set of pages, keyed by page id — the include_tags list/search projection. */
+async function pageTagsByPageId(db: D1Database, pageIds: number[]): Promise<Map<number, ApiPageTag[]>> {
+  const result = new Map<number, ApiPageTag[]>();
+  if (!pageIds.length) return result;
+  const placeholders = pageIds.map(() => '?').join(',');
+  const rows = await db.prepare(
+    `SELECT dpt.page_id, t.id, t.name, tt.name AS taxonomy, tt.slug AS taxonomy_slug
+     FROM draft_page_tags dpt
+     JOIN tags t ON t.id = dpt.tag_id
+     LEFT JOIN taxonomies tt ON tt.slug = t.taxonomy_slug
+     WHERE dpt.page_id IN (${placeholders})`,
+  )
+    .bind(...pageIds)
+    .all<{ page_id: number; id: number; name: string; taxonomy: string | null; taxonomy_slug: string | null }>();
+  for (const row of rows.results) {
+    if (!row.taxonomy) continue;
+    const tags = result.get(row.page_id) ?? [];
+    tags.push({ id: row.id, name: row.name, taxonomy: row.taxonomy, taxonomy_slug: row.taxonomy_slug ?? '' });
+    result.set(row.page_id, tags);
+  }
+  return result;
+}
+
+// Content metadata for generic import/export tooling: languages, taxonomies,
+// and per-type blueprint path specs (the same specs the admin advanced search
+// and the old built-in CSV importer derive columns from). Read-scoped.
+cmsApiRoutes.get('/content-meta', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const config = await resolveCmsConfig(c.env);
+  const allTypes = Object.keys(config.blueprint).filter((pageType) => pageTypeScopeAllows(auth.readableTypes, pageType));
+  const requested = stringList(c.req.query('types'));
+  const types = requested.length === 0 || requested.includes('all') ? allTypes : requested;
+  for (const pageType of types) {
+    if (!pageTypeScopeAllows(auth.readableTypes, pageType)) return forbiddenPageType(c, auth, pageType);
+  }
+
+  const taxonomy = await editorTaxonomy(c.env.DB);
+  const pathSpecs: Record<string, Array<{ path: string; kind: string }>> = {};
+  for (const pageType of types) {
+    pathSpecs[pageType] = advancedSearchPathSpecs([pageType], config).map(({ path, kind }) => ({ path, kind }));
+  }
+
+  return c.json({
+    page_types: allTypes,
+    languages: config.languages,
+    default_language: config.defaultLanguage,
+    taxonomies: taxonomy.taxonomies.map(({ name, slug }) => ({ name, slug })),
+    path_specs: pathSpecs,
+  });
+});
+
+// Find-or-create tags by (taxonomy slug, name) — bulk imports create tags on
+// demand, exactly like the old built-in CSV importer. Requires write scope.
+const MAX_ENSURE_TAGS = 200;
+cmsApiRoutes.post('/tags/ensure', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+  if (auth.allowedTypes.size === 0) return c.json({ error: 'forbidden' }, 403);
+
+  const body = await c.req.json().catch(() => null) as { tags?: unknown } | null;
+  const items = body && Array.isArray(body.tags) ? body.tags : null;
+  if (!items) return c.json({ error: 'invalid_body' }, 400);
+  if (items.length > MAX_ENSURE_TAGS) return c.json({ error: 'batch_too_large', max: MAX_ENSURE_TAGS }, 413);
+
+  const taxonomy = await editorTaxonomy(c.env.DB);
+  const bySlug = new Map(taxonomy.taxonomies.map((entry) => [entry.slug, entry]));
+  const ensured: Array<{ taxonomy: string; name: string; id: number }> = [];
+  const errors: Array<{ index: number; error: string }> = [];
+  const seen = new Map<string, number>();
+
+  for (const [index, item] of items.entries()) {
+    const entry = (item ?? {}) as { taxonomy?: unknown; name?: unknown };
+    const taxonomySlug = typeof entry.taxonomy === 'string' ? entry.taxonomy.trim() : '';
+    const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+    if (!name) {
+      errors.push({ index, error: 'name_required' });
+      continue;
+    }
+    const target = bySlug.get(taxonomySlug);
+    if (!target) {
+      errors.push({ index, error: 'unknown_taxonomy' });
+      continue;
+    }
+    const key = `${target.slug} ${name}`;
+    let id = seen.get(key);
+    if (id === undefined) {
+      id = await ensureTagByName(c.env.DB, target, name);
+      seen.set(key, id);
+    }
+    ensured.push({ taxonomy: target.slug, name, id });
+  }
+
+  return c.json({ tags: ensured, errors });
+});
+
 cmsApiRoutes.get('/pages', async (c) => {
   const auth = await authenticatePlugin(c);
   if (auth instanceof Response) return auth;
@@ -967,8 +1074,32 @@ cmsApiRoutes.get('/pages', async (c) => {
     return c.json({ error: 'too_many_pointer_values' }, 400);
   }
 
+  // Optional direct lookup: ids=1,2&slugs=a,b matches pages whose id OR slug is
+  // listed — bulk import target resolution without one GET per row.
+  const idsParam = stringList(c.req.query('ids'));
+  const slugsParam = stringList(c.req.query('slugs'));
+  if (idsParam.length > 500 || slugsParam.length > 500) {
+    return c.json({ error: 'too_many_lookup_values' }, 400);
+  }
+  if (idsParam.some((value) => !/^-?\d+$/.test(value))) {
+    return c.json({ error: 'invalid_ids' }, 400);
+  }
+  const lookupIds = idsParam.map((value) => parseInt(value, 10));
+
   const params: unknown[] = [pageType];
   let where = 'WHERE page_type = ?';
+  if (lookupIds.length || slugsParam.length) {
+    const parts: string[] = [];
+    if (lookupIds.length) {
+      parts.push(`id IN (${lookupIds.map(() => '?').join(',')})`);
+      params.push(...lookupIds);
+    }
+    if (slugsParam.length) {
+      parts.push(`slug IN (${slugsParam.map(() => '?').join(',')})`);
+      params.push(...slugsParam);
+    }
+    where += ` AND (${parts.join(' OR ')})`;
+  }
   if (parentId !== null) {
     where += ' AND page_id = ?';
     params.push(parentId);
@@ -1011,10 +1142,17 @@ cmsApiRoutes.get('/pages', async (c) => {
   // Checking live state needs a full draft row (its UUID is the stable
   // draft/live join key), so keep fields= projections lean and predictable.
   const liveMap = includeLiveStatus && !fields ? await liveMapForDraftPages(c.env, rows.results) : null;
+  const tagsMap = c.req.query('include_tags') === '1' && !fields
+    ? await pageTagsByPageId(c.env.DB, rows.results.map((row) => row.id))
+    : null;
   return c.json({
     pages: fields
       ? rows.results.map((row) => serializePartialPage(row, fields))
-      : rows.results.map((row) => ({ ...serializePage(row), ...(liveMap ? { isPublished: liveMap.has(row.uuid) } : {}) })),
+      : rows.results.map((row) => ({
+          ...serializePage(row),
+          ...(liveMap ? { isPublished: liveMap.has(row.uuid) } : {}),
+          ...(tagsMap ? { tags: tagsMap.get(row.id) ?? [] } : {}),
+        })),
     total: skipCount ? -1 : (totalRow?.total ?? 0),
     limit,
     offset,
@@ -1058,8 +1196,15 @@ cmsApiRoutes.post('/pages/search', async (c) => {
     order,
   });
 
+  const tagsMap = (body as { include_tags?: unknown }).include_tags === true
+    ? await pageTagsByPageId(c.env.DB, result.results.map((row) => row.id))
+    : null;
+
   return c.json({
-    pages: result.results.map(serializePage),
+    pages: result.results.map((row) => ({
+      ...serializePage(row),
+      ...(tagsMap ? { tags: tagsMap.get(row.id) ?? [] } : {}),
+    })),
     total: result.pagination.total,
     limit: result.pagination.limit,
     offset: (result.pagination.currentPage - 1) * result.pagination.limit,

@@ -1013,3 +1013,93 @@ describe('bulk trash restore', () => {
     expect(await restoreTrashedPages(env.DB, {})).toBe(0);
   });
 });
+
+// New surface added when CSV import/export moved to the import-export plugin:
+// content metadata, tag ensure-by-name, and list lookup/tag projections.
+describe('Plugin API content-meta, tag ensure, and lookup projections', () => {
+  beforeEach(async () => {
+    await env.DB.prepare("DELETE FROM draft_page_tags WHERE tag_id IN (SELECT id FROM tags WHERE taxonomy_slug = 'topic')").run();
+    await env.DB.prepare("DELETE FROM tags WHERE taxonomy_slug = 'topic'").run();
+    await env.DB.prepare("DELETE FROM taxonomies WHERE slug = 'topic'").run();
+  });
+
+  it('returns languages, taxonomies and blueprint path specs for readable types', async () => {
+    const response = await cmsApi('GET', '/__cms/content-meta?types=guest');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      page_types: string[];
+      languages: string[];
+      default_language: string;
+      path_specs: Record<string, Array<{ path: string; kind: string }>>;
+    };
+    expect(body.languages).toContain('en');
+    expect(body.default_language).toBeTruthy();
+    expect(body.page_types).toContain('guest');
+    // Host-owned types the plugin cannot read are not offered.
+    expect(body.page_types).not.toContain('default');
+    const guestPaths = body.path_specs.guest.map((spec) => spec.path);
+    expect(guestPaths).toContain('email');
+    expect(guestPaths).toContain('name');
+    expect(body.path_specs.guest.find((spec) => spec.path === 'name')?.kind).toBe('localized');
+  });
+
+  it('refuses content-meta for a type outside the plugin scope', async () => {
+    const response = await cmsApi('GET', '/__cms/content-meta?types=default');
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: 'forbidden_page_type', page_type: 'default' });
+  });
+
+  it('ensures tags by taxonomy and name, reusing existing rows', async () => {
+    await env.DB.prepare("INSERT INTO taxonomies (name, slug) VALUES ('Topic', 'topic')").run();
+
+    const first = await cmsApi('POST', '/__cms/tags/ensure', {
+      tags: [
+        { taxonomy: 'topic', name: 'News' },
+        { taxonomy: 'nope', name: 'X' },
+        { taxonomy: 'topic', name: '' },
+      ],
+    });
+    expect(first.status).toBe(200);
+    const firstBody = await first.json() as { tags: Array<{ taxonomy: string; name: string; id: number }>; errors: Array<{ index: number; error: string }> };
+    expect(firstBody.tags).toHaveLength(1);
+    expect(firstBody.tags[0]).toMatchObject({ taxonomy: 'topic', name: 'News' });
+    expect(firstBody.errors).toEqual([
+      { index: 1, error: 'unknown_taxonomy' },
+      { index: 2, error: 'name_required' },
+    ]);
+
+    // Idempotent: the same (taxonomy, name) resolves to the same tag id.
+    const second = await cmsApi('POST', '/__cms/tags/ensure', { tags: [{ taxonomy: 'topic', name: 'News' }] });
+    const secondBody = await second.json() as { tags: Array<{ id: number }> };
+    expect(secondBody.tags[0].id).toBe(firstBody.tags[0].id);
+    const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM tags WHERE taxonomy_slug = 'topic'").first<{ n: number }>();
+    expect(count?.n).toBe(1);
+  });
+
+  it('looks up pages by ids/slugs and attaches tags when include_tags=1', async () => {
+    await env.DB.prepare("INSERT INTO taxonomies (name, slug) VALUES ('Topic', 'topic')").run();
+    const ensure = await cmsApi('POST', '/__cms/tags/ensure', { tags: [{ taxonomy: 'topic', name: 'News' }] });
+    const tagId = ((await ensure.json()) as { tags: Array<{ id: number }> }).tags[0].id;
+
+    const one = await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Lookup One', slug: 'lookup-one', tags: [tagId] });
+    expect(one.status).toBe(201);
+    const oneId = ((await one.json()) as { page: { id: number } }).page.id;
+    const two = await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Lookup Two', slug: 'lookup-two' });
+    expect(two.status).toBe(201);
+    await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Lookup Three', slug: 'lookup-three' });
+
+    const response = await cmsApi('GET', `/__cms/pages?page_type=guest&ids=${oneId}&slugs=lookup-two&include_tags=1`);
+    expect(response.status).toBe(200);
+    const body = await response.json() as { pages: Array<{ slug: string; tags?: Array<{ name: string; taxonomy: string }> }>; total: number };
+    expect(body.pages.map((page) => page.slug).sort()).toEqual(['lookup-one', 'lookup-two']);
+    const withTag = body.pages.find((page) => page.slug === 'lookup-one');
+    expect(withTag?.tags).toEqual([{ id: tagId, name: 'News', taxonomy: 'Topic', taxonomy_slug: 'topic' }]);
+    expect(body.pages.find((page) => page.slug === 'lookup-two')?.tags).toEqual([]);
+  });
+
+  it('rejects malformed ids in a lookup', async () => {
+    const response = await cmsApi('GET', '/__cms/pages?page_type=guest&ids=1,abc');
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: 'invalid_ids' });
+  });
+});

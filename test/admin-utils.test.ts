@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  csvImportMode,
   dashboardPageHref,
   dashboardPageNumber,
   dashboardPageSize,
@@ -24,7 +23,6 @@ import {
   sqliteJsonPath,
 } from '../src/utils/search';
 import { chineseSearchVariants, toSimplified, toTraditional } from '../src/utils/chinese';
-import { csvFormatValue, csvRowsToObjects, parseCsv } from '../src/utils/csv';
 
 describe('forms helpers', () => {
   it('coerces form values to trimmed strings', () => {
@@ -79,13 +77,6 @@ describe('forms helpers', () => {
     expect(dashboardStatusFilter('live')).toBe('live');
     expect(dashboardStatusFilter('published')).toBe('');
     expect(dashboardStatusFilter(undefined)).toBe('');
-  });
-
-  it('resolves the CSV import mode, defaulting safely', () => {
-    expect(csvImportMode('overwrite')).toBe('overwrite');
-    expect(csvImportMode('force-new')).toBe('force-new');
-    expect(csvImportMode('bogus')).toBe('new-append');
-    expect(csvImportMode(undefined)).toBe('new-append');
   });
 
   it('only allows admin-relative return paths', () => {
@@ -194,44 +185,5 @@ describe('Chinese Simplified/Traditional search variants', () => {
     );
     expect(conditions).toEqual(['(json_extract(p.lect, ?) LIKE ? OR json_extract(p.lect, ?) LIKE ?)']);
     expect(params).toEqual(['$.name', '%苏玮%', '$.name', '%蘇瑋%']);
-  });
-});
-
-describe('CSV parsing and formatting', () => {
-  it('parses quoted CSV and drops fully empty rows', () => {
-    const rows = parseCsv('name,note\n"Hello, World","line1\nline2"\n,\n"Quote ""x"""');
-    expect(rows[0]).toEqual(['name', 'note']);
-    expect(rows[1]).toEqual(['Hello, World', 'line1\nline2']);
-    expect(rows[2]).toEqual(['Quote "x"']);
-  });
-
-  it('maps rows to objects keyed by header', () => {
-    const objects = csvRowsToObjects([
-      ['name', 'slug'],
-      ['About', 'about'],
-    ]);
-    expect(objects).toEqual([{ name: 'About', slug: 'about' }]);
-  });
-
-  it('formats CSV cells, escaping and protecting numeric strings', () => {
-    expect(csvFormatValue(null)).toBe('');
-    expect(csvFormatValue('plain')).toBe('plain');
-    expect(csvFormatValue('a,b')).toBe('"a,b"');
-    expect(csvFormatValue('say "hi"')).toBe('"say ""hi"""');
-    expect(csvFormatValue('0123')).toBe('="0123"');
-  });
-
-  it('neutralizes CSV/formula-injection payloads', () => {
-    // Leading formula triggers are prefixed with an apostrophe so a spreadsheet
-    // treats them as text rather than evaluating them.
-    expect(csvFormatValue('=1+1')).toBe("'=1+1");
-    expect(csvFormatValue('@SUM(A1:A9)')).toBe("'@SUM(A1:A9)");
-    expect(csvFormatValue('+cmd')).toBe("'+cmd");
-    expect(csvFormatValue('-cmd|calc')).toBe("'-cmd|calc");
-    // A comma in a guarded value still gets quoted (apostrophe retained inside).
-    expect(csvFormatValue('=a,b')).toBe('"\'=a,b"');
-    // Purely numeric values keep the ="…" text-wrapping (no apostrophe needed).
-    expect(csvFormatValue('-5')).toBe('="-5"');
-    expect(csvFormatValue('+1')).toBe('="+1"');
   });
 });

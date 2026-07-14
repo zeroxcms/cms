@@ -2,7 +2,7 @@
 // SQL stays raw here — this module just removes the duplication of issuing it.
 
 import type { Page, PageVersion, PageTag, Tag, Taxonomy } from '../types';
-import { num } from './forms';
+import { num, slugify } from './forms';
 
 export interface DashboardListResult {
   results: Page[];
@@ -63,6 +63,33 @@ export async function parentPageOption(db: D1Database, pageId: string | number |
     .bind(id)
     .first<Page>();
   return page ? [page] : [];
+}
+
+async function uniqueTagSlug(db: D1Database, baseSlug: string): Promise<string> {
+  let slug = baseSlug || 'tag';
+  let suffix = 1;
+  while (await db.prepare('SELECT id FROM tags WHERE slug = ?').bind(slug).first<{ id: number }>()) {
+    suffix++;
+    slug = `${baseSlug}-${suffix}`;
+  }
+  return slug;
+}
+
+/** Finds or creates a tag by (taxonomy, name) — used by the /__cms tag-ensure endpoint. */
+export async function ensureTagByName(db: D1Database, taxonomy: Taxonomy, name: string): Promise<number> {
+  const existing = await db.prepare('SELECT id FROM tags WHERE taxonomy_slug = ? AND name = ?')
+    .bind(taxonomy.slug, name)
+    .first<{ id: number }>();
+  if (existing) return existing.id;
+
+  const slug = await uniqueTagSlug(db, slugify(`${taxonomy.slug || taxonomy.name}-${name}`));
+  const insert = await db.prepare('INSERT INTO tags (name, slug, taxonomy_slug) VALUES (?, ?, ?)')
+    .bind(name, slug, taxonomy.slug)
+    .run();
+  const tag = await db.prepare('SELECT id FROM tags WHERE rowid = ?')
+    .bind(insert.meta.last_row_id)
+    .first<{ id: number }>();
+  return tag!.id;
 }
 
 export async function editorTaxonomy(db: D1Database): Promise<{ tags: Tag[]; taxonomies: Taxonomy[] }> {

@@ -43,7 +43,9 @@ export async function advancedSearchPage(views: Fetcher, opts: BaseTemplateProps
   previousHref: string;
   nextHref: string;
   resetHref: string;
+  /** Import-export plugin deep link; empty (button hidden) when the plugin is absent. */
   exportHref: string;
+  hasExportHref: boolean;
   bulkAction: string;
   currentHref: string;
   queryWithoutPage: string;

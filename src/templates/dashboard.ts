@@ -53,8 +53,9 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
     searchValue = '',
     searchAction = '/admin',
     advancedSearchHref = pageTypeFilter ? `/admin/advanced-search/${encodeURIComponent(pageTypeFilter)}` : '/admin/advanced-search',
-    importHref = pageTypeFilter ? `/admin/pages/import-v2/${encodeURIComponent(pageTypeFilter)}` : '',
-    exportHref = pageTypeFilter ? `/admin/pages/export/${encodeURIComponent(pageTypeFilter)}` : '/admin/pages/export',
+    // Import/export live in the import-export plugin; empty hrefs hide the buttons.
+    importHref = '',
+    exportHref = '',
     pagination,
   } = opts;
   const pageCount = pagination?.total ?? pages.length;

@@ -63,7 +63,7 @@ import {
 } from '../../publish';
 import type { PublishOutcome } from '../../publish';
 import { draftLectProjector } from '../../publish/projection';
-import { dashboardPagination, exportPageList, renderPage } from '../../utils/admin-render';
+import { dashboardPagination, importExportHrefs, renderPage } from '../../utils/admin-render';
 import { loadAdminHomeSettings } from '../../utils/settings';
 import { requirePermission } from '../../middleware/auth';
 import type { AppContext } from '../../utils/context';
@@ -427,6 +427,7 @@ async function renderAllPagesList(c: AppContext, routeBase: string) {
     pageSize,
   });
   const statusParams = statusFilter ? { status: statusFilter } : {};
+  const { importHref, exportHref } = await importExportHrefs(c.env);
 
   return renderPage(c, dashboardPage, {
     pages: draftPages.results,
@@ -436,8 +437,8 @@ async function renderAllPagesList(c: AppContext, routeBase: string) {
     statusFilters: statusFilterLinks(routeBase, statusFilter),
     searchAction: '/admin/advanced-search',
     advancedSearchHref: '/admin/advanced-search',
-    importHref: '/admin/pages/import-v2/default',
-    exportHref: '/admin/pages/export',
+    importHref,
+    exportHref,
     pagination: dashboardPagination(routeBase, draftPages, statusParams),
   });
 }
@@ -476,6 +477,7 @@ pagesRoutes.get('/pages/list/:pageType', async (c) => {
   const routeBase = `/admin/pages/list/${encodeURIComponent(pageType)}`;
   const statusParams = statusFilter ? { status: statusFilter } : {};
   const config = await resolveCmsConfig(c.env);
+  const { importHref, exportHref } = await importExportHrefs(c.env, pageType);
 
   return renderPage(c, dashboardPage, {
       siteTitle: `${c.env.SITE_TITLE ?? '0xCMS'} · ${pageType}`,
@@ -487,18 +489,11 @@ pagesRoutes.get('/pages/list/:pageType', async (c) => {
       statusFilters: statusFilterLinks(routeBase, statusFilter),
       searchAction: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
       advancedSearchHref: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
-      importHref: `/admin/pages/import-v2/${encodeURIComponent(pageType)}`,
-      exportHref: `/admin/pages/export/${encodeURIComponent(pageType)}`,
+      importHref,
+      exportHref,
       pagination: dashboardPagination(routeBase, draftPages, statusParams),
       privacyTable: pageTypeHasPrivacyFields(config.blueprint[pageType]),
   });
-});
-
-pagesRoutes.get('/pages/export', (c) => exportPageList(c));
-
-pagesRoutes.get('/pages/export/:pageType', (c) => {
-  const pageType = c.req.param('pageType');
-  return exportPageList(c, pageType);
 });
 
 pagesRoutes.get('/pages/search/:pageType', async (c) => {
