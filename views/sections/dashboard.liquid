@@ -162,11 +162,11 @@
                   {% if page.isDraftMissing %}
                     <form method="POST" action="{{ page.pullAction | escape }}" class="inline shrink-0">
                       <button type="submit"
-                              title="Pull published page"
-                              aria-label="Pull published page {{ page.name | escape }}"
+                              title="Ingest submission"
+                              aria-label="Ingest submission {{ page.name | escape }}"
                               class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-indigo-600 hover:bg-indigo-50 hover:text-indigo-800 transition-colors">
                         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#download"></use></svg>
-                        <span class="sr-only">Pull published page</span>
+                        <span class="sr-only">Ingest submission</span>
                       </button>
                     </form>
                   {% else %}

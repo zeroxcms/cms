@@ -11,7 +11,7 @@ const item = (label: string, href: string, extra: Partial<SidebarNavItem> = {}):
 
 describe('sidebar active route state', () => {
   it('keeps the Pages item active across page-management and search routes', () => {
-    const main = [item('Pages', '/admin'), item('Tags', '/admin/tags')];
+    const main = [item('Pages', '/admin/pages/list'), item('Tags', '/admin/tags')];
 
     expect(withActiveSidebarItems('/admin/pages/42/edit', main, []).sidebarNav).toMatchObject([
       { label: 'Pages', isActive: true },

@@ -1781,6 +1781,38 @@ describe('admin routes', () => {
     });
   });
 
+  it('keeps the page list available when /admin is configured for another home', async () => {
+    await env.PUBLISHED_DB.prepare(
+      `INSERT INTO live_pages (id, uuid, name, slug, weight, page_type, lect, creator, editors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(931, 'page-list-submission-uuid', 'Page List Submission', 'page-list-submission', 8, 'default', basePageLect, 1, '1')
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('admin.home', ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).bind(JSON.stringify({ href: '/admin/plugins/events/dashboard' })).run();
+
+    const [home, list] = await Promise.all([
+      fetchWorker('/admin', { headers: { Cookie: await authCookie() } }),
+      fetchWorker('/admin/pages/list?status=live', { headers: { Cookie: await authCookie() } }),
+    ]);
+    const data = bodyData(await list.text());
+    const submission = (data.pages as Array<Record<string, unknown>>)
+      .find((page) => page.name === 'Page List Submission');
+
+    expect(home.status).toBe(302);
+    expect(home.headers.get('Location')).toBe('/admin/plugins/events/dashboard');
+    expect(list.status).toBe(200);
+    expect(data.statusFilters).toContainEqual({
+      label: 'Live', href: '/admin/pages/list?status=live', isActive: true,
+    });
+    expect(submission).toMatchObject({
+      isDraftMissing: true,
+      pullAction: '/admin/pages/pull/page-list-submission-uuid',
+    });
+  });
+
   it('GET /admin paginates draft pages', async () => {
     await seedDraftPages('default', 105, 1000, 'Bulk Default');
 

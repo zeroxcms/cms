@@ -410,12 +410,7 @@ async function deletePageVersion(db: D1Database, page: Page, versionId: number):
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
-pagesRoutes.get('/', async (c) => {
-  const adminHome = await loadAdminHomeSettings(c.env);
-  if (!new URL(c.req.url).search && adminHome.href !== '/admin') {
-    return c.redirect(adminHome.href);
-  }
-
+async function renderAllPagesList(c: AppContext, routeBase: string) {
   const flash = c.req.query('flash') ?? '';
   const search = c.req.query('search')?.trim() ?? '';
   const pageSize = dashboardPageSize(c.req.query('pagesize'));
@@ -431,7 +426,6 @@ pagesRoutes.get('/', async (c) => {
     requestedPage,
     pageSize,
   });
-  const routeBase = '/admin';
   const statusParams = statusFilter ? { status: statusFilter } : {};
 
   return renderPage(c, dashboardPage, {
@@ -446,7 +440,20 @@ pagesRoutes.get('/', async (c) => {
     exportHref: '/admin/pages/export',
     pagination: dashboardPagination(routeBase, draftPages, statusParams),
   });
+}
+
+pagesRoutes.get('/', async (c) => {
+  const adminHome = await loadAdminHomeSettings(c.env);
+  if (!new URL(c.req.url).search && adminHome.href !== '/admin') {
+    return c.redirect(adminHome.href);
+  }
+
+  return renderAllPagesList(c, '/admin');
 });
+
+// The configurable /admin home may point at a plugin dashboard. Keep this
+// permanent page-list URL available for navigation and deep links.
+pagesRoutes.get('/pages/list', (c) => renderAllPagesList(c, '/admin/pages/list'));
 
 pagesRoutes.get('/pages/list/:pageType', async (c) => {
   const pageType = c.req.param('pageType');

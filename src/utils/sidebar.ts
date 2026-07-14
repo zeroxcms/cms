@@ -35,9 +35,10 @@ function sidebarItemOwnsPath(pathname: string, href: string): boolean {
   const target = normalizeSidebarPath(href);
   if (target === '/') return false;
 
-  // The Pages item links to the dashboard, but also owns all page-management
-  // and advanced-search screens. It must not claim every /admin route.
-  if (target === '/admin') {
+  // The Pages item may link to the legacy dashboard or the stable page-list
+  // URL, but it owns all page-management and advanced-search screens. It must
+  // not claim every /admin route.
+  if (target === '/admin' || target === '/admin/pages/list') {
     return path === '/admin'
       || isPathOrDescendant(path, '/admin/pages')
       || isPathOrDescendant(path, '/admin/advanced-search');

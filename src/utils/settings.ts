@@ -8,7 +8,7 @@ export const DEFAULT_PLUGIN_NAV_WEIGHT = 35;
 export const DEFAULT_PLUGIN_SETTINGS_NAV_WEIGHT = 80;
 
 export const SIDEBAR_MENU_ITEMS = [
-  { key: 'pages', label: 'Pages', description: 'Draft content dashboard and page lists.', href: '/admin', icon: 'menu', group: 'main', defaultWeight: 10 },
+  { key: 'pages', label: 'Pages', description: 'Draft content dashboard and page lists.', href: '/admin/pages/list', icon: 'menu', group: 'main', defaultWeight: 10 },
   { key: 'tags', label: 'Tags', description: 'Tag terms shown in the main sidebar.', href: '/admin/tags', icon: 'tag', group: 'main', defaultWeight: 20 },
   { key: 'taxonomies', label: 'Taxonomies', description: 'Taxonomy settings link.', href: '/admin/taxonomies', icon: 'list-filter', group: 'settings', defaultWeight: 10 },
   { key: 'pageTypes', label: 'Page Types', description: 'Database-defined page type settings link.', href: '/admin/page_types', icon: 'list', group: 'settings', defaultWeight: 20 },
