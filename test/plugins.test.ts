@@ -1008,6 +1008,15 @@ describe('plugin admin proxy', () => {
     expect(data.pageTypes).toEqual(expect.arrayContaining([
       expect.objectContaining({ slug: 'event', source: 'plugin', pluginName: 'Events' }),
     ]));
+
+    const pluginsResponse = await worker.fetch(new Request('http://localhost/admin/plugins-manage', {
+      headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+    expect(pluginsResponse.status).toBe(200);
+    const pluginsData = bodyData(await pluginsResponse.text());
+    expect(pluginsData.plugins).toEqual(expect.arrayContaining([
+      expect.objectContaining({ hasPageTypes: true }),
+    ]));
   });
 
   it('shows plugin-contributed taxonomies and offers them on page types', async () => {
@@ -1099,7 +1108,11 @@ describe('plugin admin proxy', () => {
       id: 'checkin',
       name: 'Check-in',
       version: '1.0.0',
-      contentTypes: { readTypes: ['event', 'mail_list'], writeTypes: ['guest'] },
+      contentTypes: {
+        blueprint: { checkin_session: ['event', 'starts_at'] },
+        readTypes: ['event', 'mail_list'],
+        writeTypes: ['guest'],
+      },
     };
     __injectPluginFetcher(url, {
       fetch: async (input: RequestInfo | URL): Promise<Response> => {
@@ -1130,6 +1143,13 @@ describe('plugin admin proxy', () => {
     }));
     expect(pageResponse.status).toBe(200);
     const pageData = bodyData(await pageResponse.text());
+    expect(pageData.definedPageTypes).toEqual([
+      expect.objectContaining({
+        slug: 'checkin_session',
+        fieldCount: 2,
+        viewHref: '/admin/page_types/view/checkin_session',
+      }),
+    ]);
     expect(pageData.pageTypes).toEqual(expect.arrayContaining([
       expect.objectContaining({ pageType: 'guest', writeDeclared: true, writeApproved: false }),
       expect.objectContaining({ pageType: 'event', readDeclared: true, readApproved: false }),

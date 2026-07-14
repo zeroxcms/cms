@@ -168,7 +168,11 @@ pluginsManageRoutes.get('/plugins-manage', async (c) => {
       manifestName: manifest?.name,
       version: manifest?.version,
       hasAssets: !!manifest?.assets?.length,
-      hasPageTypes: !!((manifest?.contentTypes?.readTypes?.length ?? 0) + (manifest?.contentTypes?.writeTypes?.length ?? 0)),
+      hasPageTypes: !!(
+        Object.keys(manifest?.contentTypes?.blueprint ?? {}).length
+        + (manifest?.contentTypes?.readTypes?.length ?? 0)
+        + (manifest?.contentTypes?.writeTypes?.length ?? 0)
+      ),
       hasLimits: !!manifest?.limits?.length,
       hasCredits: !!manifest?.credits?.length,
     };
@@ -583,6 +587,7 @@ pluginsManageRoutes.get('/plugins-manage/:id/page-types', async (c) => {
       pluginId: id,
       pluginLabel: row.label || row.url,
       unreachable: true,
+      definedPageTypes: [],
       pageTypes: [],
       flash: c.req.query('flash') ?? undefined,
     });
@@ -590,6 +595,13 @@ pluginsManageRoutes.get('/plugins-manage/:id/page-types', async (c) => {
 
   const readTypes = new Set(resolved.manifest.contentTypes?.readTypes ?? []);
   const writeTypes = new Set(resolved.manifest.contentTypes?.writeTypes ?? []);
+  const definedPageTypes = Object.entries(resolved.manifest.contentTypes?.blueprint ?? {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([slug, blueprint]) => ({
+      slug,
+      fieldCount: Array.isArray(blueprint) ? blueprint.length : 0,
+      viewHref: `/admin/page_types/view/${encodeURIComponent(slug)}`,
+    }));
   const pageTypeNames = [...new Set([...readTypes, ...writeTypes])].sort();
   const approvals = await listPageTypeApprovals(c.env.DB, resolved.manifest.id);
   const approvalByKey = new Map(approvals.map((approval) => [`${approval.page_type}:${approval.access}`, approval]));
@@ -617,6 +629,7 @@ pluginsManageRoutes.get('/plugins-manage/:id/page-types', async (c) => {
     pluginId: id,
     pluginLabel: resolved.manifest.name || row.label || row.url,
     unreachable: false,
+    definedPageTypes,
     pageTypes,
     flash: c.req.query('flash') ?? undefined,
   });
