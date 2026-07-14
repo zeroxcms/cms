@@ -153,6 +153,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     c.req.path,
     unorderedSidebarNav,
     unorderedSidebarSettingsNav,
+    c.req.query('return_to'),
   );
   return {
     siteTitle: branding.appName,

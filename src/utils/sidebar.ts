@@ -16,6 +16,20 @@ function isPathOrDescendant(path: string, href: string): boolean {
   return path === href || path.startsWith(`${href}/`);
 }
 
+function pluginRouteRoot(value: string): string | null {
+  const segments = normalizeSidebarPath(value).split('/');
+  if (segments[1] !== 'admin' || segments[2] !== 'plugins' || !segments[3]) return null;
+  return `/admin/plugins/${segments[3]}`;
+}
+
+function sidebarMatchPath(pathname: string, returnTo?: string): string {
+  const path = normalizeSidebarPath(pathname);
+  if (!/^\/admin\/pages\/[^/]+\/edit$/.test(path) || !returnTo) return path;
+
+  const returnPath = normalizeSidebarPath(returnTo);
+  return returnPath === '/admin' || returnPath.startsWith('/admin/') ? returnPath : path;
+}
+
 function sidebarItemOwnsPath(pathname: string, href: string): boolean {
   const path = normalizeSidebarPath(pathname);
   const target = normalizeSidebarPath(href);
@@ -41,7 +55,9 @@ export function withActiveSidebarItems(
   pathname: string,
   sidebarNav: SidebarNavItem[],
   sidebarSettingsNav: SidebarNavItem[],
+  returnTo?: string,
 ): { sidebarNav: SidebarNavItem[]; sidebarSettingsNav: SidebarNavItem[] } {
+  const matchPath = sidebarMatchPath(pathname, returnTo);
   const candidates: SidebarCandidate[] = [
     ...sidebarNav.flatMap((item, index) => item.isSettingsGroup || !item.href ? [] : [{
       group: 'main' as const,
@@ -56,11 +72,15 @@ export function withActiveSidebarItems(
       score: normalizeSidebarPath(item.href).length,
     }]),
   ];
-  const active = candidates.reduce<SidebarCandidate | undefined>((best, candidate) => {
-    if (!sidebarItemOwnsPath(pathname, candidate.item.href)) return best;
+  const directActive = candidates.reduce<SidebarCandidate | undefined>((best, candidate) => {
+    if (!sidebarItemOwnsPath(matchPath, candidate.item.href)) return best;
     if (!best || candidate.score > best.score) return candidate;
     return best;
   }, undefined);
+  const currentPluginRoot = pluginRouteRoot(matchPath);
+  const active = directActive ?? (currentPluginRoot
+    ? candidates.find((candidate) => pluginRouteRoot(candidate.item.href) === currentPluginRoot)
+    : undefined);
   const settingsActive = active?.group === 'settings';
 
   return {

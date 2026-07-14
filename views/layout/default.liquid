@@ -139,6 +139,12 @@
     });
 
     (function() {
+      function revealActiveSidebarItem() {
+        var activeItem = document.querySelector('[data-admin-sidebar] [aria-current="page"]');
+        if (!(activeItem instanceof HTMLElement)) return;
+        activeItem.scrollIntoView({ block: 'nearest' });
+      }
+
       function bindMobileMenu() {
         var menu = document.querySelector('[data-admin-sidebar]');
         var openButton = document.querySelector('[data-mobile-menu-open]');
@@ -153,6 +159,7 @@
             menu.setAttribute('aria-hidden', 'false');
             openButton.setAttribute('aria-expanded', 'false');
             document.body.classList.remove('overflow-hidden');
+            revealActiveSidebarItem();
             return;
           }
           menu.classList.toggle('hidden', !open);
@@ -160,6 +167,7 @@
           menu.setAttribute('aria-hidden', open ? 'false' : 'true');
           openButton.setAttribute('aria-expanded', open ? 'true' : 'false');
           document.body.classList.toggle('overflow-hidden', open);
+          if (open) window.requestAnimationFrame(revealActiveSidebarItem);
         }
 
         openButton.addEventListener('click', function() {

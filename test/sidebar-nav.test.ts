@@ -61,4 +61,45 @@ describe('sidebar active route state', () => {
     ]);
     expect(result.sidebarSettingsNav[0]).toMatchObject({ label: 'Event Settings', isActive: true });
   });
+
+  it('falls back to the plugin link for deep routes outside its link path', () => {
+    const main = [
+      item('Events', '/admin/plugins/events/events'),
+      item('Check-in', '/admin/plugins/checkin/dashboard'),
+    ];
+    const result = withActiveSidebarItems('/admin/plugins/events/edm/42/preview', main, []);
+
+    expect(result.sidebarNav).toMatchObject([
+      { label: 'Events', isActive: true },
+      { label: 'Check-in', isActive: false },
+    ]);
+  });
+
+  it('uses a page edit return_to destination to keep its plugin highlighted', () => {
+    const main = [
+      item('Pages', '/admin'),
+      item('Events', '/admin/plugins/events/events'),
+    ];
+    const result = withActiveSidebarItems(
+      '/admin/pages/42/edit',
+      main,
+      [],
+      '/admin/plugins/events/guests/7?tab=rsvp',
+    );
+
+    expect(result.sidebarNav).toMatchObject([
+      { label: 'Pages', isActive: false },
+      { label: 'Events', isActive: true },
+    ]);
+  });
+
+  it('ignores non-admin return_to destinations on page edit', () => {
+    const main = [item('Pages', '/admin'), item('Events', '/admin/plugins/events/events')];
+    const result = withActiveSidebarItems('/admin/pages/42/edit', main, [], 'https://example.com/admin/plugins/events');
+
+    expect(result.sidebarNav).toMatchObject([
+      { label: 'Pages', isActive: true },
+      { label: 'Events', isActive: false },
+    ]);
+  });
 });
