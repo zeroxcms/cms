@@ -1102,4 +1102,34 @@ describe('Plugin API content-meta, tag ensure, and lookup projections', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ error: 'invalid_ids' });
   });
+
+  // Regression: a full 500-row page with include_tags=1 (or a >100-entry
+  // ids/slugs lookup) must not blow D1's 100-bound-parameters-per-query cap —
+  // the export flow of the import-export plugin fetches exactly this shape.
+  it('handles include_tags and ids lookups beyond 100 rows in one call', async () => {
+    const created: Array<{ id: number }> = [];
+    for (let start = 0; start < 120; start += 60) {
+      const batch = await cmsApi('POST', '/__cms/pages/batch', {
+        pages: Array.from({ length: 60 }, (_, i) => ({
+          page_type: 'guest',
+          name: `Bulk Tagged ${start + i}`,
+          slug: `bulk-tagged-${start + i}`,
+        })),
+      });
+      expect(batch.status).toBe(200);
+      created.push(...((await batch.json()) as { created: Array<{ id: number }> }).created);
+    }
+    expect(created).toHaveLength(120);
+
+    const list = await cmsApi('GET', '/__cms/pages?page_type=guest&limit=500&include_tags=1');
+    expect(list.status).toBe(200);
+    const listBody = await list.json() as { pages: Array<{ tags?: unknown[] }> };
+    expect(listBody.pages.length).toBeGreaterThanOrEqual(120);
+    expect(listBody.pages.every((page) => Array.isArray(page.tags))).toBe(true);
+
+    const ids = created.map((page) => page.id).join(',');
+    const lookup = await cmsApi('GET', `/__cms/pages?page_type=guest&ids=${ids}&limit=500&count=0`);
+    expect(lookup.status).toBe(200);
+    expect(((await lookup.json()) as { pages: unknown[] }).pages).toHaveLength(120);
+  });
 });

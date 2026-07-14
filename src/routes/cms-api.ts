@@ -1035,15 +1035,16 @@ cmsApiRoutes.post('/credits/charge', async (c) => {
 async function pageTagsByPageId(db: D1Database, pageIds: number[]): Promise<Map<number, ApiPageTag[]>> {
   const result = new Map<number, ApiPageTag[]>();
   if (!pageIds.length) return result;
-  const placeholders = pageIds.map(() => '?').join(',');
+  // One JSON-array bind instead of a placeholder per id: a full 500-row page
+  // would otherwise exceed D1's 100-bound-parameters-per-query limit.
   const rows = await db.prepare(
     `SELECT dpt.page_id, t.id, t.name, tt.name AS taxonomy, tt.slug AS taxonomy_slug
      FROM draft_page_tags dpt
      JOIN tags t ON t.id = dpt.tag_id
      LEFT JOIN taxonomies tt ON tt.slug = t.taxonomy_slug
-     WHERE dpt.page_id IN (${placeholders})`,
+     WHERE dpt.page_id IN (SELECT value FROM json_each(?))`,
   )
-    .bind(...pageIds)
+    .bind(JSON.stringify(pageIds))
     .all<{ page_id: number; id: number; name: string; taxonomy: string | null; taxonomy_slug: string | null }>();
   for (const row of rows.results) {
     if (!row.taxonomy) continue;
@@ -1190,14 +1191,16 @@ cmsApiRoutes.get('/pages', async (c) => {
   const params: unknown[] = [pageType];
   let where = 'WHERE page_type = ?';
   if (lookupIds.length || slugsParam.length) {
+    // JSON-array binds (not one placeholder per value) keep a 500-entry lookup
+    // within D1's 100-bound-parameters-per-query limit.
     const parts: string[] = [];
     if (lookupIds.length) {
-      parts.push(`id IN (${lookupIds.map(() => '?').join(',')})`);
-      params.push(...lookupIds);
+      parts.push('id IN (SELECT value FROM json_each(?))');
+      params.push(JSON.stringify(lookupIds));
     }
     if (slugsParam.length) {
-      parts.push(`slug IN (${slugsParam.map(() => '?').join(',')})`);
-      params.push(...slugsParam);
+      parts.push('slug IN (SELECT value FROM json_each(?))');
+      params.push(JSON.stringify(slugsParam));
     }
     where += ` AND (${parts.join(' OR ')})`;
   }
