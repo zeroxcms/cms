@@ -3,6 +3,7 @@ import { generateTokenId, hashToken, signJWT, verifyJWT } from './jwt';
 
 export const ACCESS_TOKEN_TTL = 15 * 60;        // 15 minutes
 export const REFRESH_TOKEN_TTL = 7 * 24 * 3600; // 7 days
+export const REFRESH_ROTATION_GRACE_SECONDS = 30;
 export const MAX_SESSIONS_PER_USER = 5;
 
 export interface AuthDbUser {
@@ -24,7 +25,8 @@ export type RotateAuthSessionResult =
       ok: true;
       accessPayload: JWTPayload;
       accessToken: string;
-      refreshToken: string;
+      /** Omitted when a concurrent request used the just-rotated token. */
+      refreshToken?: string;
     }
   | { ok: false; error: 'invalid_refresh_token' | 'session_revoked' | 'user_not_found' };
 
@@ -60,11 +62,8 @@ export async function rotateAuthSession(
     return { ok: false, error: 'invalid_refresh_token' };
   }
 
-  const session = await db.prepare(
-    'SELECT id, user_id FROM sessions WHERE refresh_token_hash = ? AND expires_at > CURRENT_TIMESTAMP',
-  )
-    .bind(await hashToken(refreshPayload.jti))
-    .first<{ id: number; user_id: number }>();
+  const refreshHash = await hashToken(refreshPayload.jti);
+  const session = await findRefreshSession(db, refreshHash);
 
   if (!session) {
     return { ok: false, error: 'session_revoked' };
@@ -80,12 +79,36 @@ export async function rotateAuthSession(
     return { ok: false, error: 'user_not_found' };
   }
 
+  // A request that carries the immediately previous token is a concurrent
+  // refresh, not a revoked session. Give it a fresh access token but do not
+  // rotate or set a refresh cookie: the winning response owns the new token.
+  if (session.is_previous) {
+    const access = await issueAccessToken(user, jwtSecret);
+    return { ok: true, ...access };
+  }
+
   const issued = await issueAuthTokens(user, jwtSecret);
-  await db.prepare(
-    `UPDATE sessions SET refresh_token_hash = ?, expires_at = datetime('now', '+7 days') WHERE id = ?`,
+  const update = await db.prepare(
+    `UPDATE sessions
+        SET previous_refresh_token_hash = refresh_token_hash,
+            refresh_token_hash = ?,
+            rotated_at = CURRENT_TIMESTAMP,
+            expires_at = datetime('now', '+7 days')
+      WHERE id = ? AND refresh_token_hash = ?`,
   )
-    .bind(await hashToken(issued.refreshJti), session.id)
+    .bind(await hashToken(issued.refreshJti), session.id, refreshHash)
     .run();
+
+  // Another request may have won between SELECT and UPDATE. Confirm that this
+  // token is now the grace token before returning access-only success.
+  if ((update.meta.changes ?? 0) === 0) {
+    const racedSession = await findRefreshSession(db, refreshHash);
+    if (!racedSession || !racedSession.is_previous || racedSession.id !== session.id) {
+      return { ok: false, error: 'session_revoked' };
+    }
+    const access = await issueAccessToken(user, jwtSecret);
+    return { ok: true, ...access };
+  }
 
   return {
     ok: true,
@@ -103,9 +126,20 @@ export async function revokeRefreshSession(
   const payload = await verifyJWT(refreshToken, jwtSecret);
   if (!payload?.jti) return;
 
-  await db.prepare('DELETE FROM sessions WHERE refresh_token_hash = ?')
-    .bind(await hashToken(payload.jti))
+  const refreshHash = await hashToken(payload.jti);
+  await db.prepare(
+    'DELETE FROM sessions WHERE refresh_token_hash = ? OR previous_refresh_token_hash = ?',
+  )
+    .bind(refreshHash, refreshHash)
     .run();
+}
+
+export async function findRefreshSessionUserId(
+  db: D1Database,
+  refreshJti: string,
+): Promise<number | null> {
+  const session = await findRefreshSession(db, await hashToken(refreshJti));
+  return session?.user_id ?? null;
 }
 
 export function capUserSessions(db: D1Database, userId: number): Promise<D1Result> {
@@ -136,5 +170,42 @@ function authPayload(
     jti,
     exp,
     iat,
+  };
+}
+
+interface RefreshSession {
+  id: number;
+  user_id: number;
+  is_previous: number;
+}
+
+async function findRefreshSession(db: D1Database, refreshHash: string): Promise<RefreshSession | null> {
+  return db.prepare(
+    `SELECT id,
+            user_id,
+            CASE WHEN refresh_token_hash = ?1 THEN 0 ELSE 1 END AS is_previous
+       FROM sessions
+      WHERE expires_at > CURRENT_TIMESTAMP
+        AND (
+          refresh_token_hash = ?1
+          OR (
+            previous_refresh_token_hash = ?1
+            AND rotated_at >= datetime('now', '-${REFRESH_ROTATION_GRACE_SECONDS} seconds')
+          )
+        )`,
+  )
+    .bind(refreshHash)
+    .first<RefreshSession>();
+}
+
+async function issueAccessToken(
+  user: AuthDbUser,
+  jwtSecret: string,
+): Promise<Pick<IssuedAuthTokens, 'accessPayload' | 'accessToken'>> {
+  const now = Math.floor(Date.now() / 1000);
+  const accessPayload = authPayload(user, 'access', now + ACCESS_TOKEN_TTL, now);
+  return {
+    accessPayload,
+    accessToken: await signJWT(accessPayload, jwtSecret),
   };
 }

@@ -9,7 +9,7 @@
 
 import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
-import { hashToken, signJWT, verifyJWT } from '../security/jwt';
+import { signJWT, verifyJWT } from '../security/jwt';
 import { generateCodeVerifier, generateCodeChallenge, generateState } from '../utils/pkce';
 import { rateLimitByIP } from '../middleware/rate-limit';
 import {
@@ -31,6 +31,7 @@ import {
   ACCESS_TOKEN_TTL,
   REFRESH_TOKEN_TTL,
   capUserSessions,
+  findRefreshSessionUserId,
   issueAuthTokens,
   purgeExpiredSessions,
   revokeRefreshSession,
@@ -285,12 +286,7 @@ async function currentAuthenticatedUserId(c: AppContext): Promise<number | null>
   const refreshPayload = await verifyJWT(refreshToken, secret);
   if (!refreshPayload || refreshPayload.type !== 'refresh' || !refreshPayload.jti) return null;
 
-  const session = await c.env.DB.prepare(
-    'SELECT user_id FROM sessions WHERE refresh_token_hash = ? AND expires_at > CURRENT_TIMESTAMP',
-  )
-    .bind(await hashToken(refreshPayload.jti))
-    .first<{ user_id: number }>();
-  return session?.user_id ?? null;
+  return findRefreshSessionUserId(c.env.DB, refreshPayload.jti);
 }
 
 async function findUserByOAuthIdentity(db: D1Database, oauthId: string): Promise<AuthDbUser | null> {
@@ -688,7 +684,9 @@ authRoutes.post('/refresh', async (c) => {
   c.executionCtx.waitUntil(purgeExpiredSessions(c.env.DB));
 
   setAuthCookie(c, accessCookieName, rotated.accessToken, ACCESS_TOKEN_TTL);
-  setAuthCookie(c, refreshCookieName, rotated.refreshToken, REFRESH_TOKEN_TTL);
+  if (rotated.refreshToken) {
+    setAuthCookie(c, refreshCookieName, rotated.refreshToken, REFRESH_TOKEN_TTL);
+  }
 
   return c.json({ ok: true, expires_in: ACCESS_TOKEN_TTL });
 });

@@ -582,6 +582,69 @@ describe('auth routes', () => {
       .bind(oldRefreshHash)
       .first()).toBeNull();
   });
+
+  it('keeps concurrent admin requests signed in during refresh-token rotation', async () => {
+    const jti = 'concurrent-browser-refresh';
+    const [expiredAccessToken, refreshToken] = await Promise.all([
+      signTestToken({ exp: Math.floor(Date.now() / 1000) - 60 }),
+      signTestToken({ type: 'refresh', jti, exp: Math.floor(Date.now() / 1000) + 3600 }),
+    ]);
+    await env.DB.prepare(
+      "INSERT INTO sessions (user_id, refresh_token_hash, expires_at) VALUES (?, ?, datetime('now', '+1 day'))",
+    )
+      .bind(1, await hashToken(jti))
+      .run();
+
+    const cookie = `access_token=${expiredAccessToken}; refresh_token=${refreshToken}`;
+    const first = await fetchWorker('/admin', { headers: { Cookie: cookie } });
+    const rotatedHash = await env.DB.prepare(
+      'SELECT refresh_token_hash FROM sessions WHERE user_id = ?',
+    ).bind(1).first<{ refresh_token_hash: string }>();
+
+    // Models a second request that was sent before the first response updated
+    // the browser's shared cookie jar.
+    const second = await fetchWorker('/admin/profile', { headers: { Cookie: cookie } });
+    const afterGraceHash = await env.DB.prepare(
+      'SELECT refresh_token_hash FROM sessions WHERE user_id = ?',
+    ).bind(1).first<{ refresh_token_hash: string }>();
+    const secondSetCookies = second.headers.getSetCookie().join('\n');
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(secondSetCookies).toContain('access_token=');
+    expect(secondSetCookies).not.toMatch(/(^|\n)refresh_token=/);
+    expect(afterGraceHash?.refresh_token_hash).toBe(rotatedHash?.refresh_token_hash);
+  });
+
+  it('rejects a previous refresh token after the rotation grace expires', async () => {
+    const jti = 'expired-rotation-grace';
+    const refreshToken = await signTestToken({
+      type: 'refresh',
+      jti,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    await env.DB.prepare(
+      "INSERT INTO sessions (user_id, refresh_token_hash, expires_at) VALUES (?, ?, datetime('now', '+1 day'))",
+    )
+      .bind(1, await hashToken(jti))
+      .run();
+
+    expect((await fetchWorker('/auth/refresh', {
+      method: 'POST',
+      headers: { Cookie: `refresh_token=${refreshToken}` },
+    })).status).toBe(200);
+
+    await env.DB.prepare(
+      "UPDATE sessions SET rotated_at = datetime('now', '-31 seconds') WHERE user_id = ?",
+    ).bind(1).run();
+
+    const replay = await fetchWorker('/auth/refresh', {
+      method: 'POST',
+      headers: { Cookie: `refresh_token=${refreshToken}` },
+    });
+    expect(replay.status).toBe(401);
+    expect(await replay.json()).toEqual({ error: 'session_revoked' });
+  });
 });
 
 describe('admin routes', () => {

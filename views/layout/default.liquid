@@ -298,8 +298,8 @@
       <nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-4 md:px-4 md:py-6" data-scroll-frame>
         {% for item in sidebarNav %}
           {% if item.isSettingsGroup %}
-            <details class="group overflow-hidden">
-              <summary class="flex cursor-pointer list-none items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white [&::-webkit-details-marker]:hidden">
+            <details class="group overflow-hidden"{% if item.isActive %} open{% endif %}>
+              <summary class="flex cursor-pointer list-none items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-gray-700 hover:text-white [&::-webkit-details-marker]:hidden {% if item.isActive %}font-semibold text-white{% else %}text-gray-300{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#{{ item.icon | escape }}"></use></svg>
                 <span>{{ item.label | escape }}</span>
                 <svg class="ml-auto h-4 w-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#chevron-right"></use></svg>
@@ -307,7 +307,8 @@
               <div class="mt-1 ml-3 space-y-1 border-l border-gray-700 pl-3">
                 {% for settingItem in sidebarSettingsNav %}
                   <a href="{{ settingItem.href | escape }}"
-                     class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
+                     {% if settingItem.isActive %}aria-current="page"{% endif %}
+                     class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors {% if settingItem.isActive %}bg-indigo-600 font-semibold text-white shadow-sm hover:bg-indigo-700{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#{{ settingItem.icon | escape }}"></use></svg>
                     {{ settingItem.label | escape }}
                   </a>
@@ -316,7 +317,8 @@
             </details>
           {% else %}
             <a href="{{ item.href | escape }}"
-               class="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white">
+               {% if item.isActive %}aria-current="page"{% endif %}
+               class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors {% if item.isActive %}bg-indigo-600 font-semibold text-white shadow-sm hover:bg-indigo-700{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#{{ item.icon | escape }}"></use></svg>
               {{ item.label | escape }}
             </a>

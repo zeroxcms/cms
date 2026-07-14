@@ -72,7 +72,9 @@ export const authMiddleware = createMiddleware<{
 
     // Set cookies
     setAuthCookie(c, accessCookieName, rotated.accessToken, ACCESS_TOKEN_TTL);
-    setAuthCookie(c, refreshCookieName, rotated.refreshToken, REFRESH_TOKEN_TTL);
+    if (rotated.refreshToken) {
+      setAuthCookie(c, refreshCookieName, rotated.refreshToken, REFRESH_TOKEN_TTL);
+    }
 
     return rotated.accessPayload;
   };

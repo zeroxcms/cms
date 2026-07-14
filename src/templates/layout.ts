@@ -6,6 +6,7 @@ export interface SidebarNavItem {
   href: string;
   icon: string;
   isSettingsGroup?: boolean;
+  isActive?: boolean;
 }
 
 /** Nav-gating flags forwarded into the sidebar; default false (hidden). */

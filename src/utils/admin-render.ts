@@ -44,6 +44,7 @@ import {
 
 export type { BaseTemplateProps } from '../templates/layout';
 import type { BaseTemplateProps, SidebarNavItem } from '../templates/layout';
+import { withActiveSidebarItems } from './sidebar';
 
 /** The signed-in user's effective permission set (built-in defaults + DB overrides). */
 export async function userPermissions(c: AppContext): Promise<Set<Permission>> {
@@ -130,10 +131,10 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     if (item.group === 'settings') sidebarSettingsNavEntries.push(entry);
     else sidebarNavEntries.push(entry);
   });
-  const sidebarSettingsNav = sidebarSettingsNavEntries
+  const unorderedSidebarSettingsNav = sidebarSettingsNavEntries
     .sort((a, b) => a.weight - b.weight || a.index - b.index)
     .map((entry) => entry.item);
-  if (sidebarSettingsNav.length > 0) {
+  if (unorderedSidebarSettingsNav.length > 0) {
     sidebarNavEntries.push({
       item: {
         label: 'Settings',
@@ -145,9 +146,14 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
       index: SIDEBAR_MENU_ITEMS.length,
     });
   }
-  const sidebarNav = sidebarNavEntries
+  const unorderedSidebarNav = sidebarNavEntries
     .sort((a, b) => a.weight - b.weight || a.index - b.index)
     .map((entry) => entry.item);
+  const { sidebarNav, sidebarSettingsNav } = withActiveSidebarItems(
+    c.req.path,
+    unorderedSidebarNav,
+    unorderedSidebarSettingsNav,
+  );
   return {
     siteTitle: branding.appName,
     appIcon: branding.appIcon,
