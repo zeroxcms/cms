@@ -2,7 +2,7 @@ import { env, exports } from 'cloudflare:workers';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { clearManifestCache, __injectPluginFetcher, __clearInjectedFetchers } from '../src/plugins/registry';
 import { clearConfigCache } from '../src/plugins/config';
-import { signJWT } from '../src/utils/jwt';
+import { signJWT } from '../src/security/jwt';
 import {
   adjustCredits,
   adjustSharedCredits,

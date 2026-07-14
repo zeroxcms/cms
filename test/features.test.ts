@@ -16,7 +16,7 @@ import { createExecutionContext } from 'cloudflare:test';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import cmsWorker from '../src/index';
 import { cmsConfig } from '../src/cms-config';
-import { signJWT } from '../src/utils/jwt';
+import { signJWT } from '../src/security/jwt';
 import { blueprintToLect, stringifyLect } from '../src/utils/lect';
 import { clearRolePermissionsCache } from '../src/utils/roles';
 import type { JWTPayload } from '../src/types';

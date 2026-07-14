@@ -5,7 +5,7 @@ import {
   rejectCrossSiteRequest,
   withSensitiveCacheHeaders,
   withSecurityHeaders,
-} from '../src/utils/security';
+} from '../src/security/http';
 import { hasPermission, permissionsFor } from '../src/utils/roles';
 import {
   blueprintToLect,

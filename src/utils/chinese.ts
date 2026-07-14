@@ -3,7 +3,7 @@
 // character-level 1:1 conversions generated from the OpenCC dictionaries (see
 // scripts/gen-chinese-chars.mjs); that is enough for substring LIKE matching.
 
-import { S2T_KEYS, S2T_VALS, T2S_KEYS, T2S_VALS } from './chinese-chars';
+import { S2T_KEYS, S2T_VALS, T2S_KEYS, T2S_VALS } from '../../dictionary/chinese-chars';
 
 function buildMap(keys: string, vals: string): Map<string, string> {
   const map = new Map<string, string>();

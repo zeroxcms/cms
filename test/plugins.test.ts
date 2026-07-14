@@ -5,7 +5,7 @@ import { clearManifestCache, __injectPluginFetcher, __clearInjectedFetchers } fr
 import { deliverHook } from '../src/plugins/hooks';
 import { viewsFor } from '../src/plugins/views';
 import { cmsConfig } from '../src/cms-config';
-import { signJWT } from '../src/utils/jwt';
+import { signJWT } from '../src/security/jwt';
 import { CMS_ADMIN_JOB_KIND, type CmsAdminJobMessage } from '../src/utils/admin-jobs';
 import { approveAsset, computeIntegrity } from '../src/utils/plugin-assets';
 import type { Env, JWTPayload } from '../src/types';

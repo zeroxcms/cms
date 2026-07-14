@@ -1,7 +1,7 @@
 import { env, exports } from 'cloudflare:workers';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cmsConfig } from '../src/cms-config';
-import { hashToken, signJWT } from '../src/utils/jwt';
+import { hashToken, signJWT } from '../src/security/jwt';
 import { blueprintToLect, stringifyLect } from '../src/utils/lect';
 import { clearConfigCache } from '../src/plugins/config';
 import { __injectPluginFetcher, clearManifestCache } from '../src/plugins/registry';
