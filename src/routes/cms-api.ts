@@ -47,7 +47,7 @@ import {
   performAdvancedSearch,
   type AdvancedSearchCriterion,
 } from '../utils/search';
-import { unpublishPageFromTargets, unpublishPagesFromTargets } from '../publish';
+import { liveMapForDraftPages, unpublishPageFromTargets, unpublishPagesFromTargets } from '../publish';
 import { ingestSubmissions, SUBMISSION_PAGE_TYPES } from '../utils/submission-ingest';
 import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../utils/page-store';
 import { listPageTypeApprovals, pageTypeScopeAllows } from '../utils/plugin-page-types';
@@ -121,6 +121,8 @@ interface ApiPage {
   created_at: string;
   updated_at: string;
   lect: Lect;
+  /** Present when the caller requests live status on a full page list. */
+  isPublished?: boolean;
 }
 
 interface PluginAuth {
@@ -937,6 +939,7 @@ cmsApiRoutes.get('/pages', async (c) => {
   // listing fat rows the caller only needs ids from. Whitelisted column names
   // only, so interpolating them into the SELECT is safe.
   const fieldsParam = (c.req.query('fields') ?? '').trim();
+  const includeLiveStatus = c.req.query('include_live_status') === '1';
   let fields: string[] | null = null;
   if (fieldsParam) {
     fields = [...new Set(fieldsParam.split(',').map((field) => field.trim()).filter(Boolean))];
@@ -1005,8 +1008,13 @@ cmsApiRoutes.get('/pages', async (c) => {
           .first<{ total: number }>(),
   ]);
 
+  // Checking live state needs a full draft row (its UUID is the stable
+  // draft/live join key), so keep fields= projections lean and predictable.
+  const liveMap = includeLiveStatus && !fields ? await liveMapForDraftPages(c.env, rows.results) : null;
   return c.json({
-    pages: fields ? rows.results.map((row) => serializePartialPage(row, fields)) : rows.results.map(serializePage),
+    pages: fields
+      ? rows.results.map((row) => serializePartialPage(row, fields))
+      : rows.results.map((row) => ({ ...serializePage(row), ...(liveMap ? { isPublished: liveMap.has(row.uuid) } : {}) })),
     total: skipCount ? -1 : (totalRow?.total ?? 0),
     limit,
     offset,
@@ -1075,8 +1083,16 @@ cmsApiRoutes.get('/pages/:id', async (c) => {
   const tags = await c.env.DB.prepare('SELECT tag_id FROM draft_page_tags WHERE page_id = ?')
     .bind(id)
     .all<{ tag_id: number }>();
+  const includeLiveStatus = c.req.query('include_live_status') === '1';
+  const liveMap = includeLiveStatus ? await liveMapForDraftPages(c.env, [page]) : null;
 
-  return c.json({ page: { ...serializePage(page), tags: tags.results.map((t) => t.tag_id) } });
+  return c.json({
+    page: {
+      ...serializePage(page),
+      tags: tags.results.map((t) => t.tag_id),
+      ...(liveMap ? { isPublished: liveMap.has(page.uuid) } : {}),
+    },
+  });
 });
 
 // Create a page.

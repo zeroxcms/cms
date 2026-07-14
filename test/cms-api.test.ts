@@ -336,6 +336,36 @@ describe('Plugin API create / read / list / update / delete', () => {
     expect(filtered.total).toBe(1);
   });
 
+  it('optionally annotates a full page list with live publish status', async () => {
+    const created = await (await cmsApi('POST', '/__cms/pages', { page_type: 'event', name: 'Live event' })).json() as {
+      page: { id: number; uuid: string; name: string; slug: string; weight: number; page_type: string; lect: Record<string, unknown> };
+    };
+    try {
+      await env.PUBLISHED_DB.prepare(
+        'INSERT INTO live_pages (id, uuid, name, slug, weight, page_type, lect) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      ).bind(
+        created.page.id,
+        created.page.uuid,
+        created.page.name,
+        created.page.slug,
+        created.page.weight,
+        created.page.page_type,
+        JSON.stringify(created.page.lect),
+      ).run();
+
+      const res = await cmsApi('GET', '/__cms/pages?page_type=event&q=Live%20event&include_live_status=1');
+      expect(res.status).toBe(200);
+      const body = await res.json() as { pages: Array<{ name: string; isPublished?: boolean }> };
+      expect(body.pages.find((page) => page.name === 'Live event')?.isPublished).toBe(true);
+
+      const single = await cmsApi('GET', `/__cms/pages/${created.page.id}?include_live_status=1`);
+      expect(single.status).toBe(200);
+      expect((await single.json() as { page: { isPublished?: boolean } }).page.isPublished).toBe(true);
+    } finally {
+      await env.PUBLISHED_DB.prepare('DELETE FROM live_pages WHERE uuid = ?').bind(created.page.uuid).run();
+    }
+  });
+
   it('uses Chinese variants and lect fields when plugins list pages with q', async () => {
     await cmsApi('POST', '/__cms/pages', {
       page_type: 'guest',
