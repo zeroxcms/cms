@@ -1,12 +1,12 @@
 import { env } from 'cloudflare:workers';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ingestSubmissions } from '../src/utils/submission-ingest';
+import { ingestSubmissions, isSubmissionMirror } from '../src/utils/submission-ingest';
 import { publishPageToTargets, unpublishPageFromTargets } from '../src/publish';
 import { clearManifestCache, __injectPluginFetcher, __clearInjectedFetchers } from '../src/plugins/registry';
 
-// Submission ingest — worker-rsvp writes rsvp_response / rsvp_registration
-// rows into the published DB (negative ids, own uuids); the host pulls them
-// into the draft DB as pages (same uuid → idempotent) and fires create hooks.
+// Submission ingest — any public Worker may write a page into the published
+// DB; when its uuid has no draft counterpart, the host mirrors it as a
+// submission (same uuid → idempotent) and fires submission hooks.
 // The publish path must refuse the mirrored pages in both directions, and a
 // CMS publish/unpublish of an ordinary page must never touch submission rows.
 
@@ -20,7 +20,7 @@ interface LiveSubmissionSeed {
   id: number;
   uuid: string;
   created_at: string;
-  page_type: 'rsvp_response' | 'rsvp_registration';
+  page_type: string;
   page_id: number | null;
   lect?: Record<string, unknown>;
 }
@@ -68,8 +68,8 @@ async function registerHookPlugin(): Promise<void> {
           id: 'events',
           name: 'Events Suite',
           version: '1.0.0',
-          hooks: ['create'],
-          contentTypes: { blueprint: { rsvp_response: ['status'], rsvp_registration: ['email'] } },
+          hooks: ['submission'],
+          contentTypes: { blueprint: { contact_request: ['status'] } },
         });
       }
       if (path.startsWith('/__plugin/hooks/')) {
@@ -86,9 +86,9 @@ async function cleanup(): Promise<void> {
   hookCalls.length = 0;
   await env.DB.prepare('DELETE FROM plugins').run();
   await env.DB.prepare('DELETE FROM settings WHERE key = ?').bind(CURSOR_KEY).run();
-  await env.DB.prepare("DELETE FROM draft_pages WHERE page_type IN ('rsvp_response', 'rsvp_registration')").run();
+  await env.DB.prepare("DELETE FROM draft_pages WHERE uuid LIKE 'facade01-%'").run();
   await env.DB.prepare('DELETE FROM draft_pages WHERE id IN (?, ?)').bind(GUEST_ID, EVENT_ID).run();
-  await env.PUBLISHED_DB.prepare("DELETE FROM live_pages WHERE page_type IN ('rsvp_response', 'rsvp_registration')").run();
+  await env.PUBLISHED_DB.prepare("DELETE FROM live_pages WHERE uuid LIKE 'facade01-%'").run();
 }
 
 beforeEach(async () => {
@@ -105,16 +105,16 @@ afterEach(async () => {
 });
 
 describe('ingestSubmissions', () => {
-  it('pulls new submission rows into draft pages, preserving uuid and parent', async () => {
+  it('pulls a live-only page of any type into draft as a submission', async () => {
     await registerHookPlugin();
     await seedDraftPage(GUEST_ID, 'guest');
     await seedLiveSubmission({
       id: -100001,
       uuid: 'facade01-0001-4001-8001-000000000001',
       created_at: '2026-07-07 10:00:00',
-      page_type: 'rsvp_response',
+      page_type: 'contact_request',
       page_id: GUEST_ID,
-      lect: { _type: 'rsvp_response', status: 'confirmed', plus_guests: '2' },
+      lect: { _type: 'contact_request', status: 'new', message: 'Hello' },
     });
 
     const result = await ingestSubmissions(env);
@@ -126,9 +126,10 @@ describe('ingestSubmissions', () => {
       .first<{ id: number; page_type: string; page_id: number | null; lect: string; created_at: string }>();
     expect(draft).not.toBeNull();
     expect(draft!.id).toBeGreaterThan(0); // draft mints its own positive id
-    expect(draft!.page_type).toBe('rsvp_response');
+    expect(draft!.page_type).toBe('contact_request');
+    expect(await isSubmissionMirror(env.DB, draft!.id)).toBe(true);
     expect(draft!.page_id).toBe(GUEST_ID);
-    expect(JSON.parse(draft!.lect).status).toBe('confirmed');
+    expect(JSON.parse(draft!.lect).message).toBe('Hello');
     expect(draft!.created_at).toBe('2026-07-07 10:00:00'); // submission time preserved
 
     const version = await env.DB.prepare('SELECT action FROM page_versions WHERE page_id = ? ORDER BY id DESC')
@@ -136,11 +137,12 @@ describe('ingestSubmissions', () => {
       .first<{ action: string }>();
     expect(version?.action).toBe('ingest-submission');
 
-    // The create hook reached the subscribed plugin with the submission page.
+    // The dedicated submission hook reached the subscribed plugin.
     expect(hookCalls.length).toBe(1);
-    expect(hookCalls[0].url).toContain('/hooks/create');
+    expect(hookCalls[0].url).toContain('/hooks/submission');
     expect(hookCalls[0].body.page.uuid).toBe('facade01-0001-4001-8001-000000000001');
-    expect(hookCalls[0].body.page.page_type).toBe('rsvp_response');
+    expect(hookCalls[0].body.event).toBe('submission');
+    expect(hookCalls[0].body.page.page_type).toBe('contact_request');
   });
 
   it('is idempotent: a second run past the cursor creates nothing', async () => {
@@ -178,6 +180,27 @@ describe('ingestSubmissions', () => {
     expect(rerun.created).toBe(0); // …but the uuid already exists in draft
   });
 
+  it('finds a live-only page on a later cursor pass', async () => {
+    const uuid = 'facade01-0004-4004-8004-000000000004';
+    await seedLiveSubmission({
+      id: -100004,
+      uuid,
+      created_at: '2026-07-07 10:03:00',
+      page_type: 'survey_answer',
+      page_id: null,
+    });
+    await seedDraftPage(77004, 'survey_answer', uuid);
+
+    expect((await ingestSubmissions(env)).created).toBe(0);
+    await env.DB.prepare('DELETE FROM draft_pages WHERE uuid = ?').bind(uuid).run();
+
+    expect((await ingestSubmissions(env)).more).toBe(true); // completed pass resets cursor
+    expect((await ingestSubmissions(env)).created).toBe(1);
+    const mirrored = await env.DB.prepare('SELECT id FROM draft_pages WHERE uuid = ?')
+      .bind(uuid).first<{ id: number }>();
+    expect(await isSubmissionMirror(env.DB, mirrored!.id)).toBe(true);
+  });
+
   it('caps creates per run and resumes from the cursor', async () => {
     for (let index = 0; index < 10; index += 1) {
       await seedLiveSubmission({
@@ -203,14 +226,14 @@ describe('ingestSubmissions', () => {
 });
 
 describe('publish path refuses submission mirrors', () => {
-  it('does not publish a draft rsvp_response page', async () => {
+  it('does not publish a submission mirror of an arbitrary page type', async () => {
     await seedLiveSubmission({
       id: -100201,
       uuid: 'facade01-0201-4201-8201-000000000201',
       created_at: '2026-07-07 12:00:00',
-      page_type: 'rsvp_response',
+      page_type: 'contact_request',
       page_id: null,
-      lect: { _type: 'rsvp_response', status: 'declined' },
+      lect: { _type: 'contact_request', status: 'new' },
     });
     await ingestSubmissions(env);
     const draft = await env.DB.prepare('SELECT id FROM draft_pages WHERE uuid = ?')
@@ -221,15 +244,15 @@ describe('publish path refuses submission mirrors', () => {
     expect(outcome?.refused).toBe(true);
     expect(outcome?.targets).toEqual([]);
 
-    // The original live row is untouched (still the negative worker-rsvp id).
+    // The original live row is untouched.
     const live = await env.PUBLISHED_DB.prepare('SELECT id, lect FROM live_pages WHERE uuid = ?')
       .bind('facade01-0201-4201-8201-000000000201')
       .first<{ id: number; lect: string }>();
     expect(live?.id).toBe(-100201);
-    expect(JSON.parse(live!.lect).status).toBe('declined');
+    expect(JSON.parse(live!.lect).status).toBe('new');
   });
 
-  it('does not unpublish (delete) the live submission row when the type is passed', async () => {
+  it('does not unpublish the live source when the submission marker is passed', async () => {
     await seedLiveSubmission({
       id: -100202,
       uuid: 'facade01-0202-4202-8202-000000000202',
@@ -238,7 +261,7 @@ describe('publish path refuses submission mirrors', () => {
       page_id: null,
     });
 
-    const outcome = await unpublishPageFromTargets(env, 'facade01-0202-4202-8202-000000000202', 'rsvp_registration');
+    const outcome = await unpublishPageFromTargets(env, 'facade01-0202-4202-8202-000000000202', true);
     expect(outcome.refused).toBe(true);
 
     const live = await env.PUBLISHED_DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
@@ -259,7 +282,7 @@ describe('publish path refuses submission mirrors', () => {
 
     const published = await publishPageToTargets(env, EVENT_ID);
     expect(published?.refused).toBeUndefined();
-    await unpublishPageFromTargets(env, 'facade01-aaaa-4aaa-8aaa-00000000aaaa', 'event');
+    await unpublishPageFromTargets(env, 'facade01-aaaa-4aaa-8aaa-00000000aaaa', false);
 
     const live = await env.PUBLISHED_DB.prepare('SELECT id FROM live_pages WHERE uuid = ?')
       .bind('facade01-0203-4203-8203-000000000203')

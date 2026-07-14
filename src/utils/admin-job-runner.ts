@@ -19,6 +19,7 @@ import {
 } from './admin-jobs';
 import { appendQuery } from './forms';
 import { advancedSearchMatchingPageIds } from './search';
+import { isSubmissionMirror } from './submission-ingest';
 
 const ADVANCED_SEARCH_BULK_JOB_PAGE_LIMIT = 100;
 
@@ -180,7 +181,7 @@ async function applyAdvancedSearchBulkAction(
   for (const page of pages) {
     const outcome = action === 'publish'
       ? await publishPageToTargets(env, page.id)
-      : await unpublishPageFromTargets(env, page.uuid, page.page_type);
+      : await unpublishPageFromTargets(env, page.uuid, await isSubmissionMirror(env.DB, page.id));
     if (!outcome) continue;
     if (outcome.refused) {
       refused += 1;

@@ -36,10 +36,10 @@ bucket_name = "worker-cms-media"
 # binding = "PUBLISH_BUCKET"
 # bucket_name = "worker-cms-published"
 
-# Submission ingest: pulls new worker-rsvp rows (rsvp_response /
-# rsvp_registration in the published DB) into the draft DB as pages, firing
-# create hooks. Bounded batch per tick; plugins can also trigger it on demand
-# via POST /__cms/ingest/submissions.
+# Submission ingest: pulls every published page without a draft counterpart
+# into the draft DB as a submission mirror, firing submission hooks. Bounded
+# batch per tick; subscribed plugins can also trigger it on demand via
+# POST /__cms/ingest/submissions.
 [triggers]
 crons = ["*/5 * * * *"]
 

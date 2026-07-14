@@ -130,8 +130,8 @@ describe('d1 adapter', () => {
     await adapter.publish(snapshotFor(PAGE));
 
     const outcome = await unpublishPagesFromTargets(env as unknown as Env, [
-      { uuid: PAGE.uuid, page_type: 'default' },
-      { uuid: 'no-such-submission-uuid', page_type: 'rsvp_response' },
+      { uuid: PAGE.uuid, submission_origin: 0 },
+      { uuid: 'no-such-submission-uuid', submission_origin: 1 },
     ]);
 
     expect(outcome.refusedCount).toBe(1);

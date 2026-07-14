@@ -19,7 +19,7 @@ const MANIFEST = {
   id: PLUGIN_ID,
   name: 'Events Suite',
   version: '1.0.0',
-  hooks: ['delete'],
+  hooks: ['delete', 'submission'],
   contentTypes: {
     blueprint: {
       event: ['@start', '@end', 'name:text/title', 'location'],
@@ -33,14 +33,14 @@ const MANIFEST = {
 
 let savedSecret: unknown;
 
-async function registerPlugin(): Promise<void> {
+async function registerPlugin(manifest: Record<string, unknown> = MANIFEST): Promise<void> {
   const url = `https://plugin-${crypto.randomUUID()}.local`;
   await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Events', url).run();
   __injectPluginFetcher(url, {
     fetch: async (input: RequestInfo | URL): Promise<Response> => {
       const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       const path = new URL(href).pathname;
-      if (path === '/__plugin/manifest') return Response.json(MANIFEST);
+      if (path === '/__plugin/manifest') return Response.json(manifest);
       if (path.startsWith('/__plugin/hooks/')) return new Response('ok');
       return new Response('nf', { status: 404 });
     },
@@ -69,6 +69,9 @@ beforeEach(async () => {
   await env.DB.prepare('DELETE FROM plugin_page_type_approvals').run();
   await env.DB.prepare("DELETE FROM draft_pages WHERE page_type IN ('event','guest','mail_list','contact','article')").run();
   await env.DB.prepare("DELETE FROM trash_pages WHERE page_type IN ('event','guest','mail_list','contact','article')").run();
+  await env.DB.prepare("DELETE FROM draft_pages WHERE uuid = 'facade02-0001-4001-8001-000000000001'").run();
+  await env.DB.prepare("DELETE FROM settings WHERE key = 'submissions.ingest.cursor'").run();
+  await env.PUBLISHED_DB.prepare("DELETE FROM live_pages WHERE uuid = 'facade02-0001-4001-8001-000000000001'").run();
   savedSecret = testEnv.PLUGIN_SECRET;
   testEnv.PLUGIN_SECRET = PLUGIN_SECRET;
   await registerPlugin();
@@ -238,6 +241,35 @@ describe('Plugin API auth + scoping', () => {
     // A 201 here proves the /__cms exemption works — a browser-style guard would 403.
     const res = await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'NoOrigin' });
     expect(res.status).toBe(201);
+  });
+
+  it('lets a submission-hook plugin trigger generic live-only ingest', async () => {
+    const uuid = 'facade02-0001-4001-8001-000000000001';
+    await env.PUBLISHED_DB.prepare(
+      `INSERT INTO live_pages (id, uuid, name, slug, weight, page_type, lect)
+       VALUES (?, ?, ?, ?, 5, ?, ?)`,
+    ).bind(-720001, uuid, 'Survey answer', 'survey-answer', 'survey_answer', '{"answer":"yes"}').run();
+
+    const res = await cmsApi('POST', '/__cms/ingest/submissions');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, created: 1 });
+    const mirrored = await env.DB.prepare('SELECT id, page_type FROM draft_pages WHERE uuid = ?')
+      .bind(uuid).first<{ id: number; page_type: string }>();
+    expect(mirrored?.page_type).toBe('survey_answer');
+    expect(await env.DB.prepare(
+      "SELECT action FROM page_versions WHERE page_id = ? AND action = 'ingest-submission'",
+    ).bind(mirrored!.id).first()).toEqual({ action: 'ingest-submission' });
+  });
+
+  it('requires the plugin manifest to subscribe to submission ingest', async () => {
+    await env.DB.prepare('DELETE FROM plugins').run();
+    __clearInjectedFetchers();
+    clearManifestCache();
+    await registerPlugin({ ...MANIFEST, hooks: ['delete'] });
+
+    const res = await cmsApi('POST', '/__cms/ingest/submissions');
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'submission_hook_required' });
   });
 
   it('authenticates against the plugin\'s own secret, not the env fallback', async () => {

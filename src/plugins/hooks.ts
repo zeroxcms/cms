@@ -8,7 +8,7 @@
 // ============================================================
 
 import type { AppContext } from '../utils/context';
-import type { Env, JWTPayload } from '../types';
+import type { Env, JWTPayload, PluginHookEvent } from '../types';
 import { pluginsForHook, PLUGIN_ORIGIN, PLUGIN_PREFIX } from './registry';
 import { pluginTenantId } from '../security/plugin-proxy';
 import { logAudit } from '../utils/audit';
@@ -24,7 +24,7 @@ export interface HookPage {
 }
 
 /** Lifecycle events the CMS emits. */
-export type HookEvent = 'create' | 'update' | 'publish' | 'unpublish' | 'delete';
+export type HookEvent = PluginHookEvent;
 
 /**
  * Fire-and-forget hook dispatch. Safe to call from any admin handler; it never

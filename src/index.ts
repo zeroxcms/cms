@@ -173,7 +173,7 @@ export default {
     }
   },
 
-  // Cron: pull new worker-rsvp submission rows (published DB → draft pages).
+  // Cron: pull live-only submission rows (published DB → draft pages).
   // Each tick handles one bounded batch and advances the cursor; plugins can
   // trigger the same ingest on demand via POST /__cms/ingest/submissions.
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {

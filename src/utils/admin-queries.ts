@@ -102,8 +102,15 @@ export async function savePageVersion(
  * by the admin delete handler and the plugin write-back API so the trash schema
  * lives in exactly one place.
  */
-export async function trashDraftPage(db: D1Database, pageId: number): Promise<Page | null> {
-  const page = await db.prepare('SELECT * FROM draft_pages WHERE id = ?').bind(pageId).first<Page>();
+export type SubmissionPageRef = Page & { submission_origin: number };
+
+export async function trashDraftPage(db: D1Database, pageId: number): Promise<SubmissionPageRef | null> {
+  const page = await db.prepare(
+    `SELECT dp.*,
+       EXISTS(SELECT 1 FROM page_versions pv
+              WHERE pv.page_id = dp.id AND pv.action IN ('ingest-submission', 'pull-published')) AS submission_origin
+     FROM draft_pages dp WHERE dp.id = ?`,
+  ).bind(pageId).first<SubmissionPageRef>();
   if (!page) return null;
 
   // trash_pages.page_id only accepts a parent that is itself in trash. A child
@@ -194,6 +201,7 @@ export interface TrashedPageRef {
   name: string;
   slug: string;
   page_type: string | null;
+  submission_origin: number;
 }
 
 /**
@@ -210,7 +218,10 @@ export async function trashDraftPages(db: D1Database, ids: number[]): Promise<Tr
   const ph = ids.map(() => '?').join(',');
 
   const { results: pages } = await db.prepare(
-    `SELECT id, uuid, name, slug, page_type FROM draft_pages WHERE id IN (${ph})`,
+    `SELECT dp.id, dp.uuid, dp.name, dp.slug, dp.page_type,
+       EXISTS(SELECT 1 FROM page_versions pv
+              WHERE pv.page_id = dp.id AND pv.action IN ('ingest-submission', 'pull-published')) AS submission_origin
+     FROM draft_pages dp WHERE dp.id IN (${ph})`,
   ).bind(...ids).all<TrashedPageRef>();
   if (!pages.length) return [];
 

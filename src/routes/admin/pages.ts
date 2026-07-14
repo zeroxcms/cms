@@ -73,6 +73,7 @@ import {
   savePageVersionAndSetCurrent,
   setDraftPageTags,
 } from '../../utils/page-store';
+import { isSubmissionMirror } from '../../utils/submission-ingest';
 
 export const pagesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -234,7 +235,7 @@ function pageTypeHasPrivacyFields(entries: BlueprintEntry[] | undefined): boolea
 // Flash message for a publish fan-out: plain success, or success qualified
 // with the targets that failed (failures are already logged by the registry).
 function publishFlash(outcome: PublishOutcome): string {
-  if (outcome.refused) return encodeURIComponent('Submission pages cannot be published — they mirror public RSVP data');
+  if (outcome.refused) return encodeURIComponent('Submission pages cannot be published — they mirror source data from the published database');
   const failed = describeFailures(outcome);
   if (!failed) return 'Page+published+successfully';
   return encodeURIComponent(`Page published, but these targets failed: ${failed}`);
@@ -1138,7 +1139,7 @@ pagesRoutes.post('/pages/pull/:uuid', requirePermission('content:write'), async 
   if (!result) return c.notFound();
 
   if (result.created) {
-    dispatchHook(c, 'create', {
+    dispatchHook(c, 'submission', {
       id: result.page.id,
       uuid: result.page.uuid,
       page_type: result.page.page_type,
@@ -1161,7 +1162,7 @@ pagesRoutes.post('/pages/:id/unpublish', requirePermission('content:publish'), a
     .first<{ uuid: string; name: string; slug: string; page_type: string | null }>();
   if (!page) return c.notFound();
 
-  await unpublishPageFromTargets(c.env, page.uuid, page.page_type);
+  await unpublishPageFromTargets(c.env, page.uuid, await isSubmissionMirror(c.env.DB, pageId));
 
   dispatchHook(c, 'unpublish', {
     id: pageId,
@@ -1186,7 +1187,7 @@ pagesRoutes.post('/pages/:id/delete', requirePermission('content:delete'), async
   if (!page) return c.notFound();
 
   // Unpublish from every publish target now that the draft copy is gone.
-  await unpublishPageFromTargets(c.env, page.uuid, page.page_type);
+  await unpublishPageFromTargets(c.env, page.uuid, !!page.submission_origin);
 
   dispatchHook(c, 'delete', {
     id: page.id,

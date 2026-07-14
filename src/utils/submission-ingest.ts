@@ -1,19 +1,16 @@
 // ============================================================
-// RSVP submission ingest — published DB → draft pages.
+// Generic submission ingest — published DB → draft pages.
 //
-// worker-rsvp stores public RSVP responses and self-registrations as
-// insert-only rows in the published D1 (`live_pages`, reserved page types
-// below, negative ids, uuids the CMS never mints — see src/publish/README.md).
-// This module pulls new rows into the draft DB as ordinary pages so they are
-// versioned, auditable, and visible to plugins; creating the draft copy fires
-// the normal `create` lifecycle hook, which is how cms-plugin-events applies a
-// response to its guest page.
+// Any page that exists in the published D1 but has no draft row with the same
+// uuid is a submission, regardless of its page type or which public Worker
+// created it. This module mirrors those rows into draft so they are versioned,
+// auditable, and visible to plugins; creating the draft copy fires the
+// dedicated `submission` lifecycle hook.
 //
 // Idempotency: the draft copy keeps the source row's uuid, so the draft
 // `uuid` unique constraint makes re-ingest a no-op. Progress is tracked by a
 // (created_at, uuid) cursor in the settings table; the published rows are
-// never mutated or deleted (worker-rsvp reads them for its "already
-// responded" check).
+// never mutated or deleted.
 //
 // Budget: creates per run are capped so one invocation (cron tick or
 // /__cms/ingest/submissions call) stays well inside the subrequest budget —
@@ -24,13 +21,6 @@ import type { Env } from '../types';
 import { deliverHook } from '../plugins/hooks';
 import { getSetting, saveSetting } from './settings';
 import { savePageVersionAndSetCurrent } from './page-store';
-
-/** Page types worker-rsvp writes into the published DB. Never publishable. */
-export const SUBMISSION_PAGE_TYPES = ['rsvp_response', 'rsvp_registration'] as const;
-
-export function isSubmissionPageType(pageType: string | null | undefined): boolean {
-  return (SUBMISSION_PAGE_TYPES as readonly string[]).includes(pageType ?? '');
-}
 
 const CURSOR_SETTING_KEY = 'submissions.ingest.cursor';
 /** Rows scanned from the published DB per run. */
@@ -57,8 +47,19 @@ export interface IngestResult {
   scanned: number;
   /** Draft pages created (rows already in draft are skipped silently). */
   created: number;
-  /** True when the run stopped at a cap and more rows are waiting. */
+  /** True when the caller should run another batch (cap reached or scan wrapped). */
   more: boolean;
+}
+
+/** Submission origin is recorded in existing version history, avoiding any
+ * page-schema flag while remaining stable across later edits and restore. */
+export async function isSubmissionMirror(db: D1Database, pageId: number): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT 1 FROM page_versions
+     WHERE page_id = ? AND action IN ('ingest-submission', 'pull-published')
+     LIMIT 1`,
+  ).bind(pageId).first();
+  return row !== null;
 }
 
 interface Cursor {
@@ -80,9 +81,9 @@ function parseCursor(raw: string | null): Cursor {
 }
 
 /**
- * Pulls new submission rows from the published DB into the draft DB. Safe to
- * call concurrently or repeatedly: creation is idempotent by uuid and the
- * cursor only ever moves past handled rows.
+ * Finds live-only rows and mirrors them into the draft DB. Safe to call
+ * concurrently or repeatedly: creation is idempotent by uuid, and the bounded
+ * cursor wraps after a complete pass so older rows are reconsidered.
  */
 export async function ingestSubmissions(env: Env): Promise<IngestResult> {
   if (!env.PUBLISHED_DB) return { scanned: 0, created: 0, more: false };
@@ -92,18 +93,25 @@ export async function ingestSubmissions(env: Env): Promise<IngestResult> {
   const rows = await env.PUBLISHED_DB.prepare(
     `SELECT uuid, created_at, name, slug, weight, start, end, timezone, page_type, lect, page_id
      FROM live_pages
-     WHERE page_type IN (${SUBMISSION_PAGE_TYPES.map(() => '?').join(', ')})
-       AND (created_at > ? OR (created_at = ? AND uuid > ?))
+     WHERE created_at > ? OR (created_at = ? AND uuid > ?)
      ORDER BY created_at ASC, uuid ASC
      LIMIT ?`,
   )
-    .bind(...SUBMISSION_PAGE_TYPES, cursor.created_at, cursor.created_at, cursor.uuid, SCAN_LIMIT)
+    .bind(cursor.created_at, cursor.created_at, cursor.uuid, SCAN_LIMIT)
     .all<LiveSubmissionRow>();
 
-  if (!rows.results.length) return { scanned: 0, created: 0, more: false };
+  if (!rows.results.length) {
+    // A completed pass resets the cursor so later runs can detect a formerly
+    // mirrored/live page whose draft counterpart has since disappeared.
+    if (cursor.created_at || cursor.uuid) {
+      await saveSetting(env, CURSOR_SETTING_KEY, JSON.stringify({ created_at: '', uuid: '' }));
+      return { scanned: 0, created: 0, more: true };
+    }
+    return { scanned: 0, created: 0, more: false };
+  }
 
   // One query for both pre-checks: which rows already exist in draft, and
-  // which parent pages (guest for responses, event for registrations) do.
+  // which referenced parent pages exist locally.
   const uuids = rows.results.map((row) => row.uuid);
   const parentIds = [...new Set(rows.results.map((row) => row.page_id).filter((id): id is number => id !== null))];
   const existingUuids = new Set(
@@ -154,7 +162,7 @@ export async function ingestSubmissions(env: Env): Promise<IngestResult> {
     await savePageVersionAndSetCurrent(env.DB, inserted.id, row.lect, 'ingest-submission');
     created += 1;
 
-    await deliverHook(env, undefined, 'create', {
+    await deliverHook(env, undefined, 'submission', {
       id: inserted.id,
       uuid: row.uuid,
       page_type: row.page_type,

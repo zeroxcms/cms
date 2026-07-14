@@ -252,8 +252,9 @@ Worker bound to the CMS as a [service binding](https://developers.cloudflare.com
 A plugin can add six things:
 
 - **Lifecycle hooks** – run on page `create`/`update`/`publish`/`unpublish`/`delete`
-  (webhooks, external search indexing, cache purge, notifications). Hooks are
-  best-effort and never block the editor.
+  plus `submission` when a live-only page is mirrored into draft (webhooks,
+  external search indexing, cache purge, notifications). Hooks are best-effort
+  and never block the editor.
 - **Content types** – register new `blueprint`/`blocks`/`blockLists`/`taxonomies`/`taxonomyLists`
   that merge into the editor's config. Plugin-contributed page types, block
   types, and taxonomies appear (read-only) in **Admin → Page Types / Block Types / Taxonomies**, badged with

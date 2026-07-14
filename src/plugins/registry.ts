@@ -7,7 +7,7 @@
 // from the admin UI (plugin:manage) with no CMS redeploy.
 // ============================================================
 
-import type { Env, PluginManifest, ResolvedPlugin, PluginRecord } from '../types';
+import type { Env, PluginHookEvent, PluginManifest, ResolvedPlugin, PluginRecord } from '../types';
 import { listEnabledPlugins } from '../utils/plugin-store';
 
 /** Reserved prefix every plugin Worker serves its CMS-facing endpoints under. */
@@ -167,7 +167,7 @@ export async function pluginById(env: Env, id: string): Promise<ResolvedPlugin |
 }
 
 /** Plugins that subscribe to a given lifecycle event. */
-export async function pluginsForHook(env: Env, event: string): Promise<ResolvedPlugin[]> {
+export async function pluginsForHook(env: Env, event: PluginHookEvent): Promise<ResolvedPlugin[]> {
   const plugins = await getPlugins(env);
   return plugins.filter((plugin) => (plugin.manifest.hooks ?? []).includes(event));
 }

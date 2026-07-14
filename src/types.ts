@@ -284,6 +284,9 @@ export interface PluginContentTypes {
   readTypes?: string[];
 }
 
+/** Page lifecycle events a plugin can subscribe to through manifest.hooks. */
+export type PluginHookEvent = 'create' | 'submission' | 'update' | 'publish' | 'unpublish' | 'delete';
+
 export interface PluginManifest {
   id: string;
   name: string;
@@ -297,8 +300,9 @@ export interface PluginManifest {
   /** Back-compat alias for plugins that expose Cloudflare metadata verbatim. */
   cfVersionMetadata?: Pick<WorkerVersionMetadata, 'id' | 'tag' | 'timestamp'>;
   CF_VERSION_METADATA?: Pick<WorkerVersionMetadata, 'id' | 'tag' | 'timestamp'>;
-  /** Lifecycle events the plugin wants to receive (e.g. "publish", "delete"). */
-  hooks?: string[];
+  /** Lifecycle events the plugin wants to receive. `submission` is emitted for
+   *  pages found in the published database without a draft counterpart. */
+  hooks?: PluginHookEvent[];
   /** Plugin-owned page types that should be republished after each save once
    *  they are already live. Types must also be declared in contentTypes.blueprint;
    *  the first publish always remains an explicit editor action. */

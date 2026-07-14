@@ -48,7 +48,7 @@ import {
   type AdvancedSearchCriterion,
 } from '../utils/search';
 import { liveMapForDraftPages, unpublishPageFromTargets, unpublishPagesFromTargets } from '../publish';
-import { ingestSubmissions, SUBMISSION_PAGE_TYPES } from '../utils/submission-ingest';
+import { ingestSubmissions } from '../utils/submission-ingest';
 import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../utils/page-store';
 import { listPageTypeApprovals, pageTypeScopeAllows } from '../utils/plugin-page-types';
 import {
@@ -1739,17 +1739,17 @@ cmsApiRoutes.delete('/pages/children', async (c) => {
   return c.json({ trashed, done });
 });
 
-// Pull new worker-rsvp submission rows (published DB → draft pages) now,
-// instead of waiting for the next cron tick. The caller must own the
-// submission page types in its manifest scope (the events plugin does); the
-// run itself is idempotent, cursor-driven, and never mutates the published
-// rows, so triggering it repeatedly is harmless. Returns the run summary.
+// Pull live-only pages (published DB → draft pages) now instead of waiting
+// for the next cron tick. A caller opts into this generic contract by declaring
+// the `submission` hook in its manifest; no wildcard page-write scope is
+// required. The run is idempotent and never mutates published rows.
 cmsApiRoutes.post('/ingest/submissions', async (c) => {
   const auth = await authenticatePlugin(c);
   if (auth instanceof Response) return auth;
 
-  const missing = SUBMISSION_PAGE_TYPES.filter((pageType) => !pageTypeScopeAllows(auth.allowedTypes, pageType));
-  if (missing.length) return forbiddenPageType(c, auth, missing.join(', '));
+  if (!(auth.plugin.manifest.hooks ?? []).includes('submission')) {
+    return c.json({ error: 'submission_hook_required' }, 403);
+  }
 
   const result = await ingestSubmissions(c.env);
   return c.json({ ok: true, ...result });
@@ -1773,7 +1773,7 @@ cmsApiRoutes.delete('/pages/:id', async (c) => {
   const page = await trashDraftPage(c.env.DB, id);
   if (!page) return c.json({ error: 'not_found' }, 404);
 
-  await unpublishPageFromTargets(c.env, page.uuid, page.page_type);
+  await unpublishPageFromTargets(c.env, page.uuid, !!page.submission_origin);
   emitPluginHook(
     c,
     'delete',

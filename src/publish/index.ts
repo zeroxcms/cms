@@ -21,7 +21,7 @@ import { r2Adapter } from './r2';
 import { pluginAdapter } from './plugin';
 import { getPlugins } from '../plugins/registry';
 import { pluginTenantId } from '../security/plugin-proxy';
-import { isSubmissionPageType } from '../utils/submission-ingest';
+import { isSubmissionMirror } from '../utils/submission-ingest';
 import { projectLect, publishLectRules } from './projection';
 
 export type { LivePageSnapshot, PublishAdapter, PublishSnapshot, PublishSnapshotTag } from './adapter';
@@ -32,10 +32,9 @@ export interface PublishOutcome {
   /** Target ids whose publish/unpublish threw. */
   failures: string[];
   /**
-   * Set when the page is a worker-rsvp submission mirror (rsvp_response /
-   * rsvp_registration): publishing one would upsert the original live row it
-   * shares a uuid with, and unpublishing/trashing one would DELETE that live
-   * row — so both are refused before reaching any adapter.
+   * Set when the page is a submission mirror: publishing one would upsert the
+   * original live row it shares a uuid with, and unpublishing/trashing one
+   * would DELETE that live row — so both are refused before reaching any adapter.
    */
   refused?: boolean;
 }
@@ -119,18 +118,17 @@ async function runOnAll(
 export async function publishPageToTargets(env: Env, pageId: number): Promise<PublishOutcome | null> {
   const snapshot = await buildSnapshot(env, pageId);
   if (!snapshot) return null;
-  if (isSubmissionPageType(snapshot.page.page_type)) return REFUSED_OUTCOME;
+  if (await isSubmissionMirror(env.DB, pageId)) return REFUSED_OUTCOME;
   const adapters = await getPublishAdapters(env);
   return runOnAll(adapters, (adapter) => adapter.publish(snapshot));
 }
 
 /**
  * Removes a page from every configured target. Callers that have the page at
- * hand should pass its `page_type` so submission mirrors are refused (see
- * PublishOutcome.refused); without it the unpublish proceeds as before.
+ * hand must pass its submission marker so source mirrors are refused.
  */
-export async function unpublishPageFromTargets(env: Env, uuid: string, pageType?: string | null): Promise<PublishOutcome> {
-  if (isSubmissionPageType(pageType)) return REFUSED_OUTCOME;
+export async function unpublishPageFromTargets(env: Env, uuid: string, isSubmission = false): Promise<PublishOutcome> {
+  if (isSubmission) return REFUSED_OUTCOME;
   const adapters = await getPublishAdapters(env);
   return runOnAll(adapters, (adapter) => adapter.unpublish(uuid));
 }
@@ -153,9 +151,9 @@ export interface BulkUnpublishOutcome {
  */
 export async function unpublishPagesFromTargets(
   env: Env,
-  pages: Array<{ uuid: string; page_type?: string | null }>,
+  pages: Array<{ uuid: string; submission_origin?: number | boolean }>,
 ): Promise<BulkUnpublishOutcome> {
-  const targetable = pages.filter((page) => !isSubmissionPageType(page.page_type));
+  const targetable = pages.filter((page) => !page.submission_origin);
   const refusedCount = pages.length - targetable.length;
   const uuids = Array.from(new Set(targetable.map((page) => page.uuid)));
   const adapters = await getPublishAdapters(env);
