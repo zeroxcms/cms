@@ -3,7 +3,7 @@
     <div>
       <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref | escape }}">← Plugins</a>
       <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel | escape }} · Page types</h2>
-      <p class="mt-1 text-sm text-gray-500">Page types this plugin defines and delegated page-type access it requests.</p>
+      <p class="mt-1 text-sm text-gray-500">Page types and taxonomies this plugin defines, plus delegated page-type access it requests.</p>
     </div>
   </div>
 
@@ -13,9 +13,10 @@
 
   {% if unreachable %}
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-sm text-gray-500">
-      This plugin is not reachable right now, so its page types can't be listed.
+      This plugin is not reachable right now, so its page types and taxonomies can't be listed.
     </div>
   {% else %}
+    {% if hasDefinedPageTypes %}
     <div class="bg-white rounded-xl shadow-sm border border-gray-200">
       <div class="flex items-center justify-between gap-4" style="padding:1rem 1rem 0;margin-bottom:.75rem">
         <div>
@@ -33,26 +34,55 @@
             </tr>
           </thead>
           <tbody>
-            {% if hasDefinedPageTypes %}
-              {% for pageType in definedPageTypes %}
-                <tr class="border-t border-gray-100">
-                  <td class="px-4 py-3 font-medium text-gray-900 font-mono">{{ pageType.slug | escape }}</td>
-                  <td class="px-4 py-3 text-gray-500">{{ pageType.fieldCount }}</td>
-                  <td class="px-4 py-3 text-right">
-                    <a href="{{ pageType.viewHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">View</a>
-                  </td>
-                </tr>
-              {% endfor %}
-            {% else %}
-              <tr>
-                <td colspan="3" class="px-4 py-8 text-center text-sm text-gray-500">This plugin defines no page types.</td>
+            {% for pageType in definedPageTypes %}
+              <tr class="border-t border-gray-100">
+                <td class="px-4 py-3 font-medium text-gray-900 font-mono">{{ pageType.slug | escape }}</td>
+                <td class="px-4 py-3 text-gray-500">{{ pageType.fieldCount }}</td>
+                <td class="px-4 py-3 text-right">
+                  <a href="{{ pageType.viewHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">View</a>
+                </td>
               </tr>
-            {% endif %}
+            {% endfor %}
           </tbody>
         </table>
       </div>
     </div>
+    {% endif %}
 
+    {% if hasDefinedTaxonomies %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 mt-4">
+      <div class="flex items-center justify-between gap-4" style="padding:1rem 1rem 0;margin-bottom:.75rem">
+        <div>
+          <h3 class="text-lg font-bold text-gray-900">Defined taxonomies</h3>
+          <p class="mt-1 text-sm text-gray-500">Taxonomies contributed by this plugin through contentTypes.taxonomies.</p>
+        </div>
+      </div>
+      <div class="overflow-x-auto w-full">
+        <table class="w-full min-w-[560px] text-left text-sm">
+          <thead class="bg-gray-50 text-left text-xs uppercase text-gray-500">
+            <tr>
+              <th class="px-4 py-2">Name</th>
+              <th class="px-4 py-2">Slug</th>
+              <th class="px-4 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for taxonomy in definedTaxonomies %}
+              <tr class="border-t border-gray-100">
+                <td class="px-4 py-3 font-medium text-gray-900">{{ taxonomy.name | escape }}</td>
+                <td class="px-4 py-3 text-gray-500 font-mono">{{ taxonomy.slug | escape }}</td>
+                <td class="px-4 py-3 text-right">
+                  <a href="{{ taxonomy.viewHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">View</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if hasPageTypes %}
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 mt-4">
       <div class="flex items-center justify-between gap-4" style="padding:1rem 1rem 0;margin-bottom:.75rem">
         <div>
@@ -70,9 +100,8 @@
             </tr>
           </thead>
           <tbody>
-            {% if hasPageTypes %}
-              {% for pageType in pageTypes %}
-                <tr class="border-t border-gray-100">
+            {% for pageType in pageTypes %}
+              <tr class="border-t border-gray-100">
                 <td class="px-4 py-3">
                   <div class="font-medium text-gray-900{% unless pageType.pageType == '*' %} font-mono{% endunless %}">{{ pageType.pageTypeLabel | escape }}</div>
                   {% if pageType.pageType == '*' %}
@@ -121,16 +150,12 @@
                     <span class="text-xs text-gray-400">Not requested</span>
                   {% endif %}
                 </td>
-                </tr>
-              {% endfor %}
-            {% else %}
-              <tr>
-                <td colspan="3" class="px-4 py-8 text-center text-sm text-gray-500">This plugin declares no delegated page-type access.</td>
               </tr>
-            {% endif %}
+            {% endfor %}
           </tbody>
         </table>
       </div>
     </div>
+    {% endif %}
   {% endif %}
 </div>

@@ -1110,6 +1110,7 @@ describe('plugin admin proxy', () => {
       version: '1.0.0',
       contentTypes: {
         blueprint: { checkin_session: ['event', 'starts_at'] },
+        taxonomies: { checkin_status: 'Check-in status' },
         readTypes: ['event', 'mail_list'],
         writeTypes: ['guest'],
       },
@@ -1148,6 +1149,13 @@ describe('plugin admin proxy', () => {
         slug: 'checkin_session',
         fieldCount: 2,
         viewHref: '/admin/page_types/view/checkin_session',
+      }),
+    ]);
+    expect(pageData.definedTaxonomies).toEqual([
+      expect.objectContaining({
+        slug: 'checkin_status',
+        name: 'Check-in status',
+        viewHref: '/admin/taxonomies/view/checkin_status',
       }),
     ]);
     expect(pageData.pageTypes).toEqual(expect.arrayContaining([

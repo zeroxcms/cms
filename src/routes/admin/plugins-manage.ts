@@ -170,6 +170,7 @@ pluginsManageRoutes.get('/plugins-manage', async (c) => {
       hasAssets: !!manifest?.assets?.length,
       hasPageTypes: !!(
         Object.keys(manifest?.contentTypes?.blueprint ?? {}).length
+        + Object.keys(manifest?.contentTypes?.taxonomies ?? {}).length
         + (manifest?.contentTypes?.readTypes?.length ?? 0)
         + (manifest?.contentTypes?.writeTypes?.length ?? 0)
       ),
@@ -588,6 +589,7 @@ pluginsManageRoutes.get('/plugins-manage/:id/page-types', async (c) => {
       pluginLabel: row.label || row.url,
       unreachable: true,
       definedPageTypes: [],
+      definedTaxonomies: [],
       pageTypes: [],
       flash: c.req.query('flash') ?? undefined,
     });
@@ -601,6 +603,13 @@ pluginsManageRoutes.get('/plugins-manage/:id/page-types', async (c) => {
       slug,
       fieldCount: Array.isArray(blueprint) ? blueprint.length : 0,
       viewHref: `/admin/page_types/view/${encodeURIComponent(slug)}`,
+    }));
+  const definedTaxonomies = Object.entries(resolved.manifest.contentTypes?.taxonomies ?? {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([slug, name]) => ({
+      slug,
+      name,
+      viewHref: `/admin/taxonomies/view/${encodeURIComponent(slug)}`,
     }));
   const pageTypeNames = [...new Set([...readTypes, ...writeTypes])].sort();
   const approvals = await listPageTypeApprovals(c.env.DB, resolved.manifest.id);
@@ -630,6 +639,7 @@ pluginsManageRoutes.get('/plugins-manage/:id/page-types', async (c) => {
     pluginLabel: resolved.manifest.name || row.label || row.url,
     unreachable: false,
     definedPageTypes,
+    definedTaxonomies,
     pageTypes,
     flash: c.req.query('flash') ?? undefined,
   });

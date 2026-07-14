@@ -13,7 +13,7 @@ export interface PluginListItem {
   version?: string;
   /** True when the manifest declares candidate JS/CSS assets to approve. */
   hasAssets?: boolean;
-  /** True when the manifest defines page types or declares delegated access. */
+  /** True when the manifest defines page types/taxonomies or declares delegated access. */
   hasPageTypes?: boolean;
   /** True when the manifest declares configurable quota limits. */
   hasLimits?: boolean;
@@ -244,15 +244,22 @@ export interface PluginDefinedPageTypeRow {
   viewHref: string;
 }
 
+export interface PluginDefinedTaxonomyRow {
+  slug: string;
+  name: string;
+  viewHref: string;
+}
+
 export async function pluginPageTypesPage(views: Fetcher, opts: BaseTemplateProps & {
   pluginId: number;
   pluginLabel: string;
   unreachable: boolean;
   definedPageTypes: PluginDefinedPageTypeRow[];
+  definedTaxonomies: PluginDefinedTaxonomyRow[];
   pageTypes: PluginPageTypeRow[];
   flash?: string;
 }): Promise<string> {
-  const { pluginLabel, unreachable, definedPageTypes, pageTypes, flash } = opts;
+  const { pluginLabel, unreachable, definedPageTypes, definedTaxonomies, pageTypes, flash } = opts;
   const flashMessage = flash === 'approved'
     ? 'Page type access approved. The plugin can now use this delegated scope.'
     : flash === 'revoked'
@@ -264,6 +271,8 @@ export async function pluginPageTypesPage(views: Fetcher, opts: BaseTemplateProp
     unreachable,
     hasDefinedPageTypes: definedPageTypes.length > 0,
     definedPageTypes,
+    hasDefinedTaxonomies: definedTaxonomies.length > 0,
+    definedTaxonomies,
     hasPageTypes: pageTypes.length > 0,
     pageTypes: pageTypes.map((row) => ({
       ...row,
