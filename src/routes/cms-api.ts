@@ -57,7 +57,6 @@ import {
   countLimitUsage,
   createCandidate,
   effectiveLimitsForPlugin,
-  type LimitViolation,
 } from '../utils/plugin-limits';
 import {
   effectiveCreditsForPlugin,
@@ -434,9 +433,18 @@ function emitPluginHooks(c: AppContext, event: HookEvent, pages: HookPage[], plu
 
 // ── Create (shared by POST /pages and POST /pages/batch) ──────────────────────
 
-type CreateResult =
-  | { ok: true; page: ApiPage }
-  | { ok: false; status: number; error: string; page_type?: string; message?: string; violation?: LimitViolation; credit?: { required: number; balance: number; shared_balance?: number } };
+/** Per-item create failure. `status` is what a batch-of-one maps it to. */
+interface CreateItemError {
+  index: number;
+  error: string;
+  status: number;
+  page_type?: string;
+  message?: string;
+}
+
+type BatchCreateResult =
+  | { ok: true; created: ApiPage[]; errors: CreateItemError[] }
+  | { ok: false; status: 400 | 402 | 409 | 500; body: Record<string, unknown> };
 
 /**
  * The user a plugin acts on behalf of, echoed back from the `x-cms-user`
@@ -538,12 +546,6 @@ async function reservedPageIds(db: D1Database, ids: number[]): Promise<Set<numbe
   return out;
 }
 
-async function generatedPageId(db: D1Database, usedIds: Set<number>): Promise<number> {
-  let id = cmsId(usedIds);
-  while ((await reservedPageIds(db, [id])).has(id)) id = cmsId(usedIds);
-  return id;
-}
-
 /** Allocates a whole batch of page ids with one collision query in the normal
  * case, rather than spending one D1 subrequest per generated id. */
 async function generatedPageIds(db: D1Database, count: number, usedIds: Set<number>): Promise<number[]> {
@@ -583,104 +585,203 @@ async function generatedPageVersionIds(db: D1Database, count: number): Promise<n
   return ids;
 }
 
-async function createPage(
-  c: AppContext,
-  auth: PluginAuth,
-  input: PageInput,
-): Promise<CreateResult> {
+/**
+ * Shared create executor behind POST /pages and POST /pages/batch: per-item
+ * validation and id/parent finalization, an all-or-nothing quota check and
+ * credit charge, then one DB.batch commit for the whole set. Single create is
+ * a batch of one, so the two paths cannot drift apart.
+ *
+ * Credits: a batch of one charges the per-type action with entityType (the
+ * ledger row plugins and admins expect from a single create); larger batches
+ * charge one aggregate `page_create:batch` row with a per-type note.
+ */
+async function createPages(c: AppContext, auth: PluginAuth, items: PageInput[]): Promise<BatchCreateResult> {
   const config = await resolveCmsConfig(c.env);
-  const prepared = prepareCreateInput(c, auth, config, input);
-  if (!prepared.ok) return prepared;
-  const preparedInput = prepared.input;
-
-  if (preparedInput.parentId !== null) {
-    const existingParents = await draftPageIds(c.env.DB, [preparedInput.parentId]);
-    if (!existingParents.has(preparedInput.parentId)) return { ok: false, status: 400, error: 'parent_not_found' };
+  const prepared: PreparedCreate[] = [];
+  const preparedIndexes: number[] = [];
+  const created: ApiPage[] = [];
+  const errors: CreateItemError[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const result = prepareCreateInput(c, auth, config, items[i]);
+    if (result.ok) {
+      prepared.push(result.input);
+      preparedIndexes.push(i);
+    }
+    else errors.push({ index: i, error: result.error, status: result.status, page_type: result.page_type, message: result.message });
   }
-  if (preparedInput.id !== null) {
-    const reservedIds = await reservedPageIds(c.env.DB, [preparedInput.id]);
-    if (reservedIds.has(preparedInput.id)) return { ok: false, status: 409, error: 'id_conflict' };
+
+  if (!prepared.length) return { ok: true, created, errors };
+
+  const requestedIds = prepared.map((item) => item.id).filter((id): id is number => id !== null);
+  const reservedIds = await reservedPageIds(c.env.DB, requestedIds);
+  const usedIds = new Set<number>(requestedIds);
+  const seenRequestedIds = new Set<number>();
+  const actualIdByRequestedId = new Map<number, number>();
+  const finalized: PreparedCreate[] = [];
+  const finalizedIndexes: number[] = [];
+  const allocatedIds: number[] = [];
+  const generatedIds = await generatedPageIds(
+    c.env.DB,
+    prepared.filter((item) => item.id === null).length,
+    usedIds,
+  );
+  let generatedIdIndex = 0;
+  for (let i = 0; i < prepared.length; i++) {
+    const item = prepared[i];
+    if (item.id !== null) {
+      if (reservedIds.has(item.id) || seenRequestedIds.has(item.id)) {
+        errors.push({ index: preparedIndexes[i], error: 'id_conflict', status: 409 });
+        continue;
+      }
+      seenRequestedIds.add(item.id);
+      usedIds.add(item.id);
+      actualIdByRequestedId.set(item.id, item.id);
+      finalized.push(item);
+      finalizedIndexes.push(preparedIndexes[i]);
+      allocatedIds.push(item.id);
+      continue;
+    }
+
+    const id = generatedIds[generatedIdIndex++];
+    finalized.push(item);
+    finalizedIndexes.push(preparedIndexes[i]);
+    allocatedIds.push(id);
+  }
+  for (let i = 0; i < finalized.length; i++) {
+    const item = finalized[i];
+    finalized[i] = {
+      ...item,
+      parentId: item.parentId !== null && actualIdByRequestedId.has(item.parentId)
+        ? actualIdByRequestedId.get(item.parentId)!
+        : item.parentId,
+    };
   }
 
-  const violation = await checkCreateLimits(c.env, [
-    createCandidate(preparedInput.pageType, preparedInput.parentId, preparedInput.lect),
-  ]);
-  if (violation) return { ok: false, status: 409, error: 'limit_exceeded', violation };
+  const parentIds = finalized.map((item) => item.parentId).filter((id): id is number => id !== null);
+  if (parentIds.length) {
+    const existingParents = await draftPageIds(c.env.DB, parentIds);
+    let removedInvalidParent = true;
+    while (removedInvalidParent) {
+      removedInvalidParent = false;
+      const allocatedIdSet = new Set(allocatedIds);
+      for (let i = finalized.length - 1; i >= 0; i--) {
+        const parentId = finalized[i].parentId;
+        if (parentId !== null && !existingParents.has(parentId) && !allocatedIdSet.has(parentId)) {
+          finalized.splice(i, 1);
+          allocatedIds.splice(i, 1);
+          errors.push({ index: finalizedIndexes[i], error: 'parent_not_found', status: 400 });
+          finalizedIndexes.splice(i, 1);
+          removedInvalidParent = true;
+        }
+      }
+    }
+  }
+  if (!finalized.length) return { ok: true, created, errors };
 
-  // Charge the acting user before inserting (deduct-then-create keeps the
-  // balance authoritative); a downstream failure refunds via the catch below.
-  const cost = await pageCreateCostForType(c.env, preparedInput.pageType);
+  // Reject the whole set on any quota violation, so a bulk import never
+  // half-applies against a limit.
+  const violation = await checkCreateLimits(
+    c.env,
+    finalized.map((item) => createCandidate(item.pageType, item.parentId, item.lect)),
+  );
+  if (violation) return { ok: false, status: 409, body: { error: 'limit_exceeded', violation } };
+
+  // Total page-create cost, charged once up front — all-or-nothing like the
+  // limit check, so a create either fully fits the payer's balance or writes
+  // nothing. A downstream commit failure refunds via the catch below.
+  const typeCounts = new Map<string, number>();
+  for (const item of finalized) typeCounts.set(item.pageType, (typeCounts.get(item.pageType) ?? 0) + 1);
+  let totalCost = 0;
+  const breakdown: Record<string, number> = {};
+  let chargeAction = 'page_create:batch';
+  for (const [type, count] of typeCounts) {
+    const cost = await pageCreateCostForType(c.env, type);
+    if (cost.total > 0) {
+      totalCost += cost.total * count;
+      breakdown[type] = cost.total * count;
+    }
+    if (finalized.length === 1) chargeAction = pageCreateAction(type, cost);
+  }
+  const singleType = finalized.length === 1 ? finalized[0].pageType : undefined;
   const payer = actingUserId(c);
-  const chargeAction = pageCreateAction(preparedInput.pageType, cost);
   let charged = 0;
   let chargeSource: CreditSource = 'user';
-  if (cost.total > 0 && payer !== null) {
+  if (totalCost > 0 && payer !== null) {
     const charge = await spendCredits(c.env, {
       userId: payer,
-      amount: cost.total,
+      amount: totalCost,
       action: chargeAction,
-      entityType: preparedInput.pageType,
+      entityType: singleType,
       pluginId: auth.pluginId,
+      note: singleType ? undefined : JSON.stringify(breakdown),
       createdBy: `plugin:${auth.pluginId}`,
     });
     if (!charge.ok) {
-      if (charge.error === 'unknown_user') return { ok: false, status: 400, error: 'unknown_acting_user' };
+      if (charge.error === 'unknown_user') return { ok: false, status: 400, body: { error: 'unknown_acting_user' } };
       return {
         ok: false,
         status: 402,
-        error: 'insufficient_credits',
-        credit: { required: charge.required, balance: charge.balance, shared_balance: charge.sharedBalance },
+        body: { error: 'insufficient_credits', credit: { required: charge.required, balance: charge.balance, shared_balance: charge.sharedBalance } },
       };
     }
-    charged = cost.total;
+    charged = totalCost;
     chargeSource = charge.source;
   }
 
-  try {
-    const slug = await ensureUniqueDraftSlug(c.env.DB, preparedInput.baseSlug);
+  const usedSlugs = await existingSlugSet(c.env.DB, finalized.map((item) => item.baseSlug));
+  const statements: D1PreparedStatement[] = [];
+  const hookPages: HookPage[] = [];
+  const createdAt = cmsTimestamp();
+  const versionIds = await generatedPageVersionIds(c.env.DB, finalized.length);
 
-    const explicitId = preparedInput.id ?? await generatedPageId(c.env.DB, new Set<number>());
-    await c.env.DB.prepare(
-      `INSERT INTO draft_pages (id, name, slug, weight, start, end, timezone, page_type, lect, page_id, creator)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        explicitId,
-        preparedInput.name,
-        slug,
-        preparedInput.weight,
-        preparedInput.start,
-        preparedInput.end,
-        preparedInput.timezone,
-        preparedInput.pageType,
-        preparedInput.lect,
-        preparedInput.parentId,
-        null,
-      )
-      .run();
+  for (let i = 0; i < finalized.length; i++) {
+    const item = finalized[i];
+    const id = allocatedIds[i];
+    const uuid = crypto.randomUUID();
+    const versionId = versionIds[i];
+    const slug = allocateSlug(item.baseSlug, usedSlugs);
 
-    const row = await c.env.DB.prepare('SELECT * FROM draft_pages WHERE id = ?')
-      .bind(explicitId)
-      .first<Page>();
-    if (!row) {
-      if (charged && payer !== null) {
-        await refundCredits(c.env, { userId: payer, amount: charged, action: chargeAction, source: chargeSource, pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
-      }
-      return { ok: false, status: 500, error: 'create_failed' };
+    statements.push(...bulkPageInsertStatements(c.env.DB, {
+      id, uuid, createdAt, name: item.name, slug, weight: item.weight, start: item.start,
+      end: item.end, timezone: item.timezone, pageType: item.pageType, versionId,
+      lect: item.lect, parentId: item.parentId,
+    }));
+    for (const tagId of item.tags) {
+      statements.push(c.env.DB.prepare('INSERT OR IGNORE INTO draft_page_tags (page_id, tag_id) VALUES (?, ?)')
+        .bind(id, tagId));
     }
 
-    await savePageVersionAndSetCurrent(c.env.DB, row.id, preparedInput.lect, 'create');
-    await setDraftPageTags(c.env.DB, row.id, preparedInput.tags, false);
+    const page = {
+      id,
+      uuid,
+      page_type: item.pageType,
+      name: item.name,
+      slug,
+      weight: item.weight,
+      start: item.start,
+      end: item.end,
+      timezone: item.timezone,
+      page_id: item.parentId,
+      created_at: createdAt,
+      updated_at: createdAt,
+      lect: safeParseLect(item.lect),
+    };
+    created.push(page);
+    hookPages.push({ id, uuid, page_type: item.pageType, name: item.name, slug });
+  }
 
-    emitPluginHook(c, 'create', { id: row.id, uuid: row.uuid, page_type: preparedInput.pageType, name: preparedInput.name, slug }, auth.pluginId);
-    return { ok: true, page: serializePage(row) };
+  try {
+    await c.env.DB.batch(statements);
   } catch (error) {
     if (charged && payer !== null) {
       await refundCredits(c.env, { userId: payer, amount: charged, action: chargeAction, source: chargeSource, pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
     }
-    console.error('Plugin API create failed', error);
-    return { ok: false, status: 500, error: 'create_failed' };
+    console.error('Plugin API batch create failed', error);
+    return { ok: false, status: 500, body: { error: 'create_failed' } };
   }
+  emitPluginHooks(c, 'create', hookPages, auth.pluginId);
+
+  return { ok: true, created, errors };
 }
 
 async function existingSlugSet(db: D1Database, baseSlugs: string[]): Promise<Set<string>> {
@@ -1248,14 +1349,14 @@ cmsApiRoutes.post('/pages', async (c) => {
   const body = await c.req.json().catch(() => null) as PageInput | null;
   if (!body || typeof body !== 'object') return c.json({ error: 'invalid_body' }, 400);
 
-  const result = await createPage(c, auth, body);
-  if (!result.ok) {
-    return c.json(
-      { error: result.error, page_type: result.page_type, message: result.message, violation: result.violation, credit: result.credit },
-      result.status as 400 | 402 | 403 | 409 | 500,
-    );
-  }
-  return c.json({ page: result.page }, 201);
+  const result = await createPages(c, auth, [body]);
+  if (!result.ok) return c.json(result.body, result.status);
+  if (result.created.length) return c.json({ page: result.created[0] }, 201);
+  const failure = result.errors[0];
+  return c.json(
+    { error: failure.error, page_type: failure.page_type, message: failure.message },
+    failure.status as 400 | 403 | 409,
+  );
 });
 
 // Batch-create pages (bulk import / bulk add-to-list). Each entry may carry its
@@ -1269,187 +1370,14 @@ cmsApiRoutes.post('/pages/batch', async (c) => {
   if (!items) return c.json({ error: 'invalid_body' }, 400);
   if (items.length > MAX_BATCH) return c.json({ error: 'batch_too_large', max: MAX_BATCH }, 413);
 
-  const config = await resolveCmsConfig(c.env);
-  const prepared: PreparedCreate[] = [];
-  const preparedIndexes: number[] = [];
-  const created: ApiPage[] = [];
-  const errors: Array<{ index: number; error: string }> = [];
-  for (let i = 0; i < items.length; i++) {
-    const result = prepareCreateInput(c, auth, config, (items[i] ?? {}) as PageInput);
-    if (result.ok) {
-      prepared.push(result.input);
-      preparedIndexes.push(i);
-    }
-    else errors.push({ index: i, error: result.error });
-  }
-
-  if (prepared.length) {
-    const requestedIds = prepared.map((item) => item.id).filter((id): id is number => id !== null);
-    const reservedIds = await reservedPageIds(c.env.DB, requestedIds);
-    const usedIds = new Set<number>(requestedIds);
-    const seenRequestedIds = new Set<number>();
-    const actualIdByRequestedId = new Map<number, number>();
-    const finalized: PreparedCreate[] = [];
-    const finalizedIndexes: number[] = [];
-    const allocatedIds: number[] = [];
-    const generatedIds = await generatedPageIds(
-      c.env.DB,
-      prepared.filter((item) => item.id === null).length,
-      usedIds,
-    );
-    let generatedIdIndex = 0;
-    for (let i = 0; i < prepared.length; i++) {
-      const item = prepared[i];
-      if (item.id !== null) {
-        if (reservedIds.has(item.id) || seenRequestedIds.has(item.id)) {
-          errors.push({ index: preparedIndexes[i], error: 'id_conflict' });
-          continue;
-        }
-        seenRequestedIds.add(item.id);
-        usedIds.add(item.id);
-        actualIdByRequestedId.set(item.id, item.id);
-        finalized.push(item);
-        finalizedIndexes.push(preparedIndexes[i]);
-        allocatedIds.push(item.id);
-        continue;
-      }
-
-      const id = generatedIds[generatedIdIndex++];
-      finalized.push(item);
-      finalizedIndexes.push(preparedIndexes[i]);
-      allocatedIds.push(id);
-    }
-    for (let i = 0; i < finalized.length; i++) {
-      const item = finalized[i];
-      finalized[i] = {
-        ...item,
-        parentId: item.parentId !== null && actualIdByRequestedId.has(item.parentId)
-          ? actualIdByRequestedId.get(item.parentId)!
-          : item.parentId,
-      };
-    }
-
-    const parentIds = finalized.map((item) => item.parentId).filter((id): id is number => id !== null);
-    if (parentIds.length) {
-      const existingParents = await draftPageIds(c.env.DB, parentIds);
-      let removedInvalidParent = true;
-      while (removedInvalidParent) {
-        removedInvalidParent = false;
-        const allocatedIdSet = new Set(allocatedIds);
-        for (let i = finalized.length - 1; i >= 0; i--) {
-          const parentId = finalized[i].parentId;
-          if (parentId !== null && !existingParents.has(parentId) && !allocatedIdSet.has(parentId)) {
-            finalized.splice(i, 1);
-            allocatedIds.splice(i, 1);
-            errors.push({ index: finalizedIndexes[i], error: 'parent_not_found' });
-            finalizedIndexes.splice(i, 1);
-            removedInvalidParent = true;
-          }
-        }
-      }
-    }
-    if (!finalized.length) return c.json({ created, errors, count: 0 });
-
-    // Reject the whole batch on any quota violation, so a bulk import never
-    // half-applies against a limit.
-    const violation = await checkCreateLimits(
-      c.env,
-      finalized.map((item) => createCandidate(item.pageType, item.parentId, item.lect)),
-    );
-    if (violation) return c.json({ error: 'limit_exceeded', violation }, 409);
-
-    // Total page-create cost across the batch, charged once up front —
-    // all-or-nothing like the limit check, so an import either fully fits the
-    // payer's balance or writes nothing.
-    const typeCounts = new Map<string, number>();
-    for (const item of finalized) typeCounts.set(item.pageType, (typeCounts.get(item.pageType) ?? 0) + 1);
-    let totalCost = 0;
-    const breakdown: Record<string, number> = {};
-    for (const [type, count] of typeCounts) {
-      const cost = await pageCreateCostForType(c.env, type);
-      if (cost.total > 0) {
-        totalCost += cost.total * count;
-        breakdown[type] = cost.total * count;
-      }
-    }
-    const payer = actingUserId(c);
-    let charged = 0;
-    let chargeSource: CreditSource = 'user';
-    if (totalCost > 0 && payer !== null) {
-      const charge = await spendCredits(c.env, {
-        userId: payer,
-        amount: totalCost,
-        action: 'page_create:batch',
-        pluginId: auth.pluginId,
-        note: JSON.stringify(breakdown),
-        createdBy: `plugin:${auth.pluginId}`,
-      });
-      if (!charge.ok) {
-        if (charge.error === 'unknown_user') return c.json({ error: 'unknown_acting_user' }, 400);
-        return c.json(
-          { error: 'insufficient_credits', credit: { required: charge.required, balance: charge.balance, shared_balance: charge.sharedBalance } },
-          402,
-        );
-      }
-      charged = totalCost;
-      chargeSource = charge.source;
-    }
-
-    const usedSlugs = await existingSlugSet(c.env.DB, finalized.map((item) => item.baseSlug));
-    const statements: D1PreparedStatement[] = [];
-    const hookPages: HookPage[] = [];
-    const createdAt = cmsTimestamp();
-    const versionIds = await generatedPageVersionIds(c.env.DB, finalized.length);
-
-    for (let i = 0; i < finalized.length; i++) {
-      const item = finalized[i];
-      const id = allocatedIds[i];
-      const uuid = crypto.randomUUID();
-      const versionId = versionIds[i];
-      const slug = allocateSlug(item.baseSlug, usedSlugs);
-
-      statements.push(...bulkPageInsertStatements(c.env.DB, {
-        id, uuid, createdAt, name: item.name, slug, weight: item.weight, start: item.start,
-        end: item.end, timezone: item.timezone, pageType: item.pageType, versionId,
-        lect: item.lect, parentId: item.parentId,
-      }));
-      for (const tagId of item.tags) {
-        statements.push(c.env.DB.prepare('INSERT OR IGNORE INTO draft_page_tags (page_id, tag_id) VALUES (?, ?)')
-          .bind(id, tagId));
-      }
-
-      const page = {
-        id,
-        uuid,
-        page_type: item.pageType,
-        name: item.name,
-        slug,
-        weight: item.weight,
-        start: item.start,
-        end: item.end,
-        timezone: item.timezone,
-        page_id: item.parentId,
-        created_at: createdAt,
-        updated_at: createdAt,
-        lect: safeParseLect(item.lect),
-      };
-      created.push(page);
-      hookPages.push({ id, uuid, page_type: item.pageType, name: item.name, slug });
-    }
-
-    try {
-      await c.env.DB.batch(statements);
-    } catch (error) {
-      if (charged && payer !== null) {
-        await refundCredits(c.env, { userId: payer, amount: charged, action: 'page_create:batch', source: chargeSource, pluginId: auth.pluginId, createdBy: `plugin:${auth.pluginId}` });
-      }
-      console.error('Plugin API batch create failed', error);
-      return c.json({ error: 'create_failed' }, 500);
-    }
-    emitPluginHooks(c, 'create', hookPages, auth.pluginId);
-  }
-
-  return c.json({ created, errors, count: created.length });
+  const result = await createPages(c, auth, items.map((item) => (item ?? {}) as PageInput));
+  if (!result.ok) return c.json(result.body, result.status);
+  return c.json({
+    created: result.created,
+    // Per-item errors keep the wire shape bulk callers already parse.
+    errors: result.errors.map(({ index, error }) => ({ index, error })),
+    count: result.created.length,
+  });
 });
 
 // Server-side bulk clone of a parent's child pages.

@@ -2305,7 +2305,7 @@ describe('permission-aware admin UI', () => {
     // Editors lack pagetype:write.
     const list = bodyData(await (await fetchWorker('/admin/page_types', { headers: { Cookie: await authCookie('editor') } })).text());
     expect(list.canWrite).toBe(false);
-    expect(list.pageTypes).toEqual(expect.arrayContaining([
+    expect(list.types).toEqual(expect.arrayContaining([
       expect.objectContaining({ editHref: '/admin/page_types/700/edit' }),
     ]));
 

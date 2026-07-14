@@ -1005,7 +1005,7 @@ describe('plugin admin proxy', () => {
 
     expect(response.status).toBe(200);
     const data = bodyData(await response.text());
-    expect(data.pageTypes).toEqual(expect.arrayContaining([
+    expect(data.types).toEqual(expect.arrayContaining([
       expect.objectContaining({ slug: 'event', source: 'plugin', pluginName: 'Events' }),
     ]));
 
@@ -1096,7 +1096,7 @@ describe('plugin admin proxy', () => {
 
     expect(response.status).toBe(200);
     const data = bodyData(await response.text());
-    expect(data.blockTypes).toEqual(expect.arrayContaining([
+    expect(data.types).toEqual(expect.arrayContaining([
       expect.objectContaining({ slug: 'hero', source: 'plugin', pluginName: 'Events' }),
     ]));
   });

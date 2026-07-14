@@ -11,9 +11,9 @@
 @import "tailwindcss";
 
 /* Scan templates and the TS files that emit HTML markup. */
-@source "../../views";
-@source "../templates";
-@source "../utils";
+@source "../views";
+@source "../src/templates";
+@source "../src/utils";
 
 @theme {
   /* ---- Typography ------------------------------------------------------- */

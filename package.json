@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "npm run build:css && wrangler dev --local",
-    "build:css": "tailwindcss -i src/styles/admin.css -o views/assets/admin.css --minify",
+    "build:css": "tailwindcss -i styles/admin.css -o views/assets/admin.css --minify",
     "deploy": "npm run build:css && wrangler deploy",
     "db:migrate": "wrangler d1 migrations apply cms --local && wrangler d1 migrations apply cms-published --local",
     "db:migrate:admin": "wrangler d1 migrations apply cms --local",
