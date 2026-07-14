@@ -2475,6 +2475,60 @@ describe('permission-aware admin UI', () => {
     })).status).toBe(403);
   });
 
+  it('lists bucket media with links to the draft pages that reference it', async () => {
+    const linkedKey = 'content-list-test/linked-image.png';
+    const orphanedKey = 'content-list-test/orphaned-image.png';
+    await env.MEDIA_BUCKET.put(linkedKey, pngBytes());
+    await env.MEDIA_BUCKET.put(orphanedKey, pngBytes());
+    await env.DB.prepare('UPDATE draft_pages SET lect = ? WHERE id = ?')
+      .bind(JSON.stringify({ image: { en: `/media/${linkedKey}` } }), 101)
+      .run();
+
+    try {
+      const response = await fetchWorker('/admin/settings/content', { headers: { Cookie: await authCookie() } });
+      const data = bodyData(await response.text());
+      const media = data.media as Array<{
+        key: string;
+        linkedPageCount: number;
+        linkedPages: Array<{ name: string; editHref: string }>;
+      }>;
+
+      expect(response.status).toBe(200);
+      expect(media).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          key: linkedKey,
+          linkedPageCount: 1,
+          linkedPages: [expect.objectContaining({ name: 'About', editHref: '/admin/pages/101/edit' })],
+        }),
+        expect.objectContaining({ key: orphanedKey, linkedPageCount: 0, linkedPages: [] }),
+      ]));
+    } finally {
+      await env.MEDIA_BUCKET.delete([linkedKey, orphanedKey]);
+    }
+  });
+
+  it('paginates the content list with the bucket cursor', async () => {
+    const keys = Array.from({ length: 51 }, (_, index) => `content-list-page-test/${String(index).padStart(3, '0')}.png`);
+    await Promise.all(keys.map((key) => env.MEDIA_BUCKET.put(key, pngBytes())));
+
+    try {
+      const first = bodyData(await (await fetchWorker('/admin/settings/content', { headers: { Cookie: await authCookie() } })).text());
+      expect(first.hasNextPage).toBe(true);
+      expect(first.nextHref).toMatch(/^\/admin\/settings\/content\?cursor=/);
+
+      const next = bodyData(await (await fetchWorker(String(first.nextHref), { headers: { Cookie: await authCookie() } })).text());
+      expect(next.media).toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: keys[50] }),
+      ]));
+    } finally {
+      await env.MEDIA_BUCKET.delete(keys);
+    }
+  });
+
+  it('requires menu:manage for the content list', async () => {
+    expect((await fetchWorker('/admin/settings/content', { headers: { Cookie: await authCookie('editor') } })).status).toBe(403);
+  });
+
   it('renders page types read-only for users without pagetype:write', async () => {
     // Editors lack pagetype:write.
     const list = bodyData(await (await fetchWorker('/admin/page_types', { headers: { Cookie: await authCookie('editor') } })).text());

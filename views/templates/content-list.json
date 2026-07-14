@@ -1,0 +1,8 @@
+{
+  "sections": {
+    "main": {
+      "type": "content-list"
+    }
+  },
+  "order": ["main"]
+}

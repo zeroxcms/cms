@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { requirePermission } from '../../middleware/auth';
 import { systemSettingsPage } from '../../templates/settings';
+import { contentListPage, type ContentListMediaItem } from '../../templates/content-list';
 import type { Env, Variables } from '../../types';
 import { pluginNav } from '../../plugins/registry';
 import { logAudit } from '../../utils/audit';
@@ -22,8 +23,93 @@ export const settingsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>(
 
 settingsRoutes.use('/settings/system', requirePermission('menu:manage'));
 settingsRoutes.use('/settings/menu', requirePermission('menu:manage'));
+settingsRoutes.use('/settings/content', requirePermission('menu:manage'));
+
+const MEDIA_LIST_PAGE_SIZE = 50;
+
+function mediaHref(key: string): string {
+  return `/media/${key.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = bytes;
+  let unit = -1;
+  do {
+    size /= 1024;
+    unit += 1;
+  } while (size >= 1024 && unit < units.length - 1);
+  return `${size >= 10 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`;
+}
+
+function pageReferencesMedia(lect: string | null, key: string): boolean {
+  if (!lect) return false;
+  const path = `/media/${key}`;
+  const encodedPath = mediaHref(key);
+  for (const candidate of new Set([path, encodedPath])) {
+    let start = lect.indexOf(candidate);
+    while (start !== -1) {
+      const after = lect[start + candidate.length];
+      if (!after || /[?#'"\s<>)\]}]/.test(after)) return true;
+      start = lect.indexOf(candidate, start + candidate.length);
+    }
+  }
+  return false;
+}
+
+async function linkedPagesForMedia(
+  db: D1Database,
+  keys: string[],
+): Promise<Map<string, ContentListMediaItem['linkedPages']>> {
+  const links = new Map<string, ContentListMediaItem['linkedPages']>(keys.map((key) => [key, []]));
+  if (!keys.length) return links;
+
+  type PageRow = { id: number; name: string; slug: string; lect: string | null };
+  // Scan each media-bearing page once, then match only the current R2 batch
+  // in memory. A dynamically generated OR-of-LIKE expression can exceed
+  // SQLite's complexity limit when the bucket page contains many objects.
+  const pages = await db.prepare(
+    "SELECT id, name, slug, lect FROM draft_pages WHERE instr(lect, '/media/') > 0 ORDER BY name ASC, id ASC",
+  ).all<PageRow>();
+
+  for (const page of pages.results) {
+    for (const key of keys) {
+      if (!pageReferencesMedia(page.lect, key)) continue;
+      links.get(key)?.push({
+        name: page.name,
+        slug: page.slug,
+        editHref: `/admin/pages/${page.id}/edit`,
+      });
+    }
+  }
+  return links;
+}
 
 settingsRoutes.get('/settings/menu', (c) => c.redirect('/admin/settings/system'));
+
+settingsRoutes.get('/settings/content', async (c) => {
+  if (!c.env.MEDIA_BUCKET) {
+    return renderPage(c, contentListPage, { bucketConfigured: false, media: [], nextHref: '' });
+  }
+
+  const cursor = c.req.query('cursor') || undefined;
+  const listed = await c.env.MEDIA_BUCKET.list({ limit: MEDIA_LIST_PAGE_SIZE, cursor });
+  const keys = listed.objects.map((object) => object.key);
+  const linkedPages = await linkedPagesForMedia(c.env.DB, keys);
+  const media: ContentListMediaItem[] = listed.objects.map((object) => ({
+    key: object.key,
+    mediaHref: mediaHref(object.key),
+    size: formatBytes(object.size),
+    uploadedAt: object.uploaded.toISOString(),
+    linkedPages: linkedPages.get(object.key) ?? [],
+  }));
+  const nextHref = listed.truncated && listed.cursor
+    ? `/admin/settings/content?cursor=${encodeURIComponent(listed.cursor)}`
+    : '';
+
+  return renderPage(c, contentListPage, { bucketConfigured: true, media, nextHref });
+});
 
 settingsRoutes.get('/settings/system', async (c) => {
   const fallbackName = c.env.SITE_TITLE ?? '0xCMS';

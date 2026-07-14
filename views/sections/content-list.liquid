@@ -1,0 +1,58 @@
+<div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
+  <div class="flex items-center justify-between gap-4 mb-4">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900">Content List</h2>
+      <p class="mt-1 text-sm text-gray-500">Media files in the bucket and the current pages that reference them. Unlinked files can be removed manually from the bucket.</p>
+    </div>
+    <a href="/admin/settings/system" class="inline-flex h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">System</a>
+  </div>
+
+  {% unless bucketConfigured %}
+    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">The media bucket is not configured for this CMS.</div>
+  {% else %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
+      <table class="w-full min-w-[720px] text-left">
+        <thead class="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Media</th>
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Size</th>
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Uploaded</th>
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Linked pages</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% if hasMedia %}
+            {% for item in media %}
+              <tr class="hover:bg-gray-50">
+                <td class="px-6 py-3">
+                  <a href="{{ item.mediaHref | escape }}" target="_blank" rel="noopener" class="block max-w-md truncate font-mono text-sm text-indigo-600 hover:text-indigo-800" title="{{ item.key | escape }}">{{ item.key | escape }}</a>
+                </td>
+                <td class="px-6 py-3 text-sm text-gray-500">{{ item.size | escape }}</td>
+                <td class="px-6 py-3 text-sm text-gray-500">{{ item.uploadedAt | escape }}</td>
+                <td class="px-6 py-3">
+                  {% if item.hasLinkedPages %}
+                    <div class="flex flex-wrap gap-x-3 gap-y-1">
+                      {% for page in item.linkedPages %}
+                        <a href="{{ page.editHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">{{ page.name | escape }} <span class="font-mono text-gray-400">/{{ page.slug | escape }}</span></a>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <span class="inline-flex rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">No linked pages</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="4" class="px-6 py-10 text-center text-gray-400">No media files in the bucket.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if hasNextPage %}
+      <div class="mt-4 flex justify-end">
+        <a href="{{ nextHref | escape }}" class="inline-flex h-10 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">Next page</a>
+      </div>
+    {% endif %}
+  {% endunless %}
+</div>
