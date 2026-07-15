@@ -450,6 +450,11 @@
       for (const attr of Array.from(oldScript.attributes)) {
         script.setAttribute(attr.name, attr.value);
       }
+      // Dynamically-inserted external scripts are force-async: they execute in
+      // arrival order, not document order, so a page's library (qrcode.min.js)
+      // could run after the code that needs it. async=false restores ordered
+      // execution; `defer` copied above has no effect on injected scripts.
+      if (script.hasAttribute('src')) script.async = false;
       script.textContent = oldScript.textContent;
       document.body.appendChild(script);
     });

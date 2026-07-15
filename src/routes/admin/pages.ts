@@ -1115,6 +1115,7 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
 
 pagesRoutes.post('/pages/:id/publish', requirePermission('content:publish'), async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
+  const backHref = safeAdminReturnPath(c.req.query('return_to'));
   const outcome = await publishPageToTargets(c.env, pageId);
   if (!outcome) return c.notFound();
 
@@ -1131,7 +1132,7 @@ pagesRoutes.post('/pages/:id/publish', requirePermission('content:publish'), asy
     });
   }
 
-  return c.redirect(`/admin?flash=${publishFlash(outcome)}`);
+  return c.redirect(appendQuery(backHref, `flash=${publishFlash(outcome)}`));
 });
 
 // ── Pull published page (PUBLISHED → DRAFT) ───────────────────────────────────
@@ -1158,6 +1159,7 @@ pagesRoutes.post('/pages/pull/:uuid', requirePermission('content:write'), async 
 
 pagesRoutes.post('/pages/:id/unpublish', requirePermission('content:publish'), async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
+  const backHref = safeAdminReturnPath(c.req.query('return_to'));
 
   const page = await c.env.DB.prepare('SELECT uuid, name, slug, page_type FROM draft_pages WHERE id = ?')
     .bind(pageId)
@@ -1174,7 +1176,7 @@ pagesRoutes.post('/pages/:id/unpublish', requirePermission('content:publish'), a
     page_type: page.page_type,
   });
 
-  return c.redirect('/admin?flash=Page+unpublished');
+  return c.redirect(appendQuery(backHref, 'flash=Page+unpublished'));
 });
 
 // ── Delete page → move to TRASH (soft-delete) ────────────────────────────────

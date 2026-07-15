@@ -8,6 +8,7 @@ import { cmsConfig } from '../src/cms-config';
 import { signJWT } from '../src/security/jwt';
 import { CMS_ADMIN_JOB_KIND, type CmsAdminJobMessage } from '../src/utils/admin-jobs';
 import { approveAsset, computeIntegrity } from '../src/utils/plugin-assets';
+import { mintFormOnceToken } from '../src/utils/form-once';
 import type { Env, JWTPayload } from '../src/types';
 
 const EVENTS_MANIFEST = {
@@ -332,6 +333,91 @@ describe('plugin admin proxy', () => {
     expect(capturedInit?.redirect).toBe('manual');
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe('/admin/plugins/events/events/21862006647168');
+  });
+
+  it('forwards the first _cms_once submission and bounces the replay without re-forwarding', async () => {
+    let forwarded = 0;
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const pluginUrl = 'https://plugin-once.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', pluginUrl).run();
+    __injectPluginFetcher(pluginUrl, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(url).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        forwarded += 1;
+        return new Response('plugin ok');
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+    const onceToken = `${await mintFormOnceToken(env.JWT_SECRET)}:aabb1122`;
+    const submit = () => worker.fetch(new Request('http://localhost/admin/plugins/events/guests/new', {
+      method: 'POST',
+      headers: {
+        Cookie: `access_token=${token}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Sec-Fetch-Site': 'same-origin',
+        Referer: 'http://localhost/admin/plugins/events/guests?flash=old',
+      },
+      body: `name=Guest&_cms_once=${encodeURIComponent(onceToken)}`,
+      redirect: 'manual',
+    }));
+
+    const first = await submit();
+    expect(first.status).toBe(200);
+    expect(forwarded).toBe(1);
+
+    const replay = await submit();
+    expect(forwarded).toBe(1); // duplicate never reaches the plugin
+    expect(replay.status).toBe(302);
+    const location = replay.headers.get('location') ?? '';
+    expect(location).toContain('/admin/plugins/events/guests');
+    expect(location).toContain('flash=Already');
+    expect(location).not.toContain('flash=old');
+  });
+
+  it('releases the _cms_once claim when the plugin fails so a retry is forwarded', async () => {
+    let forwarded = 0;
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const pluginUrl = 'https://plugin-once-retry.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', pluginUrl).run();
+    __injectPluginFetcher(pluginUrl, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(url).pathname === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        forwarded += 1;
+        return forwarded === 1
+          ? new Response('boom', { status: 500 })
+          : new Response('plugin ok');
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+    const onceToken = `${await mintFormOnceToken(env.JWT_SECRET)}:ccdd3344`;
+    const submit = () => worker.fetch(new Request('http://localhost/admin/plugins/events/guests/new', {
+      method: 'POST',
+      headers: {
+        Cookie: `access_token=${token}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Sec-Fetch-Site': 'same-origin',
+      },
+      body: `name=Guest&_cms_once=${encodeURIComponent(onceToken)}`,
+      redirect: 'manual',
+    }));
+
+    const failed = await submit();
+    expect(failed.status).toBe(500);
+    const retry = await submit();
+    expect(retry.status).toBe(200);
+    expect(forwarded).toBe(2); // the retry after a 500 was forwarded, not deduped
   });
 
   it('queues long events plugin duplicate posts in the CMS admin_jobs table', async () => {

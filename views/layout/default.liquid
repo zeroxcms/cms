@@ -109,6 +109,92 @@
       }
     }, true);
 
+    // Double-submit guard: once a form's submit is actually going through,
+    // block repeat submits and disable its buttons until the next page loads.
+    // Delegated on document so it also covers client-rendered plugin fragments.
+    // The disable is deferred one tick because the browser builds the POST body
+    // AFTER the submit event — disabling the clicked submitter synchronously
+    // drops its name/value from the submission — and so forms whose scripts
+    // preventDefault + fetch (e.g. the check-in kiosk) are left alone.
+    // Opt out per form with data-allow-resubmit.
+    (function() {
+      // Server-side single-use token (_cms_once): the host verifies and claims
+      // the stamped value on POST, so a re-POST of the same body (browser
+      // resubmit dialog, network retry) is rejected even after this page's
+      // in-memory guard is gone. cmsOnce is host-minted and base64url-safe.
+      var oncePageToken = '{{ cmsOnce }}';
+
+      function stampOnceToken(form) {
+        if (!oncePageToken) return;
+        if (form.method !== 'post') return;
+        if (form.querySelector('input[name="_cms_once"]')) return;
+        var bytes = new Uint8Array(8);
+        crypto.getRandomValues(bytes);
+        var suffix = Array.prototype.map.call(bytes, function(byte) {
+          return byte.toString(16).padStart(2, '0');
+        }).join('');
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = '_cms_once';
+        input.value = oncePageToken + ':' + suffix;
+        input.setAttribute('data-cms-once-stamped', '1');
+        form.appendChild(input);
+      }
+
+      document.addEventListener('submit', function(event) {
+        var form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        if (form.hasAttribute('data-allow-resubmit')) return;
+        if (form.getAttribute('data-submit-guard') === '1') {
+          // Repeat submit while the first is in flight (e.g. Enter key).
+          event.preventDefault();
+          return;
+        }
+        // Stamp synchronously — the entry list is built after this event, so
+        // (unlike disabling, above) an input added here IS submitted. Skip
+        // forms already intercepted (preventDefault + fetch, e.g. the kiosk):
+        // their repeat submits are legitimate and must not share one token.
+        if (!event.defaultPrevented) stampOnceToken(form);
+        setTimeout(function() {
+          if (event.defaultPrevented) return;
+          form.setAttribute('data-submit-guard', '1');
+          form.setAttribute('aria-busy', 'true');
+          Array.prototype.forEach.call(form.elements, function(control) {
+            var isButton = control instanceof HTMLButtonElement
+              || (control instanceof HTMLInputElement && /^(submit|button|reset|image)$/.test(control.type));
+            if (!isButton || control.disabled) return;
+            // Escape hatches on progress pages must stay usable.
+            if (control.hasAttribute('data-stop-continue')) return;
+            control.disabled = true;
+            control.setAttribute('data-submit-guard-disabled', '1');
+            control.style.cursor = 'wait';
+            control.style.opacity = '0.65';
+          });
+        }, 0);
+      });
+
+      // Back/forward-cache restores bring the page back with the guard still
+      // engaged; release it so the form is usable again.
+      window.addEventListener('pageshow', function(event) {
+        if (!event.persisted) return;
+        document.querySelectorAll('form[data-submit-guard="1"]').forEach(function(form) {
+          form.removeAttribute('data-submit-guard');
+          form.removeAttribute('aria-busy');
+        });
+        document.querySelectorAll('[data-submit-guard-disabled]').forEach(function(control) {
+          control.disabled = false;
+          control.removeAttribute('data-submit-guard-disabled');
+          control.style.cursor = '';
+          control.style.opacity = '';
+        });
+        // Drop stamped tokens too: coming back to edit and resubmit is a
+        // deliberate new submission and gets a fresh dedupe key.
+        document.querySelectorAll('input[data-cms-once-stamped]').forEach(function(input) {
+          input.remove();
+        });
+      });
+    })();
+
     // Avatar fallback (CSP-safe replacement for the inline onerror handler).
     document.addEventListener('DOMContentLoaded', function() {
       document.querySelectorAll('[data-avatar-img]').forEach(function(avatar) {

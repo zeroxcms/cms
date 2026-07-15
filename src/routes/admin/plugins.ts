@@ -33,6 +33,12 @@ import { buildContentSecurityPolicy } from '../../security/http';
 import { currentCspNonce } from '../../utils/request-context';
 import { cmsAdminJobMessage, createPluginAdminActionJob } from '../../utils/admin-jobs';
 import { computeIntegrity, getAssetApproval, listApprovals } from '../../utils/plugin-assets';
+import {
+  claimFormOnceToken,
+  extractFormOnceToken,
+  maybeCleanupFormOnceTokens,
+  releaseFormOnceToken,
+} from '../../utils/form-once';
 import type { ApprovedPluginAssets } from '../../templates/layout';
 import type { PluginManifest } from '../../types';
 import { pluginViewRevision, pluginWorkerRevision } from '../../utils/view-revision';
@@ -232,26 +238,60 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
 
   const hasBody = c.req.method !== 'GET' && c.req.method !== 'HEAD';
   const body = hasBody ? await c.req.raw.arrayBuffer() : undefined;
+
+  // Single-use submit token (see utils/form-once.ts): claim before any
+  // downstream work so the second POST of a double submit is caught even when
+  // both arrive concurrently. Missing/unverifiable tokens pass through — only
+  // an exact replay of an already-claimed token is treated as a duplicate.
+  let claimedOnceToken: string | null = null;
+  if (c.req.method === 'POST' && body) {
+    const contentType = c.req.raw.headers.get('content-type') ?? '';
+    const submitted = await extractFormOnceToken(body, contentType);
+    const claim = await claimFormOnceToken(c.env.DB, c.env.JWT_SECRET, submitted);
+    if (claim === 'duplicate') return duplicateSubmitResponse(c, pluginId);
+    if (claim === 'claimed') {
+      claimedOnceToken = submitted;
+      const cleanup = maybeCleanupFormOnceTokens(c.env.DB);
+      if (cleanup) c.executionCtx.waitUntil(cleanup);
+    }
+  }
+
   if (shouldQueuePluginAdminAction(c, pluginId, rest) && c.env.ADMIN_JOBS_QUEUE) {
-    const bodyText = body ? new TextDecoder().decode(body) : '';
-    const job = await createPluginAdminActionJob(c.env.DB, {
-      pluginId,
-      method: c.req.method,
-      path: pluginAdminPath,
-      contentType: c.req.raw.headers.get('content-type'),
-      body: bodyText,
-      user: c.get('user'),
-    });
-    await c.env.ADMIN_JOBS_QUEUE.send(cmsAdminJobMessage(job.id));
+    try {
+      const bodyText = body ? new TextDecoder().decode(body) : '';
+      const job = await createPluginAdminActionJob(c.env.DB, {
+        pluginId,
+        method: c.req.method,
+        path: pluginAdminPath,
+        contentType: c.req.raw.headers.get('content-type'),
+        body: bodyText,
+        user: c.get('user'),
+      });
+      await c.env.ADMIN_JOBS_QUEUE.send(cmsAdminJobMessage(job.id));
+    } catch (error) {
+      if (claimedOnceToken) await releaseFormOnceToken(c.env.DB, claimedOnceToken);
+      throw error;
+    }
     return c.redirect(queueRedirect(pluginId, rest));
   }
 
-  const upstreamResponse = await plugin.fetcher.fetch(upstream, {
-    method: c.req.method,
-    headers,
-    body,
-    redirect: 'manual',
-  });
+  let upstreamResponse: Response;
+  try {
+    upstreamResponse = await plugin.fetcher.fetch(upstream, {
+      method: c.req.method,
+      headers,
+      body,
+      redirect: 'manual',
+    });
+  } catch (error) {
+    if (claimedOnceToken) await releaseFormOnceToken(c.env.DB, claimedOnceToken);
+    throw error;
+  }
+  // A failed action isn't a completed submission — release the claim so the
+  // user's retry of the same form isn't misread as a duplicate.
+  if (claimedOnceToken && upstreamResponse.status >= 500) {
+    await releaseFormOnceToken(c.env.DB, claimedOnceToken);
+  }
 
   // Opt-in chrome: a plugin that returns an HTML *fragment* with `x-cms-chrome: 1`
   // gets wrapped in the standard admin layout — same sidebar, fonts, and
@@ -307,4 +347,29 @@ function queueRedirect(pluginId: string, rest: string): string {
 
 function withFlash(path: string, message: string): string {
   return appendQuery(path, `flash=${encodeURIComponent(message)}`);
+}
+
+/** Response for a re-POST of an already-claimed _cms_once token: bounce back
+ *  to the page the form lives on rather than repeating the action. */
+function duplicateSubmitResponse(c: AppContext, pluginId: string): Response {
+  if (wantsJsonResponse(c.req.raw)) {
+    return jsonError({ success: false, error: 'This form was already submitted' }, 409, 'duplicate-submission');
+  }
+  return c.redirect(withFlash(duplicateReturnPath(c, pluginId), 'Already submitted — the duplicate was ignored.'));
+}
+
+function duplicateReturnPath(c: AppContext, pluginId: string): string {
+  const referer = c.req.header('referer');
+  if (referer) {
+    try {
+      const url = new URL(referer, c.req.url);
+      if (url.origin === new URL(c.req.url).origin) {
+        url.searchParams.delete('flash'); // withFlash() adds ours
+        return url.pathname + url.search;
+      }
+    } catch {
+      // Unparsable referer — fall back to the plugin's admin root.
+    }
+  }
+  return `/admin/plugins/${pluginId}`;
 }

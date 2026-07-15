@@ -74,6 +74,9 @@ export interface BaseTemplateProps extends NavFlags {
   pluginSettingsNav: Array<{ label: string; href: string }>;
   /** Cache-busting revision appended to browser-fetched view files. */
   viewRevision: string;
+  /** Signed single-use form token page part; the layout's submit guard stamps
+   *  it (plus a per-form suffix) into POST forms as `_cms_once`. */
+  cmsOnce?: string;
   canManageUsers: boolean;
   canManageRoles: boolean;
   canManagePlugins: boolean;
@@ -117,6 +120,7 @@ export async function adminLayout(
     pluginNav: base.pluginNav,
     pluginSettingsNav: base.pluginSettingsNav,
     viewRevision: base.viewRevision,
+    cmsOnce: base.cmsOnce,
     approvedPluginAssets: opts.approvedPluginAssets,
     editorSync: opts.editorSync ?? false,
   });
@@ -150,6 +154,8 @@ export interface LayoutOptions extends NavFlags {
   pluginSettingsNav?: Array<{ label: string; href: string }>;
   /** Cache-busting revision appended to browser-fetched view files. */
   viewRevision?: string;
+  /** Signed single-use form token page part (see BaseTemplateProps.cmsOnce). */
+  cmsOnce?: string;
   /** Admin-approved plugin assets available to the current page's plugin (if any). */
   approvedPluginAssets?: ApprovedPluginAssets;
   /** Load the CMS-owned live editor presence/sync script for plugin edit views. */

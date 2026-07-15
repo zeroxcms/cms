@@ -30,6 +30,7 @@ import { withLiveStatus } from './page-logic';
 import { effectivePermissions, resolveRolePermissions } from './roles';
 import type { Permission } from '../types';
 import { viewRevision } from './view-revision';
+import { mintFormOnceToken } from './form-once';
 import {
   SIDEBAR_MENU_ITEMS,
   defaultPluginNavWeight,
@@ -63,13 +64,14 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
   const user = c.get('user');
   const userRoles = user.role.split(',').map((role) => role.trim()).filter(Boolean);
   const fallbackSiteTitle = c.env.SITE_TITLE ?? '0xCMS';
-  const [userAvatar, navItems, permissions, branding, userCredits, sharedCredits] = await Promise.all([
+  const [userAvatar, navItems, permissions, branding, userCredits, sharedCredits, cmsOnce] = await Promise.all([
     fetchUserAvatar(c.env.DB, userIdFromContext(c)),
     pluginNav(c.env),
     userPermissions(c),
     loadAppBrandingSettings(c.env, fallbackSiteTitle),
     getCreditBalance(c.env, userIdFromContext(c)),
     getSharedCreditBalance(c.env),
+    mintFormOnceToken(c.env.JWT_SECRET),
   ]);
   const sidebarSettings = await loadSidebarChromeSettings(c.env);
   const menuSettings = sidebarSettings.items;
@@ -164,6 +166,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     pluginNav: nav,
     pluginSettingsNav: settingsNav,
     viewRevision: viewRevision(c.env),
+    cmsOnce,
     canManageUsers: permissions.has('users:manage'),
     canManageRoles: permissions.has('roles:manage'),
     canManagePlugins: permissions.has('plugin:manage'),
