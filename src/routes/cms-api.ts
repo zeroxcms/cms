@@ -48,7 +48,7 @@ import {
   performAdvancedSearch,
   type AdvancedSearchCriterion,
 } from '../utils/search';
-import { liveMapForDraftPages, unpublishPageFromTargets, unpublishPagesFromTargets } from '../publish';
+import { liveMapForDraftPages, publishPageToTargets, unpublishPageFromTargets, unpublishPagesFromTargets } from '../publish';
 import { ingestSubmissions } from '../utils/submission-ingest';
 import { notifyPageSaved, savePageVersionAndSetCurrent, setDraftPageTags } from '../utils/page-store';
 import { listPageTypeApprovals, pageTypeScopeAllows } from '../utils/plugin-page-types';
@@ -1315,6 +1315,105 @@ cmsApiRoutes.post('/pages/search', async (c) => {
     pagination: result.pagination,
     page_types: pageTypes,
   });
+});
+
+// Publish draft pages to every configured target. This is intentionally a
+// bounded, id-only operation: the caller cannot supply a page type or snapshot
+// to smuggle content across its manifest scope, and every id is resolved from
+// this tenant's draft DB before the existing publish pipeline builds the live
+// snapshot. Registered before /pages/:id so "publish" is never parsed as an id.
+cmsApiRoutes.post('/pages/publish', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const body = await c.req.json().catch(() => null) as { ids?: unknown } | null;
+  const rawIds = body && Array.isArray(body.ids) ? body.ids : null;
+  if (!rawIds) return c.json({ error: 'invalid_body' }, 400);
+  if (rawIds.length > MAX_BATCH) return c.json({ error: 'batch_too_large', max: MAX_BATCH }, 413);
+
+  const candidates: Array<{ index: number; id: number }> = [];
+  const errors: Array<{ index: number; id?: number; error: string; page_type?: string; failed_targets?: string[] }> = [];
+  const seenIds = new Set<number>();
+  for (let index = 0; index < rawIds.length; index++) {
+    const id = asPositiveSafeInteger(rawIds[index]);
+    if (id === null) {
+      errors.push({ index, error: 'invalid_id' });
+      continue;
+    }
+    if (seenIds.has(id)) {
+      errors.push({ index, id, error: 'duplicate_id' });
+      continue;
+    }
+    seenIds.add(id);
+    candidates.push({ index, id });
+  }
+
+  const pageById = new Map<number, Page>();
+  if (candidates.length) {
+    const ids = candidates.map((candidate) => candidate.id);
+    const pages = await c.env.DB.prepare(
+      `SELECT * FROM draft_pages WHERE id IN (${ids.map(() => '?').join(',')})`,
+    ).bind(...ids).all<Page>();
+    for (const page of pages.results) pageById.set(page.id, page);
+  }
+
+  const publishable: Array<{ index: number; page: Page }> = [];
+  for (const candidate of candidates) {
+    const page = pageById.get(candidate.id);
+    if (!page) {
+      errors.push({ index: candidate.index, id: candidate.id, error: 'not_found' });
+      continue;
+    }
+    const pageType = page.page_type ?? '';
+    if (!pageTypeScopeAllows(auth.allowedTypes, pageType)) {
+      errors.push({ index: candidate.index, id: candidate.id, error: 'forbidden_page_type', page_type: pageType });
+      continue;
+    }
+    publishable.push({ index: candidate.index, page });
+  }
+
+  const published: number[] = [];
+  const hookPages: HookPage[] = [];
+  for (const item of publishable) {
+    const outcome = await publishPageToTargets(c.env, item.page.id);
+    if (!outcome) {
+      errors.push({ index: item.index, id: item.page.id, error: 'not_found' });
+      continue;
+    }
+    if (outcome.refused) {
+      errors.push({ index: item.index, id: item.page.id, error: 'submission_publish_refused' });
+      continue;
+    }
+    if (!outcome.targets.length) {
+      errors.push({ index: item.index, id: item.page.id, error: 'no_publish_targets' });
+      continue;
+    }
+
+    // Mirror the admin publish route: a partial target failure is observable
+    // through the publish hook/audit, but is still returned as an error so a
+    // caller such as EDM delivery cannot mint a link to incomplete live data.
+    hookPages.push({
+      id: item.page.id,
+      uuid: item.page.uuid,
+      page_type: item.page.page_type,
+      name: item.page.name,
+      slug: item.page.slug,
+    });
+    if (outcome.failures.length) {
+      errors.push({
+        index: item.index,
+        id: item.page.id,
+        error: 'publish_failed',
+        failed_targets: outcome.failures,
+      });
+      continue;
+    }
+    published.push(item.page.id);
+  }
+
+  emitPluginHooks(c, 'publish', hookPages, auth.pluginId);
+  errors.sort((a, b) => a.index - b.index);
+  return c.json({ published, errors, count: published.length });
 });
 
 // Read a single page (scoped to the plugin's content types).

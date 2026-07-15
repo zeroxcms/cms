@@ -398,6 +398,107 @@ describe('Plugin API create / read / list / update / delete', () => {
     }
   });
 
+  it('batch-publishes owned pages through the normal publish pipeline', async () => {
+    const event = await (await cmsApi('POST', '/__cms/pages', {
+      page_type: 'event',
+      name: 'Public launch',
+      lect: { name: { en: 'Public launch' }, secret_draft_note: 'not in this blueprint' },
+    })).json() as { page: { id: number; uuid: string } };
+    const guest = await (await cmsApi('POST', '/__cms/pages', {
+      page_type: 'guest',
+      name: 'Ada',
+      lect: { email: 'ada@example.com' },
+    })).json() as { page: { id: number; uuid: string } };
+
+    try {
+      const res = await cmsApi('POST', '/__cms/pages/publish', { ids: [event.page.id, guest.page.id] });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        published: [event.page.id, guest.page.id],
+        errors: [],
+        count: 2,
+      });
+
+      const live = await env.PUBLISHED_DB.prepare(
+        'SELECT id, page_type FROM live_pages WHERE uuid IN (?, ?) ORDER BY id',
+      ).bind(event.page.uuid, guest.page.uuid).all<{ id: number; page_type: string }>();
+      expect(live.results.map((page) => page.id).sort((a, b) => a - b))
+        .toEqual([event.page.id, guest.page.id].sort((a, b) => a - b));
+    } finally {
+      await env.PUBLISHED_DB.prepare('DELETE FROM live_pages WHERE uuid IN (?, ?)')
+        .bind(event.page.uuid, guest.page.uuid).run();
+    }
+  });
+
+  it('keeps batch publish inside the caller\'s approved write scope', async () => {
+    const contactId = 7_100_001;
+    const contactUuid = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO draft_pages (id, uuid, name, slug, page_type, lect) VALUES (?, ?, 'Private contact', 'private-contact', 'contact', '{}')",
+    ).bind(contactId, contactUuid).run();
+
+    try {
+      const res = await cmsApi('POST', '/__cms/pages/publish', { ids: [contactId] });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        published: [],
+        errors: [{ index: 0, id: contactId, error: 'forbidden_page_type', page_type: 'contact' }],
+        count: 0,
+      });
+      expect(await env.PUBLISHED_DB.prepare('SELECT id FROM live_pages WHERE uuid = ?').bind(contactUuid).first()).toBeNull();
+    } finally {
+      await env.DB.prepare('DELETE FROM draft_pages WHERE id = ?').bind(contactId).run();
+      await env.PUBLISHED_DB.prepare('DELETE FROM live_pages WHERE uuid = ?').bind(contactUuid).run();
+    }
+  });
+
+  it('requires plugin authentication and bounds batch publish input', async () => {
+    const rejected = await cmsApi('POST', '/__cms/pages/publish', { ids: [1] }, { 'x-plugin-secret': 'wrong' });
+    expect(rejected.status).toBe(403);
+
+    const invalid = await cmsApi('POST', '/__cms/pages/publish', { ids: [0, 12.5, 'nope'] });
+    expect(invalid.status).toBe(200);
+    expect(await invalid.json()).toMatchObject({
+      published: [],
+      errors: [
+        { index: 0, error: 'invalid_id' },
+        { index: 1, error: 'invalid_id' },
+        { index: 2, error: 'invalid_id' },
+      ],
+      count: 0,
+    });
+
+    const exactMax = await cmsApi('POST', '/__cms/pages/publish', {
+      ids: Array.from({ length: 100 }, (_, index) => 8_000_000_000_000 + index),
+    });
+    expect(exactMax.status).toBe(200);
+    expect((await exactMax.json() as { errors: unknown[] }).errors).toHaveLength(100);
+
+    const tooLarge = await cmsApi('POST', '/__cms/pages/publish', {
+      ids: Array.from({ length: 101 }, (_, index) => index + 1),
+    });
+    expect(tooLarge.status).toBe(413);
+    expect(await tooLarge.json()).toEqual({ error: 'batch_too_large', max: 100 });
+  });
+
+  it('refuses to publish a mirrored public submission', async () => {
+    const created = await (await cmsApi('POST', '/__cms/pages', {
+      page_type: 'guest',
+      name: 'Mirrored response',
+    })).json() as { page: { id: number; uuid: string } };
+    await env.DB.prepare("UPDATE page_versions SET action = 'ingest-submission' WHERE page_id = ?")
+      .bind(created.page.id).run();
+
+    const res = await cmsApi('POST', '/__cms/pages/publish', { ids: [created.page.id] });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      published: [],
+      errors: [{ index: 0, id: created.page.id, error: 'submission_publish_refused' }],
+      count: 0,
+    });
+    expect(await env.PUBLISHED_DB.prepare('SELECT id FROM live_pages WHERE uuid = ?').bind(created.page.uuid).first()).toBeNull();
+  });
+
   it('uses Chinese variants and lect fields when plugins list pages with q', async () => {
     await cmsApi('POST', '/__cms/pages', {
       page_type: 'guest',
