@@ -360,10 +360,10 @@
 <body class="h-full overflow-x-hidden">
   {% if admin %}
     <header class="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-gray-700 bg-gray-900 px-4 py-3 text-white shadow-xl md:hidden" data-admin-mobile-bar>
-      <div class="flex min-w-0 items-center gap-3">
+      <a href="/admin" aria-label="Go to admin dashboard" class="flex min-w-0 items-center gap-3">
         <svg class="h-7 w-7 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#{{ appIcon | escape }}"></use></svg>
         <span class="min-w-0 truncate text-lg font-bold tracking-tight">{{ siteTitle | escape }}</span>
-      </div>
+      </a>
       <button type="button"
               class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-700 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
               data-mobile-menu-open
@@ -378,10 +378,10 @@
            class="fixed inset-0 z-50 hidden max-h-screen min-h-screen flex-col overflow-hidden bg-gray-900 text-white shadow-xl md:fixed md:inset-y-0 md:left-0 md:flex md:min-h-0 md:w-64"
            data-admin-sidebar>
       <div class="flex items-center justify-between gap-3 border-b border-gray-700 px-4 py-3 md:px-6 md:py-5">
-        <div class="flex min-w-0 items-center gap-3">
+        <a href="/admin" aria-label="Go to admin dashboard" class="flex min-w-0 items-center gap-3">
           <svg class="h-7 w-7 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#{{ appIcon | escape }}"></use></svg>
           <span class="min-w-0 truncate text-lg font-bold tracking-tight">{{ siteTitle | escape }}</span>
-        </div>
+        </a>
         <button type="button"
                 class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-700 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white md:hidden"
                 data-mobile-menu-close
