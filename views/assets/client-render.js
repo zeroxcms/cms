@@ -101,10 +101,40 @@
 
   async function loadTranslations() {
     if (!payload.catalogHref) return;
+    const pluginTranslations = {};
+    const bodyView = payload.bodyView || {};
+    if (bodyView.plugin && bodyView.viewBasePath) {
+      const locale = payload.layoutData && payload.layoutData.uiLocale || 'en';
+      const localePaths = Array.from(new Set(['en', locale]));
+      for (const code of localePaths) {
+        const response = await fetch(withRevision(bodyView.viewBasePath + '/locales/' + encodeURIComponent(code) + '.json', bodyView.viewRevision), {
+          credentials: 'same-origin',
+          headers: { Accept: 'application/json' },
+        });
+        if (!response.ok) continue;
+        Object.assign(pluginTranslations, flattenTranslations(await response.json()));
+      }
+    }
     const response = await fetch(payload.catalogHref, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error('Unable to load translation catalog');
     const catalog = await response.json();
-    translations = catalog && typeof catalog === 'object' ? catalog : {};
+    translations = {
+      ...pluginTranslations,
+      ...(catalog && typeof catalog === 'object' ? catalog : {}),
+    };
+  }
+
+  function flattenTranslations(value, prefix, output) {
+    prefix = prefix || '';
+    output = output || {};
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return output;
+    Object.keys(value).forEach(function (key) {
+      const path = prefix ? prefix + '.' + key : key;
+      const child = value[key];
+      if (typeof child === 'string') output[path] = child;
+      else flattenTranslations(child, path, output);
+    });
+    return output;
   }
 
   function normalizePath(path) {
