@@ -185,3 +185,4 @@ export default {
   },
 };
 export { PageSyncDO } from './durable-objects/page-sync';
+export { FormOnceDO } from './durable-objects/form-once';

@@ -36,7 +36,6 @@ import { computeIntegrity, getAssetApproval, listApprovals } from '../../utils/p
 import {
   claimFormOnceToken,
   extractFormOnceToken,
-  maybeCleanupFormOnceTokens,
   releaseFormOnceToken,
 } from '../../utils/form-once';
 import type { ApprovedPluginAssets } from '../../templates/layout';
@@ -247,13 +246,9 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
   if (c.req.method === 'POST' && body) {
     const contentType = c.req.raw.headers.get('content-type') ?? '';
     const submitted = await extractFormOnceToken(body, contentType);
-    const claim = await claimFormOnceToken(c.env.DB, c.env.JWT_SECRET, submitted);
+    const claim = await claimFormOnceToken(c.env, c.env.JWT_SECRET, submitted);
     if (claim === 'duplicate') return duplicateSubmitResponse(c, pluginId);
-    if (claim === 'claimed') {
-      claimedOnceToken = submitted;
-      const cleanup = maybeCleanupFormOnceTokens(c.env.DB);
-      if (cleanup) c.executionCtx.waitUntil(cleanup);
-    }
+    if (claim === 'claimed') claimedOnceToken = submitted;
   }
 
   if (shouldQueuePluginAdminAction(c, pluginId, rest) && c.env.ADMIN_JOBS_QUEUE) {
@@ -269,7 +264,7 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
       });
       await c.env.ADMIN_JOBS_QUEUE.send(cmsAdminJobMessage(job.id));
     } catch (error) {
-      if (claimedOnceToken) await releaseFormOnceToken(c.env.DB, claimedOnceToken);
+      if (claimedOnceToken) await releaseFormOnceToken(c.env, claimedOnceToken);
       throw error;
     }
     return c.redirect(queueRedirect(pluginId, rest));
@@ -284,13 +279,13 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
       redirect: 'manual',
     });
   } catch (error) {
-    if (claimedOnceToken) await releaseFormOnceToken(c.env.DB, claimedOnceToken);
+    if (claimedOnceToken) await releaseFormOnceToken(c.env, claimedOnceToken);
     throw error;
   }
   // A failed action isn't a completed submission — release the claim so the
   // user's retry of the same form isn't misread as a duplicate.
   if (claimedOnceToken && upstreamResponse.status >= 500) {
-    await releaseFormOnceToken(c.env.DB, claimedOnceToken);
+    await releaseFormOnceToken(c.env, claimedOnceToken);
   }
 
   // Opt-in chrome: a plugin that returns an HTML *fragment* with `x-cms-chrome: 1`

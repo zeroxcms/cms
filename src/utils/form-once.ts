@@ -8,9 +8,9 @@
 //     (stateless — no DB write on GET).
 //   - The layout's submit guard stamps `<pageToken>:<randomSuffix>` into a
 //     hidden `_cms_once` input at first submit, one suffix per form.
-//   - proxyToPlugin() claims the full submitted value in D1; a second POST
-//     carrying the same value (double click, browser resubmit dialog,
-//     network retry) hits the primary key and is rejected as a duplicate.
+//   - proxyToPlugin() hashes the full submitted value and claims it in a
+//     sharded Durable Object; a second POST carrying the same value reaches the
+//     same shard and is rejected as a duplicate.
 //   - A claim is released if the downstream work fails, so users can retry.
 //
 // Missing or unverifiable tokens are allowed through (soft enforcement):
@@ -22,9 +22,14 @@ import { timingSafeEqualStr } from '../security/plugin-proxy';
 
 export const FORM_ONCE_FIELD = '_cms_once';
 
-/** Page tokens older than this fail verification; claimed rows are kept for
- *  twice this long so a duplicate of a nearly-expired token is still caught. */
-const FORM_ONCE_TTL_SECONDS = 12 * 60 * 60;
+/** Page tokens older than this fail verification. Claims are retained for 30
+ *  minutes after submission and removed by Durable Object alarms. */
+const FORM_ONCE_TTL_SECONDS = 30 * 60;
+const FORM_ONCE_RETENTION_MS = 30 * 60 * 1000;
+
+/** Fixed sharding bounds the number of Durable Objects while allowing
+ *  unrelated form submissions to coordinate independently. */
+const FORM_ONCE_SHARDS = 64;
 
 /** Allowed clock skew when a token's issue time is slightly in the future. */
 const CLOCK_SKEW_SECONDS = 5 * 60;
@@ -110,42 +115,70 @@ export async function extractFormOnceToken(body: ArrayBuffer, contentType: strin
 
 export type FormOnceClaim = 'claimed' | 'duplicate' | 'unverified';
 
+interface HasFormOnceBinding {
+  FORM_ONCE: DurableObjectNamespace;
+}
+
+interface FormOnceClaimResponse {
+  claim?: FormOnceClaim;
+}
+
+async function formOnceTarget(
+  namespace: DurableObjectNamespace,
+  submitted: string,
+): Promise<{ stub: DurableObjectStub; tokenHash: string }> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(submitted)));
+  const shard = digest[0] % FORM_ONCE_SHARDS;
+  const tokenHash = base64urlEncode(digest);
+  const id = namespace.idFromName(`form-once-${shard}`);
+  return { stub: namespace.get(id), tokenHash };
+}
+
 /**
  * Atomically claims a submitted token. 'duplicate' means this exact value was
  * already claimed — the submission is a repeat and must not be forwarded.
  * 'unverified' covers missing, malformed, forged, and expired tokens; callers
  * allow those through (soft enforcement, see header comment).
  */
-export async function claimFormOnceToken(db: D1DatabaseClient, secret: string, submitted: string | null): Promise<FormOnceClaim> {
+export async function claimFormOnceToken(
+  env: HasFormOnceBinding,
+  secret: string,
+  submitted: string | null,
+): Promise<FormOnceClaim> {
   if (!submitted) return 'unverified';
   if (!(await verifySubmittedToken(secret, submitted))) return 'unverified';
-  // RETURNING (not meta.changes) confirms whether this call inserted the row.
-  const claimed = await db
-    .prepare('INSERT INTO used_form_tokens (token, used_at) VALUES (?1, ?2) ON CONFLICT (token) DO NOTHING RETURNING token')
-    .bind(submitted, Math.floor(Date.now() / 1000))
-    .all();
-  return claimed.results.length > 0 ? 'claimed' : 'duplicate';
+
+  const { stub, tokenHash } = await formOnceTarget(env.FORM_ONCE, submitted);
+  const response = await stub.fetch('https://form-once/claim', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      action: 'claim',
+      tokenHash,
+      expiresAt: Date.now() + FORM_ONCE_RETENTION_MS,
+    }),
+  });
+  if (!response.ok) throw new Error(`form-once claim failed: ${response.status}`);
+  const result = await response.json() as FormOnceClaimResponse;
+  if (result.claim !== 'claimed' && result.claim !== 'duplicate') {
+    throw new Error('form-once claim returned an invalid response');
+  }
+  return result.claim;
 }
 
 /** Releases a claim after the downstream work failed, so a retry of the same
  *  form (same token) is not misread as a duplicate. */
-export async function releaseFormOnceToken(db: D1DatabaseClient, submitted: string): Promise<void> {
+export async function releaseFormOnceToken(env: HasFormOnceBinding, submitted: string): Promise<void> {
   try {
-    await db.prepare('DELETE FROM used_form_tokens WHERE token = ?1').bind(submitted).run();
+    const { stub, tokenHash } = await formOnceTarget(env.FORM_ONCE, submitted);
+    const response = await stub.fetch('https://form-once/release', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'release', tokenHash }),
+    });
+    if (!response.ok) throw new Error(`form-once release failed: ${response.status}`);
   } catch (error) {
     // Worst case the user sees one spurious "already submitted" on retry.
     console.error('form-once: failed to release claim', error);
   }
-}
-
-/** Occasionally prunes rows old enough that their page token can no longer
- *  verify anyway. Call fire-and-forget (waitUntil) after a successful claim. */
-export function maybeCleanupFormOnceTokens(db: D1DatabaseClient): Promise<unknown> | null {
-  if (Math.random() >= 0.02) return null;
-  const cutoff = Math.floor(Date.now() / 1000) - FORM_ONCE_TTL_SECONDS * 2;
-  return db
-    .prepare('DELETE FROM used_form_tokens WHERE used_at < ?1')
-    .bind(cutoff)
-    .run()
-    .catch((error) => console.error('form-once: cleanup failed', error));
 }

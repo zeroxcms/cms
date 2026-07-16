@@ -47,9 +47,17 @@ crons = ["*/5 * * * *"]
 name = "PAGE_SYNC"
 class_name = "PageSyncDO"
 
+[[durable_objects.bindings]]
+name = "FORM_ONCE"
+class_name = "FormOnceDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PageSyncDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["FormOnceDO"]
 
 # CMS-owned admin background jobs. Used for long plugin admin actions such as
 # event duplicate/delete, and for chunked advanced-search bulk actions; job rows

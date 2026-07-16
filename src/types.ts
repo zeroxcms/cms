@@ -493,6 +493,8 @@ export interface Env {
   /** Bucket for the "r2" publish target (static JSON snapshots). */
   PUBLISH_BUCKET?: R2Bucket;
   PAGE_SYNC: DurableObjectNamespace;
+  /** Sharded single-use admin form-token coordinators. */
+  FORM_ONCE: DurableObjectNamespace;
   /** Comma-separated list of plugin service-binding names, e.g. "PLUGIN_EVENTS,PLUGIN_SEO". */
   PLUGINS?: string;
   /** Shared secret forwarded to plugin Workers so they can trust CMS-originated calls. */
