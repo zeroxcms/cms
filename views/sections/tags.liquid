@@ -6,14 +6,14 @@
          title="Taxonomies"
          aria-label="Taxonomies"
          class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#tag"></use></svg>
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#tag"></use></svg>
         <span class="hidden lg:inline">Taxonomies</span>
       </a>
       <a href="/admin/tags/new"
          title="New Tag"
          aria-label="New Tag"
          class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#plus"></use></svg>
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#plus"></use></svg>
         <span class="hidden lg:inline">New Tag</span>
       </a>
     </div>
@@ -23,14 +23,14 @@
     <select id="filter_taxonomy" name="filter_taxonomy" class="min-w-0 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm sm:w-auto">
       <option value="">All taxonomies</option>
       {% for option in filterOptions %}
-        <option value="{{ option.id | escape }}" {% if option.selected %}selected{% endif %}>{{ option.name | escape }}</option>
+        <option value="{{ option.id }}" {% if option.selected %}selected{% endif %}>{{ option.name }}</option>
       {% endfor %}
     </select>
     <button type="submit"
             title="Filter"
             aria-label="Filter tags"
             class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#list-filter"></use></svg>
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#list-filter"></use></svg>
     </button>
   </form>
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
@@ -50,17 +50,17 @@
             <tr class="hover:bg-gray-50" data-id="{{ tag.id }}">
               <td class="px-3 py-3 text-gray-300">
                 <span data-reorder-handle title="Drag to reorder" aria-label="Drag to reorder" class="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-md hover:bg-gray-100 hover:text-gray-500">
-                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#menu"></use></svg>
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#menu"></use></svg>
                 </span>
               </td>
               <td class="px-6 py-3 text-sm font-medium text-gray-900">
-                <a href="{{ tag.editHref | escape }}" class="block text-sm font-medium text-indigo-600 hover:text-indigo-800">{{ tag.name | escape }}</a>
-                <div class="text-xs font-mono text-gray-500">{{ tag.slug | escape }}</div>
+                <a href="{{ tag.editHref }}" class="block text-sm font-medium text-indigo-600 hover:text-indigo-800">{{ tag.name }}</a>
+                <div class="text-xs font-mono text-gray-500">{{ tag.slug }}</div>
               </td>
               <td class="px-6 py-3 text-sm text-gray-500">{{ tag.weight }}</td>
-              <td class="px-6 py-3 text-sm text-gray-500">{{ tag.taxonomyName | escape }}</td>
+              <td class="px-6 py-3 text-sm text-gray-500">{{ tag.taxonomyName }}</td>
               <td class="px-6 py-3 text-right">
-                <a href="{{ tag.editHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
+                <a href="{{ tag.editHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
               </td>
             </tr>
           {% endfor %}

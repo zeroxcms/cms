@@ -1,20 +1,20 @@
 <div class="min-w-0 max-w-xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
-  <h2 class="text-2xl font-bold text-gray-900 mb-1">{{ name | escape }}</h2>
-  <p class="text-sm text-gray-500 mb-6">{{ email | escape }}</p>
+  <h2 class="text-2xl font-bold text-gray-900 mb-1">{{ name }}</h2>
+  <p class="text-sm text-gray-500 mb-6">{{ email }}</p>
   {% if hasError %}
-    <div class="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{{ error | escape }}</div>
+    <div class="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{{ error }}</div>
   {% endif %}
   {% if hasFlash %}
-    <div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">{{ flash | escape }}</div>
+    <div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">{{ flash }}</div>
   {% endif %}
-  <form method="POST" action="{{ action | escape }}" class="min-w-0 space-y-4">
+  <form method="POST" action="{{ action }}" class="min-w-0 space-y-4">
     <fieldset class="min-w-0">
       <legend class="block text-sm font-medium text-gray-700 mb-1">Roles</legend>
       <div class="flex flex-wrap gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
         {% for option in roleOptions %}
           <label class="inline-flex items-center gap-2 rounded-md bg-white border border-gray-200 px-3 py-1.5 text-sm">
-            <input type="checkbox" name="roles" value="{{ option.value | escape }}"{% if option.checked %} checked{% endif %} class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-            <span>{{ option.label | escape }}</span>
+            <input type="checkbox" name="roles" value="{{ option.value }}"{% if option.checked %} checked{% endif %} class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+            <span>{{ option.label }}</span>
           </label>
         {% endfor %}
       </div>
@@ -29,7 +29,7 @@
   <section class="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 p-5 sm:p-6">
     <h3 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Credits</h3>
     <p class="mt-2 text-2xl font-bold text-gray-900">{{ creditBalance }}</p>
-    <form method="POST" action="{{ creditAdjustAction | escape }}" class="mt-4 space-y-3">
+    <form method="POST" action="{{ creditAdjustAction }}" class="mt-4 space-y-3">
       <label class="block">
         <span class="block text-sm font-medium text-gray-700 mb-1">Adjustment</span>
         <input name="amount" type="number" step="1" required placeholder="e.g. 500 or -100"
@@ -45,7 +45,7 @@
     </form>
 
     {% if canShareCredits %}
-      <form method="POST" action="{{ sharedGrantAction | escape }}"
+      <form method="POST" action="{{ sharedGrantAction }}"
             data-confirm="Grant shared-pool credits to this user?"
             class="mt-5 space-y-3 border-t border-gray-100 pt-5">
         <h4 class="text-sm font-semibold text-gray-900">Grant from shared pool</h4>
@@ -82,14 +82,14 @@
           <tbody>
             {% for entry in creditLedger %}
               <tr class="border-t border-gray-100">
-                <td class="px-4 py-3 text-xs text-gray-500">{{ entry.createdAt | escape }}</td>
+                <td class="px-4 py-3 text-xs text-gray-500">{{ entry.createdAt }}</td>
                 <td class="px-4 py-3">
-                  <span class="font-mono text-xs">{{ entry.action | escape }}</span>
-                  {% if entry.note != '' %}<div class="text-xs text-gray-500 mt-0.5">{{ entry.note | escape }}</div>{% endif %}
+                  <span class="font-mono text-xs">{{ entry.action }}</span>
+                  {% if entry.note != '' %}<div class="text-xs text-gray-500 mt-0.5">{{ entry.note }}</div>{% endif %}
                 </td>
-                <td class="px-4 py-3 text-sm {% if entry.isSpend %}text-red-700{% else %}text-green-700{% endif %}">{{ entry.delta | escape }}</td>
+                <td class="px-4 py-3 text-sm {% if entry.isSpend %}text-red-700{% else %}text-green-700{% endif %}">{{ entry.delta }}</td>
                 <td class="px-4 py-3 text-sm text-gray-700">{{ entry.balanceAfter }}</td>
-                <td class="px-4 py-3 text-xs text-gray-500">{{ entry.createdBy | escape }}</td>
+                <td class="px-4 py-3 text-xs text-gray-500">{{ entry.createdBy }}</td>
               </tr>
             {% endfor %}
           </tbody>

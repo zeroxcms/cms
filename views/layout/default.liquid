@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="{{ uiLocale | default: 'en' | escape }}" dir="{{ uiDirection | default: 'ltr' | escape }}" class="h-full overflow-x-hidden bg-gray-50">
+<html lang="{{ uiLocale | default: 'en' }}" dir="{{ uiDirection | default: 'ltr' }}" class="h-full overflow-x-hidden bg-gray-50">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ title | escape }} - {{ siteTitle | escape }}</title>
+  <title>{{ title }} - {{ siteTitle }}</title>
   <script nonce="{{ nonce }}">
     (function() {
       var key = 'worker-cms-theme';
@@ -349,20 +349,20 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/assets/admin.css{{ assetRevisionQuery | escape }}">
-  <script src="/assets/table-filter.js{{ assetRevisionQuery | escape }}" nonce="{{ nonce }}" defer></script>
-  <script src="/assets/privacy-table.js{{ assetRevisionQuery | escape }}" nonce="{{ nonce }}" defer></script>
-  <script src="/assets/color-tag.js{{ assetRevisionQuery | escape }}" nonce="{{ nonce }}" defer></script>
-  <script src="/assets/picture-field.js{{ assetRevisionQuery | escape }}" nonce="{{ nonce }}" defer></script>
-  <script src="/assets/page-ref.js{{ assetRevisionQuery | escape }}" nonce="{{ nonce }}" defer></script>
-  {% if editorSync %}<script src="/assets/editor-sync.js{{ assetRevisionQuery | escape }}" nonce="{{ nonce }}" defer></script>{% endif %}
+  <link rel="stylesheet" href="/assets/admin.css{{ assetRevisionQuery }}">
+  <script src="/assets/table-filter.js{{ assetRevisionQuery }}" nonce="{{ nonce }}" defer></script>
+  <script src="/assets/privacy-table.js{{ assetRevisionQuery }}" nonce="{{ nonce }}" defer></script>
+  <script src="/assets/color-tag.js{{ assetRevisionQuery }}" nonce="{{ nonce }}" defer></script>
+  <script src="/assets/picture-field.js{{ assetRevisionQuery }}" nonce="{{ nonce }}" defer></script>
+  <script src="/assets/page-ref.js{{ assetRevisionQuery }}" nonce="{{ nonce }}" defer></script>
+  {% if editorSync %}<script src="/assets/editor-sync.js{{ assetRevisionQuery }}" nonce="{{ nonce }}" defer></script>{% endif %}
 </head>
 <body class="h-full overflow-x-hidden">
   {% if admin %}
     <header class="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-gray-700 bg-gray-900 px-4 py-3 text-white shadow-xl md:hidden" data-admin-mobile-bar>
       <a href="/admin" aria-label="Go to admin dashboard" class="flex min-w-0 items-center gap-3">
-        <svg class="h-7 w-7 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#{{ appIcon | escape }}"></use></svg>
-        <span class="min-w-0 truncate text-lg font-bold tracking-tight">{{ siteTitle | escape }}</span>
+        <svg class="h-7 w-7 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ appIcon }}"></use></svg>
+        <span class="min-w-0 truncate text-lg font-bold tracking-tight">{{ siteTitle }}</span>
       </a>
       <button type="button"
               class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-700 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
@@ -370,7 +370,7 @@
               aria-controls="admin-mobile-menu"
               aria-expanded="false"
               aria-label="Open menu">
-        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#menu"></use></svg>
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#menu"></use></svg>
       </button>
     </header>
 
@@ -379,14 +379,14 @@
            data-admin-sidebar>
       <div class="flex items-center justify-between gap-3 border-b border-gray-700 px-4 py-3 md:px-6 md:py-5">
         <a href="/admin" aria-label="Go to admin dashboard" class="flex min-w-0 items-center gap-3">
-          <svg class="h-7 w-7 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#{{ appIcon | escape }}"></use></svg>
-          <span class="min-w-0 truncate text-lg font-bold tracking-tight">{{ siteTitle | escape }}</span>
+          <svg class="h-7 w-7 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ appIcon }}"></use></svg>
+          <span class="min-w-0 truncate text-lg font-bold tracking-tight">{{ siteTitle }}</span>
         </a>
         <button type="button"
                 class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-700 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white md:hidden"
                 data-mobile-menu-close
                 aria-label="Close menu">
-          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#x"></use></svg>
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#x"></use></svg>
         </button>
       </div>
       <nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-4 md:px-4 md:py-6" data-scroll-frame>
@@ -394,27 +394,27 @@
           {% if item.isSettingsGroup %}
             <details class="group overflow-hidden"{% if item.isActive %} open{% endif %}>
               <summary class="flex cursor-pointer list-none items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-gray-700 hover:text-white [&::-webkit-details-marker]:hidden {% if item.isActive %}font-semibold text-white{% else %}text-gray-300{% endif %}">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#{{ item.icon | escape }}"></use></svg>
-                <span>{{ item.label | escape }}</span>
-                <svg class="ml-auto h-4 w-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#chevron-right"></use></svg>
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ item.icon }}"></use></svg>
+                <span>{{ item.label }}</span>
+                <svg class="ml-auto h-4 w-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#chevron-right"></use></svg>
               </summary>
               <div class="mt-1 ml-3 space-y-1 border-l border-gray-700 pl-3">
                 {% for settingItem in sidebarSettingsNav %}
-                  <a href="{{ settingItem.href | escape }}"
+                  <a href="{{ settingItem.href }}"
                      {% if settingItem.isActive %}aria-current="page"{% endif %}
                      class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors {% if settingItem.isActive %}bg-indigo-600 font-semibold text-white shadow-sm hover:bg-indigo-700{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#{{ settingItem.icon | escape }}"></use></svg>
-                    {{ settingItem.label | escape }}
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ settingItem.icon }}"></use></svg>
+                    {{ settingItem.label }}
                   </a>
                 {% endfor %}
               </div>
             </details>
           {% else %}
-            <a href="{{ item.href | escape }}"
+            <a href="{{ item.href }}"
                {% if item.isActive %}aria-current="page"{% endif %}
                class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors {% if item.isActive %}bg-indigo-600 font-semibold text-white shadow-sm hover:bg-indigo-700{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#{{ item.icon | escape }}"></use></svg>
-              {{ item.label | escape }}
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ item.icon }}"></use></svg>
+              {{ item.label }}
             </a>
           {% endif %}
         {% endfor %}
@@ -423,20 +423,20 @@
         <a href="/admin/profile" class="mb-3 flex min-w-0 items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-gray-700" data-mobile-menu-close>
           {% if hasUserAvatar %}
             <div class="relative w-8 h-8 shrink-0">
-              <img src="{{ userAvatar | escape }}"
+              <img src="{{ userAvatar }}"
                    class="w-8 h-8 rounded-full object-cover"
                    alt="avatar"
                    data-avatar-img>
               <div class="hidden w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-sm font-bold"
-                   data-avatar-fallback>{{ userInitial | escape }}</div>
+                   data-avatar-fallback>{{ userInitial }}</div>
             </div>
           {% else %}
             <div class="w-8 h-8 shrink-0 rounded-full bg-indigo-500 flex items-center justify-center text-sm font-bold"
-                 data-avatar-fallback>{{ userInitial | escape }}</div>
+                 data-avatar-fallback>{{ userInitial }}</div>
           {% endif %}
           <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-white truncate">{{ userName | escape }}</p>
-            <p class="text-xs text-gray-400 capitalize">{{ userRoleLabel | escape }}</p>
+            <p class="text-sm font-medium text-white truncate">{{ userName }}</p>
+            <p class="text-xs text-gray-400 capitalize">{{ userRoleLabel }}</p>
             <p class="mt-1 flex items-center gap-1 text-xs font-medium text-amber-400">
               <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="12" cy="12" r="8" stroke-width="2"></circle>
@@ -452,7 +452,7 @@
               <span>{{ sharedCredits }} shared</span>
             </p>
           </div>
-          <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#chevron-right"></use></svg>
+          <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#chevron-right"></use></svg>
         </a>
         <div class="flex shrink-0 items-center gap-3 md:flex-col md:items-start">
           <button type="button"
@@ -460,14 +460,14 @@
                   data-theme-toggle
                   aria-pressed="false"
                   aria-label="Switch to light theme">
-            <svg class="h-4 w-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" data-theme-icon="light"><use href="{{ iconHrefPrefix | escape }}#sun"></use></svg>
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" data-theme-icon="dark"><use href="{{ iconHrefPrefix | escape }}#moon"></use></svg>
+            <svg class="h-4 w-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" data-theme-icon="light"><use href="{{ iconHrefPrefix }}#sun"></use></svg>
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" data-theme-icon="dark"><use href="{{ iconHrefPrefix }}#moon"></use></svg>
             <span data-theme-toggle-label>Dark</span>
           </button>
           <form method="POST" action="/auth/logout" class="inline">
             <button type="submit"
                     class="flex shrink-0 items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix | escape }}#logout"></use></svg>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#logout"></use></svg>
               Sign out
             </button>
           </form>
@@ -476,7 +476,7 @@
     </aside>
   {% endif %}
   <div class="{{ contentClass }} min-h-full min-w-0">
-    {{ body }}
+    {{ body | raw }}
   </div>
   <script nonce="{{ nonce }}">
   // Drag-and-drop reorder for tables with [data-reorder].

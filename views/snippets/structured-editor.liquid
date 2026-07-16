@@ -1,7 +1,7 @@
 {% if hasSettings %}
   <section class="min-w-0 space-y-3 [&_input]:bg-[#141a26]">
     <p class="text-sm font-semibold text-gray-700">Settings</p>
-    {{ settingsHtml }}
+    {{ settingsHtml | raw }}
   </section>
 {% endif %}
 
@@ -17,13 +17,13 @@
           class="min-w-0 flex-1 px-2 py-1 border border-gray-300 rounded-lg text-xs sm:flex-none"
         >
           {% for option in languageOptions %}
-            <option value="{{ option.value | escape }}" {% if option.selected %}selected{% endif %}>{{ option.value | escape }}</option>
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.value }}</option>
           {% endfor %}
         </select>
       </label>
     {% endif %}
   </div>
-  {{ contentHtml }}
+  {{ contentHtml | raw }}
   <div class="border-t border-gray-100 pt-5 space-y-4">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <p class="text-sm font-semibold text-gray-700">Blocks</p>
@@ -32,7 +32,7 @@
           <label for="block_select" class="sr-only">Block type</label>
           <select id="block_select" name="block-select" class="min-w-0 w-full px-2 py-1 border border-gray-300 rounded-lg text-xs sm:w-auto">
             {% for option in blockOptions %}
-              <option value="{{ option.value | escape }}">{{ option.value | escape }}</option>
+              <option value="{{ option.value }}">{{ option.value }}</option>
             {% endfor %}
           </select>
           <button type="submit" name="action" value="block-add"
@@ -45,28 +45,28 @@
       {% for block in sortedBlocks %}
         <div class="min-w-0 rounded-lg border border-gray-200 p-4 space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <p class="min-w-0 break-words text-xs font-semibold uppercase tracking-wide text-gray-500">{{ block.name | escape }}</p>
+            <p class="min-w-0 break-words text-xs font-semibold uppercase tracking-wide text-gray-500">{{ block.name }}</p>
             <div class="flex shrink-0 items-center gap-3">
               <div class="flex items-center gap-1 text-sm text-gray-500">
                 <span aria-hidden="true">#</span>
-                <label for="{{ block.weightInputId | escape }}" class="sr-only">Weight for {{ block.name | escape }}</label>
-                <input type="number" id="{{ block.weightInputId | escape }}" name="{{ block.weightInputName | escape }}"
+                <label for="{{ block.weightInputId }}" class="sr-only">Weight for {{ block.name }}</label>
+                <input type="number" id="{{ block.weightInputId }}" name="{{ block.weightInputName }}"
                        value="{{ block.weight }}"
                        class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg font-bold focus:border-indigo-500 focus:outline-none">
               </div>
-              <button type="submit" name="action" value="{{ block.deleteAction | escape }}"
+              <button type="submit" name="action" value="{{ block.deleteAction }}"
                       class="text-xs font-semibold text-red-600 hover:text-red-700">Delete Block</button>
             </div>
           </div>
-          <input type="hidden" name="#{{ block.index }}@_type" value="{{ block.type | escape }}">
-          <input type="hidden" name="#{{ block.index }}@_id" value="{{ block.id | escape }}">
+          <input type="hidden" name="#{{ block.index }}@_type" value="{{ block.type }}">
+          <input type="hidden" name="#{{ block.index }}@_id" value="{{ block.id }}">
           {% if block.hasSettings %}
             <div class="space-y-3">
               <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">Settings</p>
-              {{ block.settingsHtml }}
+              {{ block.settingsHtml | raw }}
             </div>
           {% endif %}
-          {{ block.contentHtml }}
+          {{ block.contentHtml | raw }}
         </div>
       {% endfor %}
     {% else %}

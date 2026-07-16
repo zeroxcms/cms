@@ -11,7 +11,7 @@
   let translations = {};
   const missingTranslations = new Set();
   let activeViewBasePath = null;
-  const engine = new liquidjs.Liquid({
+  const engineOptions = {
     cache: true,
     extname: '.liquid',
     root: ['layout', 'templates', 'sections', 'snippets'],
@@ -44,31 +44,42 @@
         return fileKey;
       },
     },
-  });
+  };
+  // Template renders HTML-escape every output by default (fail-safe); templates
+  // opt out per-output with `| raw` for pre-rendered, server-sanitized HTML.
+  const engine = new liquidjs.Liquid({ ...engineOptions, outputEscape: 'escape' });
+  // JSON-template settings interpolation produces DATA (fed back into template
+  // renders, which escape on output) — escaping here would double-escape it.
+  const dataEngine = new liquidjs.Liquid(engineOptions);
 
-  engine.registerFilter('t', function (key) {
-    const normalized = String(key == null ? '' : key);
-    if (Object.prototype.hasOwnProperty.call(translations, normalized)) return translations[normalized];
-    if (!missingTranslations.has(normalized)) {
-      missingTranslations.add(normalized);
-      console.warn('Missing translation:', normalized);
-    }
-    return normalized;
-  });
+  registerCustomFilters(engine);
+  registerCustomFilters(dataEngine);
 
-  engine.registerFilter('l10n_number', function (value, options) {
-    const number = Number(value);
-    if (!Number.isFinite(number)) return String(value == null ? '' : value);
-    const format = options && typeof options === 'object' ? options : {};
-    return new Intl.NumberFormat(payload.layoutData && payload.layoutData.uiLocale || 'en', format).format(number);
-  });
+  function registerCustomFilters(target) {
+    target.registerFilter('t', function (key) {
+      const normalized = String(key == null ? '' : key);
+      if (Object.prototype.hasOwnProperty.call(translations, normalized)) return translations[normalized];
+      if (!missingTranslations.has(normalized)) {
+        missingTranslations.add(normalized);
+        console.warn('Missing translation:', normalized);
+      }
+      return normalized;
+    });
 
-  engine.registerFilter('l10n_date', function (value, options) {
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return String(value == null ? '' : value);
-    const format = options && typeof options === 'object' ? options : { dateStyle: 'medium' };
-    return new Intl.DateTimeFormat(payload.layoutData && payload.layoutData.uiLocale || 'en', format).format(date);
-  });
+    target.registerFilter('l10n_number', function (value, options) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return String(value == null ? '' : value);
+      const format = options && typeof options === 'object' ? options : {};
+      return new Intl.NumberFormat(payload.layoutData && payload.layoutData.uiLocale || 'en', format).format(number);
+    });
+
+    target.registerFilter('l10n_date', function (value, options) {
+      const date = value instanceof Date ? value : new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value == null ? '' : value);
+      const format = options && typeof options === 'object' ? options : { dateStyle: 'medium' };
+      return new Intl.DateTimeFormat(payload.layoutData && payload.layoutData.uiLocale || 'en', format).format(date);
+    });
+  }
 
   async function loadTranslations() {
     if (!payload.catalogHref) return;
@@ -289,9 +300,9 @@
   }
 
   async function renderString(value, data, secondPass) {
-    let text = String(await engine.parseAndRender(value, data));
+    let text = String(await dataEngine.parseAndRender(value, data));
     if (secondPass && hasLiquidSyntax(text)) {
-      text = String(await engine.parseAndRender(text, data));
+      text = String(await dataEngine.parseAndRender(text, data));
     }
     return text;
   }

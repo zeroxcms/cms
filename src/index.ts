@@ -48,13 +48,17 @@ app.use('*', async (c, next) => {
     }
   }
 
-  const canonicalOrigin = c.env.CANONICAL_ORIGIN ?? 'https://cms.eventuai.com';
-  const canonicalResponse = canonicalHostResponse(
-    c.req.raw,
-    canonicalOrigin,
-  );
-  if (canonicalResponse) {
-    return withSensitiveCacheHeaders(withSecurityHeaders(canonicalResponse), c.req.raw);
+  // Canonical-host enforcement is opt-in: without CANONICAL_ORIGIN the CMS
+  // serves whatever hostname it is deployed on.
+  const canonicalOrigin = (c.env.CANONICAL_ORIGIN ?? '').trim();
+  if (canonicalOrigin) {
+    const canonicalResponse = canonicalHostResponse(
+      c.req.raw,
+      canonicalOrigin,
+    );
+    if (canonicalResponse) {
+      return withSensitiveCacheHeaders(withSecurityHeaders(canonicalResponse), c.req.raw);
+    }
   }
 
   // The /__cms plugin write-back API is a server-to-server channel authenticated
@@ -63,7 +67,7 @@ app.use('*', async (c, next) => {
   // (The secret, not browser provenance, is the authenticator for /__cms.)
   const path = new URL(c.req.url).pathname;
   if (!path.startsWith('/__cms/') && !(path === '/auth/callback' && c.req.method === 'POST')) {
-    const crossOriginMutation = rejectCrossOriginMutation(c.req.raw, [canonicalOrigin]);
+    const crossOriginMutation = rejectCrossOriginMutation(c.req.raw, canonicalOrigin ? [canonicalOrigin] : []);
     if (crossOriginMutation) {
       return withSensitiveCacheHeaders(withSecurityHeaders(crossOriginMutation), c.req.raw);
     }

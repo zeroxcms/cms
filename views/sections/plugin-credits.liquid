@@ -1,14 +1,14 @@
 <div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <div class="flex items-center justify-between gap-4 mb-4">
     <div>
-      <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref | escape }}">← Plugins</a>
-      <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel | escape }} · Credits</h2>
+      <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref }}">← Plugins</a>
+      <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel }} · Credits</h2>
       <p class="mt-1 text-sm text-gray-500">Chargeable actions this plugin declares. Prices set here are deducted from the acting user's credit balance and logged in the credit ledger. Leave a value blank to use the plugin default; enter 0 to make an action free.</p>
     </div>
   </div>
 
   {% if hasFlash %}
-    <div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">{{ flashMessage | escape }}</div>
+    <div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">{{ flashMessage }}</div>
   {% endif %}
 
   {% if unreachable %}
@@ -16,7 +16,7 @@
       This plugin is not reachable right now, so its declared credit costs can't be listed.
     </div>
   {% else %}
-    <form method="post" action="{{ saveAction | escape }}">
+    <form method="post" action="{{ saveAction }}">
       <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
         <table class="w-full min-w-[680px] text-left text-sm">
           <thead class="bg-gray-50 text-left text-xs uppercase text-gray-500">
@@ -32,17 +32,17 @@
               {% for credit in credits %}
                 <tr class="border-t border-gray-100">
                   <td class="px-4 py-3">
-                    <div class="font-medium text-gray-900">{{ credit.label | escape }}</div>
-                    <div class="text-xs text-gray-400 mt-0.5 font-mono">{{ credit.key | escape }}</div>
-                    {% if credit.description != '' %}<div class="text-xs text-gray-500 mt-0.5">{{ credit.description | escape }}</div>{% endif %}
+                    <div class="font-medium text-gray-900">{{ credit.label }}</div>
+                    <div class="text-xs text-gray-400 mt-0.5 font-mono">{{ credit.key }}</div>
+                    {% if credit.description != '' %}<div class="text-xs text-gray-500 mt-0.5">{{ credit.description }}</div>{% endif %}
                   </td>
-                  <td class="px-4 py-3 text-sm text-gray-700">{{ credit.chargeLabel | escape }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700">{{ credit.chargeLabel }}</td>
                   <td class="px-4 py-3">
-                    <div class="text-sm text-gray-700">{{ credit.effectiveLabel | escape }}</div>
-                    <div class="text-xs text-gray-400 mt-0.5">Default: {{ credit.defaultLabel | escape }}</div>
+                    <div class="text-sm text-gray-700">{{ credit.effectiveLabel }}</div>
+                    <div class="text-xs text-gray-400 mt-0.5">Default: {{ credit.defaultLabel }}</div>
                   </td>
                   <td class="px-4 py-3">
-                    <input name="value_{{ credit.key }}" type="number" min="0" step="1" value="{{ credit.value | escape }}" placeholder="Default"
+                    <input name="value_{{ credit.key }}" type="number" min="0" step="1" value="{{ credit.value }}" placeholder="Default"
                            class="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                   </td>
                 </tr>

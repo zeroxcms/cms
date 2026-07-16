@@ -115,7 +115,7 @@ describe('app shell routes', () => {
     const response = await fetchWorker('/admin', { host: 'https://old.example.com' });
 
     expect(response.status).toBe(308);
-    expect(response.headers.get('Location')).toBe('https://cms.eventuai.com/admin');
+    expect(response.headers.get('Location')).toBe('https://cms.example.com/admin');
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 
@@ -222,7 +222,7 @@ describe('app shell routes', () => {
 
     const response = await fetchWorker('/auth/refresh', {
       method: 'POST',
-      host: 'https://cms.eventuai.com',
+      host: 'https://cms.example.com',
       headers: { Cookie: `refresh_token=${token}` },
     });
     const setCookies = response.headers.getSetCookie().join('\n');

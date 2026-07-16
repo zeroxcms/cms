@@ -6,3 +6,5 @@ dist/
 *.env
 .env
 .dev.vars
+wrangler.production.toml
+/.claude

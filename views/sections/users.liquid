@@ -4,10 +4,10 @@
     <p class="mt-1 text-sm text-gray-500">Users are created on first sign-in. Assign their roles here.</p>
   </div>
   {% if hasFlash %}
-    <div data-users-alert class="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">{{ flash | escape }}</div>
+    <div data-users-alert class="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">{{ flash }}</div>
   {% endif %}
   {% if hasError %}
-    <div data-users-alert class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ error | escape }}</div>
+    <div data-users-alert class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{{ error }}</div>
   {% endif %}
 
   <div class="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 p-5 sm:p-6">
@@ -17,7 +17,7 @@
     </div>
     <p class="text-2xl font-bold text-gray-900">{{ sharedCreditBalance }}</p>
 
-    <form method="POST" action="{{ sharedCreditAction | escape }}"
+    <form method="POST" action="{{ sharedCreditAction }}"
           data-confirm="Apply this shared-pool adjustment?"
           class="mt-5 max-w-md space-y-3 border-t border-gray-100 pt-5">
       <h4 class="text-sm font-semibold text-gray-900">Adjust pool</h4>
@@ -49,12 +49,12 @@
           <tbody>
             {% for entry in sharedCreditLedger %}
               <tr class="border-t border-gray-100">
-                <td class="px-4 py-3 text-xs text-gray-500">{{ entry.createdAt | escape }}</td>
+                <td class="px-4 py-3 text-xs text-gray-500">{{ entry.createdAt }}</td>
                 <td class="px-4 py-3">
-                  <span class="font-mono text-xs">{{ entry.action | escape }}</span>
-                  {% if entry.note != '' %}<div class="text-xs text-gray-500 mt-0.5">{{ entry.note | escape }}</div>{% endif %}
+                  <span class="font-mono text-xs">{{ entry.action }}</span>
+                  {% if entry.note != '' %}<div class="text-xs text-gray-500 mt-0.5">{{ entry.note }}</div>{% endif %}
                 </td>
-                <td class="px-4 py-3 text-sm {% if entry.isSpend %}text-red-700{% else %}text-green-700{% endif %}">{{ entry.delta | escape }}</td>
+                <td class="px-4 py-3 text-sm {% if entry.isSpend %}text-red-700{% else %}text-green-700{% endif %}">{{ entry.delta }}</td>
                 <td class="px-4 py-3 text-sm text-gray-700">{{ entry.balanceAfter }}</td>
               </tr>
             {% endfor %}
@@ -81,21 +81,21 @@
         {% if hasUsers %}
           {% for user in users %}
             <tr class="hover:bg-gray-50">
-              <td class="px-6 py-3 text-sm font-medium text-gray-900"><span data-private-field="name">{{ user.name | escape }}</span></td>
-              <td class="px-6 py-3 text-sm text-gray-500"><span data-private-field="email">{{ user.email | escape }}</span></td>
+              <td class="px-6 py-3 text-sm font-medium text-gray-900"><span data-private-field="name">{{ user.name }}</span></td>
+              <td class="px-6 py-3 text-sm text-gray-500"><span data-private-field="email">{{ user.email }}</span></td>
               <td class="px-6 py-3">
                 <div class="flex flex-wrap gap-1.5">
                   {% for provider in user.identityProviders %}
-                    <span class="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-700">{{ provider.label | escape }}</span>
+                    <span class="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-700">{{ provider.label }}</span>
                   {% endfor %}
                 </div>
               </td>
-              <td class="px-6 py-3 text-sm text-gray-700">{{ user.rolesLabel | escape }}</td>
+              <td class="px-6 py-3 text-sm text-gray-700">{{ user.rolesLabel }}</td>
               <td class="px-6 py-3 text-right">
                 <div class="flex items-center justify-end gap-3">
-                  <a href="{{ user.editHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Roles & Credits</a>
+                  <a href="{{ user.editHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Roles & Credits</a>
                   {% if user.canDelete %}
-                    <form method="POST" action="{{ user.deleteAction | escape }}" data-confirm="Remove this user and all linked sign-in identities?">
+                    <form method="POST" action="{{ user.deleteAction }}" data-confirm="Remove this user and all linked sign-in identities?">
                       <button type="submit" class="text-sm font-medium text-red-600 hover:text-red-700">Delete</button>
                     </form>
                   {% endif %}

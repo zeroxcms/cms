@@ -8,7 +8,7 @@
        title="New Role"
        aria-label="New Role"
        class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#plus"></use></svg>
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#plus"></use></svg>
       <span class="hidden lg:inline">New Role</span>
     </a>
   </div>
@@ -26,15 +26,15 @@
         {% if hasRoles %}
           {% for role in roles %}
             <tr class="hover:bg-gray-50">
-              <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ role.label | escape }} <span class="text-gray-400 font-mono text-xs">{{ role.name | escape }}</span></td>
+              <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ role.label }} <span class="text-gray-400 font-mono text-xs">{{ role.name }}</span></td>
               <td class="px-6 py-3 text-sm">
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">{{ role.badge | escape }}</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">{{ role.badge }}</span>
               </td>
               <td class="px-6 py-3 text-sm text-gray-700">{{ role.permissionCount }}</td>
               <td class="px-6 py-3 text-right whitespace-nowrap">
-                <a href="{{ role.editHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
+                <a href="{{ role.editHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
                 {% if role.canDelete %}
-                  <form method="POST" action="{{ role.deleteAction | escape }}" class="inline" data-confirm="Delete this role? It will be removed from any users that have it.">
+                  <form method="POST" action="{{ role.deleteAction }}" class="inline" data-confirm="Delete this role? It will be removed from any users that have it.">
                     <button type="submit" class="ml-3 text-sm font-medium text-red-600 hover:text-red-700">Delete</button>
                   </form>
                 {% endif %}

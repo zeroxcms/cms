@@ -1,8 +1,8 @@
 <label class="flex min-w-0 items-center gap-2 text-sm text-gray-700">
-  <input id="{{ field.id | escape }}" class="h-4 w-4 rounded border-gray-300" type="checkbox"
-         name="{{ field.inputName | escape }}"
-         value="{{ field.defaultValue | default: 'yes' | escape }}"
+  <input id="{{ field.id }}" class="h-4 w-4 rounded border-gray-300" type="checkbox"
+         name="{{ field.inputName }}"
+         value="{{ field.defaultValue | default: 'yes' }}"
          {% if field.checked %}checked{% endif %}
          {% if field.required %}required{% endif %}>
-  <span>{{ field.label | escape }}{% if field.required %} *{% endif %}</span>
+  <span>{{ field.label }}{% if field.required %} *{% endif %}</span>
 </label>

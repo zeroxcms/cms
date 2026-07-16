@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>{{ status }} - {{ title | escape }} - {{ siteTitle | escape }}</title>
-  <link rel="stylesheet" href="/assets/admin.css{{ assetRevisionQuery | escape }}">
+  <title>{{ status }} - {{ title }} - {{ siteTitle }}</title>
+  <link rel="stylesheet" href="/assets/admin.css{{ assetRevisionQuery }}">
 </head>
 <body class="min-h-screen flex items-center justify-center bg-gray-50">
   <div class="text-center">
     <p class="text-6xl font-bold text-gray-300">{{ status }}</p>
-    <h1 class="mt-4 text-2xl font-semibold text-gray-700">{{ heading | escape }}</h1>
+    <h1 class="mt-4 text-2xl font-semibold text-gray-700">{{ heading }}</h1>
     {% if hasMessage %}
-      <p class="mt-2 text-gray-500">{{ message | escape }}</p>
+      <p class="mt-2 text-gray-500">{{ message }}</p>
     {% endif %}
     <a href="/admin" class="mt-6 inline-block text-indigo-600 hover:underline">Back to Dashboard</a>
   </div>

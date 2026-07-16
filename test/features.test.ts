@@ -76,7 +76,7 @@ describe('weak JWT secret guard', () => {
     const weakEnv = { ...env, JWT_SECRET: 'short' };
 
     const response = await cmsWorker.fetch(
-      new IncomingRequest('https://cms.eventuai.com/auth/login'),
+      new IncomingRequest('https://cms.example.com/auth/login'),
       weakEnv,
       ctx,
     );
@@ -88,7 +88,7 @@ describe('weak JWT secret guard', () => {
     expect(response.headers.get('Cache-Control')).toBe('no-store');
 
     const missing = await cmsWorker.fetch(
-      new IncomingRequest('https://cms.eventuai.com/auth/login'),
+      new IncomingRequest('https://cms.example.com/auth/login'),
       { ...env, JWT_SECRET: '' },
       createExecutionContext(),
     );
@@ -143,7 +143,7 @@ describe('OAuth 2.1 PKCE start', () => {
 
   it('uses a __Host- prefixed SameSite=None state cookie on secure origins', async () => {
     const start = await fetchWorker('/auth/start?provider=eventuai', {
-      host: 'https://cms.eventuai.com',
+      host: 'https://cms.example.com',
     });
 
     const setCookie = start.headers.getSetCookie().join('\n');

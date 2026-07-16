@@ -1,33 +1,33 @@
 <div class="min-w-0 max-w-2xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
-  <h2 class="text-2xl font-bold text-gray-900 mb-6">{{ heading | escape }}</h2>
+  <h2 class="text-2xl font-bold text-gray-900 mb-6">{{ heading }}</h2>
   {% if readOnly %}
     <div class="mb-4 px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-600">This block type is defined in the config file and cannot be edited here.</div>
   {% endif %}
   {% if hasError %}
-    <div class="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{{ error | escape }}</div>
+    <div class="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{{ error }}</div>
   {% endif %}
-  <form id="block-type-form" method="POST" action="{{ action | escape }}" class="min-w-0 space-y-4">
+  <form id="block-type-form" method="POST" action="{{ action }}" class="min-w-0 space-y-4">
     <label for="block_type_name" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Name</span>
-      <input id="block_type_name" name="name" required value="{{ name | escape }}"{% if readOnly %} readonly{% endif %} class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm{% if readOnly %} bg-gray-50 text-gray-600{% endif %}">
+      <input id="block_type_name" name="name" required value="{{ name }}"{% if readOnly %} readonly{% endif %} class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm{% if readOnly %} bg-gray-50 text-gray-600{% endif %}">
     </label>
     <label for="block_type_slug" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Slug</span>
-      <input id="block_type_slug" name="slug" value="{{ slug | escape }}"{% if readOnly %} readonly{% endif %} class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono{% if readOnly %} bg-gray-50 text-gray-600{% endif %}">
+      <input id="block_type_slug" name="slug" value="{{ slug }}"{% if readOnly %} readonly{% endif %} class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono{% if readOnly %} bg-gray-50 text-gray-600{% endif %}">
       {% unless readOnly %}<span class="block text-xs text-gray-500 mt-1">The block key referenced by a page type's block list (e.g. <code>logos</code>). Cannot collide with a config or existing block.</span>{% endunless %}
     </label>
     <label for="block_type_weight" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Weight</span>
-      <input id="block_type_weight" name="weight" type="number" value="{{ weight | escape }}"{% if readOnly %} readonly{% endif %} class="block min-w-0 w-32 max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm{% if readOnly %} bg-gray-50 text-gray-600{% endif %}">
+      <input id="block_type_weight" name="weight" type="number" value="{{ weight }}"{% if readOnly %} readonly{% endif %} class="block min-w-0 w-32 max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm{% if readOnly %} bg-gray-50 text-gray-600{% endif %}">
     </label>
     <label for="block_type_blueprint" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Blueprint (JSON array)</span>
-      <textarea id="block_type_blueprint" name="blueprint" rows="8"{% if readOnly %} readonly{% endif %} class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono{% if readOnly %} bg-gray-50 text-gray-600{% endif %}" spellcheck="false">{{ blueprint | escape }}</textarea>
+      <textarea id="block_type_blueprint" name="blueprint" rows="8"{% if readOnly %} readonly{% endif %} class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono{% if readOnly %} bg-gray-50 text-gray-600{% endif %}" spellcheck="false">{{ blueprint }}</textarea>
       {% unless readOnly %}<span class="block text-xs text-gray-500 mt-1">Field definitions for this block, e.g. <code>["label", {"pictures": ["url"]}]</code></span>{% endunless %}
     </label>
   </form>
   {% if isEdit %}
-    <form id="block-type-delete-form" method="POST" action="{{ deleteAction | escape }}" data-confirm="Delete this block type? Pages using it keep their stored content."></form>
+    <form id="block-type-delete-form" method="POST" action="{{ deleteAction }}" data-confirm="Delete this block type? Pages using it keep their stored content."></form>
   {% endif %}
   <div class="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
     {% unless readOnly %}<button form="block-type-form" type="submit" class="w-full px-6 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm sm:w-auto">Save</button>{% endunless %}

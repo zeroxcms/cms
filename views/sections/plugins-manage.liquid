@@ -8,7 +8,7 @@
        title="Register plugin"
        aria-label="Register plugin"
        class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#plus"></use></svg>
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#plus"></use></svg>
       <span class="hidden lg:inline">Register plugin</span>
     </a>
   </div>
@@ -27,12 +27,12 @@
           {% for plugin in plugins %}
             <tr class="border-t border-gray-100">
               <td class="px-4 py-3">
-                <div class="font-medium text-gray-900">{{ plugin.title | escape }}</div>
-                <div class="text-xs text-gray-500">{{ plugin.subtitle | escape }}</div>
+                <div class="font-medium text-gray-900">{{ plugin.title }}</div>
+                <div class="text-xs text-gray-500">{{ plugin.subtitle }}</div>
               </td>
-              <td class="px-4 py-3 text-xs text-gray-500 break-all max-w-xs">{{ plugin.url | escape }}</td>
+              <td class="px-4 py-3 text-xs text-gray-500 break-all max-w-xs">{{ plugin.url }}</td>
               <td class="px-4 py-3">
-                <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold {{ plugin.statusClass | escape }}">{{ plugin.status | escape }}</span>
+                <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold {{ plugin.statusClass }}">{{ plugin.status }}</span>
               </td>
               <td class="px-4 py-3 text-right align-top">
                 <div class="flex flex-wrap justify-end gap-1.5">
@@ -40,24 +40,24 @@
                     <details class="group inline-block text-left relative">
                       <summary class="inline-flex h-8 cursor-pointer list-none items-center justify-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50 [&::-webkit-details-marker]:hidden">
                         Configuration
-                        <svg class="h-3.5 w-3.5 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#chevron-right"></use></svg>
+                        <svg class="h-3.5 w-3.5 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#chevron-right"></use></svg>
                       </summary>
                       <div class="mt-2 rounded-lg bg-white shadow-sm absolute z-10">
                         <div class="flex flex-nowrap gap-1.5 shadow-md pb-2 pe-2">
-                          {% if plugin.hasAssets %}<a href="{{ plugin.assetsHref | escape }}" class="inline-flex h-8 items-center justify-center rounded-md border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">Assets</a>{% endif %}
-                          {% if plugin.hasPageTypes %}<a href="{{ plugin.pageTypesHref | escape }}" class="inline-flex h-8 items-center justify-center rounded-md border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50 whitespace-nowrap">Page types</a>{% endif %}
-                          {% if plugin.hasLimits %}<a href="{{ plugin.limitsHref | escape }}" class="inline-flex h-8 items-center justify-center rounded-md border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">Limits</a>{% endif %}
-                          {% if plugin.hasCredits %}<a href="{{ plugin.creditsHref | escape }}" class="inline-flex h-8 items-center justify-center rounded-md border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">Credits</a>{% endif %}
+                          {% if plugin.hasAssets %}<a href="{{ plugin.assetsHref }}" class="inline-flex h-8 items-center justify-center rounded-md border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">Assets</a>{% endif %}
+                          {% if plugin.hasPageTypes %}<a href="{{ plugin.pageTypesHref }}" class="inline-flex h-8 items-center justify-center rounded-md border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50 whitespace-nowrap">Page types</a>{% endif %}
+                          {% if plugin.hasLimits %}<a href="{{ plugin.limitsHref }}" class="inline-flex h-8 items-center justify-center rounded-md border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">Limits</a>{% endif %}
+                          {% if plugin.hasCredits %}<a href="{{ plugin.creditsHref }}" class="inline-flex h-8 items-center justify-center rounded-md border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">Credits</a>{% endif %}
                         </div>
                       </div>
                     </details>
                   {% endif %}
 
-                  <form method="post" action="{{ plugin.toggleAction | escape }}" class="inline">
-                    <button type="submit" class="inline-flex h-8 items-center justify-center rounded-md border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">{{ plugin.toggleLabel | escape }}</button>
+                  <form method="post" action="{{ plugin.toggleAction }}" class="inline">
+                    <button type="submit" class="inline-flex h-8 items-center justify-center rounded-md border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">{{ plugin.toggleLabel }}</button>
                   </form>
-                  <a href="{{ plugin.editHref | escape }}" class="inline-flex h-8 items-center justify-center rounded-md border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">Edit</a>
-                  <form method="post" action="{{ plugin.deleteAction | escape }}" class="inline" data-confirm="Remove this plugin?">
+                  <a href="{{ plugin.editHref }}" class="inline-flex h-8 items-center justify-center rounded-md border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">Edit</a>
+                  <form method="post" action="{{ plugin.deleteAction }}" class="inline" data-confirm="Remove this plugin?">
                     <button type="submit" class="inline-flex h-8 items-center justify-center rounded-md border border-red-300 px-3 text-xs font-semibold text-red-700 hover:bg-red-50">Delete</button>
                   </form>
                 </div>

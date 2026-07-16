@@ -1,10 +1,10 @@
 <fieldset class="min-w-0 block">
-  <legend class="block text-sm font-medium text-gray-700 mb-1">{{ field.label | escape }}{% if field.required %} *{% endif %}</legend>
+  <legend class="block text-sm font-medium text-gray-700 mb-1">{{ field.label }}{% if field.required %} *{% endif %}</legend>
   <div class="flex flex-wrap gap-3">
     {% for option in field.options %}
       <label class="inline-flex items-center gap-2 text-sm text-gray-700">
-        <input type="radio" name="{{ field.inputName | escape }}" value="{{ option.value | escape }}"{% if option.selected %} checked{% endif %}{% if field.required %} required{% endif %}>
-        <span>{{ option.label | escape }}</span>
+        <input type="radio" name="{{ field.inputName }}" value="{{ option.value }}"{% if option.selected %} checked{% endif %}{% if field.required %} required{% endif %}>
+        <span>{{ option.label }}</span>
       </label>
     {% endfor %}
   </div>

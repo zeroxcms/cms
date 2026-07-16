@@ -2,7 +2,7 @@
   <div class="flex flex-col gap-3 mb-6 sm:flex-row sm:items-start sm:justify-between">
     <div>
       <h2 class="text-2xl font-bold text-gray-900">Trash</h2>
-      <p class="text-sm text-gray-500 mt-1">{{ pageCountLabel | escape }}</p>
+      <p class="text-sm text-gray-500 mt-1">{{ pageCountLabel }}</p>
     </div>
     <div class="flex flex-col gap-2 items-start sm:items-end">
       {% if anyTrash %}
@@ -10,21 +10,21 @@
           <select id="trash-type-filter" aria-label="Show only this type" class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm">
             <option value=""{% unless filterType %} selected{% endunless %}>All types ({{ grandTotal }})</option>
             {% for t in typeCounts %}
-              <option value="{{ t.pageType | escape }}"{% if t.pageType == filterType %} selected{% endif %}>{{ t.pageType | escape }} ({{ t.count }})</option>
+              <option value="{{ t.pageType }}"{% if t.pageType == filterType %} selected{% endif %}>{{ t.pageType }} ({{ t.count }})</option>
             {% endfor %}
           </select>
         {% endif %}
         {% if hasPages %}
-          <form id="restore-trash-form" method="POST" action="{{ restoreAllAction | escape }}" class="flex flex-wrap items-center gap-2">
-            <input type="hidden" name="type" value="{{ filterType | escape }}">
+          <form id="restore-trash-form" method="POST" action="{{ restoreAllAction }}" class="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="type" value="{{ filterType }}">
             <button type="submit" name="action" value="now" class="inline-flex h-9 items-center rounded-lg border border-transparent bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">Restore All</button>
             {% if hasRecent %}
               <button type="submit" name="action" value="1h" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">Restore Last Hour ({{ recentCount }})</button>
             {% endif %}
           </form>
           {% if canPurgeTrash %}
-            <form id="empty-trash-form" method="POST" action="{{ emptyTrashAction | escape }}" class="flex flex-wrap items-center gap-2">
-              <input type="hidden" name="type" value="{{ filterType | escape }}">
+            <form id="empty-trash-form" method="POST" action="{{ emptyTrashAction }}" class="flex flex-wrap items-center gap-2">
+              <input type="hidden" name="type" value="{{ filterType }}">
               <button type="submit" name="action" value="now" class="inline-flex h-9 items-center rounded-lg border border-transparent bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700">Empty All</button>
               {% if hasRecent %}
                 <button type="submit" name="action" value="1h" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">Last Hour ({{ recentCount }})</button>
@@ -38,7 +38,7 @@
   </div>
 
   {% if hasFlash %}
-    <div id="flash" class="mb-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ flash | escape }}</div>
+    <div id="flash" class="mb-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ flash }}</div>
   {% endif %}
 
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
@@ -56,19 +56,19 @@
           {% for page in pages %}
             <tr class="hover:bg-gray-50 transition-colors">
               <td class="px-6 py-4">
-                <div class="font-medium text-gray-900">{{ page.name | escape }}</div>
-                <div class="text-sm text-gray-500 font-mono">/{{ page.slug | escape }}</div>
+                <div class="font-medium text-gray-900">{{ page.name }}</div>
+                <div class="text-sm text-gray-500 font-mono">/{{ page.slug }}</div>
               </td>
-              <td class="px-6 py-4 text-sm text-gray-500">{{ page.pageType | escape }}</td>
-              <td class="px-6 py-4 text-sm text-gray-400">{{ page.updatedAt | escape }}</td>
+              <td class="px-6 py-4 text-sm text-gray-500">{{ page.pageType }}</td>
+              <td class="px-6 py-4 text-sm text-gray-400">{{ page.updatedAt }}</td>
               <td class="px-6 py-4">
                 <div class="flex flex-wrap items-center gap-2">
-                  <form method="POST" action="{{ page.restoreAction | escape }}" class="inline">
+                  <form method="POST" action="{{ page.restoreAction }}" class="inline">
                     <button type="submit"
                             class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">Restore</button>
                   </form>
                   {% if canPurgeTrash %}
-                    <form method="POST" action="{{ page.deleteAction | escape }}" class="inline"
+                    <form method="POST" action="{{ page.deleteAction }}" class="inline"
                           data-confirm="Permanently delete this page? This cannot be undone.">
                       <button type="submit"
                               class="text-red-500 hover:text-red-700 text-sm font-medium">Delete Forever</button>
@@ -91,10 +91,10 @@
     <div class="mt-4 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
       <div class="text-gray-500">Page {{ currentPage }} of {{ totalPages }}</div>
       <div class="flex flex-wrap gap-2">
-        {% if hasFirstPage %}<a href="{{ firstHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">First</a>{% endif %}
-        {% if hasPreviousPage %}<a href="{{ previousHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Previous</a>{% endif %}
-        {% if hasNextPage %}<a href="{{ nextHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Next</a>{% endif %}
-        {% if hasLastPage %}<a href="{{ lastHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Last</a>{% endif %}
+        {% if hasFirstPage %}<a href="{{ firstHref }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">First</a>{% endif %}
+        {% if hasPreviousPage %}<a href="{{ previousHref }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Previous</a>{% endif %}
+        {% if hasNextPage %}<a href="{{ nextHref }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Next</a>{% endif %}
+        {% if hasLastPage %}<a href="{{ lastHref }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Last</a>{% endif %}
       </div>
     </div>
   {% endif %}

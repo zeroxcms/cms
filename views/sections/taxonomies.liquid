@@ -9,7 +9,7 @@
          title="New Taxonomy"
          aria-label="New Taxonomy"
          class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#plus"></use></svg>
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#plus"></use></svg>
         <span class="hidden lg:inline">New Taxonomy</span>
       </a>
     {% endif %}
@@ -28,22 +28,22 @@
         {% if hasTaxonomies %}
           {% for taxonomy in taxonomies %}
             <tr class="hover:bg-gray-50">
-              <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ taxonomy.name | escape }}</td>
-              <td class="px-6 py-3 text-sm font-mono text-gray-500">{{ taxonomy.slug | escape }}</td>
+              <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ taxonomy.name }}</td>
+              <td class="px-6 py-3 text-sm font-mono text-gray-500">{{ taxonomy.slug }}</td>
               <td class="px-6 py-3 text-sm">
                 {% if taxonomy.source == 'db' %}
                   <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-700">db</span>
                 {% elsif taxonomy.source == 'plugin' %}
-                  <span data-taxonomy-plugin="{{ taxonomy.slug | escape }}" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">plugin{% if taxonomy.pluginName %} ({{ taxonomy.pluginName | escape }}){% endif %}</span>
+                  <span data-taxonomy-plugin="{{ taxonomy.slug }}" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700">plugin{% if taxonomy.pluginName %} ({{ taxonomy.pluginName }}){% endif %}</span>
                 {% else %}
                   <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">config</span>
                 {% endif %}
               </td>
               <td class="px-6 py-3 text-right">
                 {% if taxonomy.isDb %}
-                  <a href="{{ taxonomy.editHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">{% if canWrite %}Edit{% else %}View{% endif %}</a>
+                  <a href="{{ taxonomy.editHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">{% if canWrite %}Edit{% else %}View{% endif %}</a>
                 {% else %}
-                  <a href="{{ taxonomy.viewHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">View</a>
+                  <a href="{{ taxonomy.viewHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">View</a>
                 {% endif %}
               </td>
             </tr>

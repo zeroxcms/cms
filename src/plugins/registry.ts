@@ -48,7 +48,10 @@ function urlFetcher(baseUrl: string): Fetcher {
         ? input.href
         : (input as Request).url;
     const { pathname, search } = new URL(href);
-    return globalThis.fetch(`${base}${pathname}${search}`, init);
+    // Never follow redirects server-side: the SSRF guard validates the
+    // registered URL only, so a redirecting plugin could otherwise bounce the
+    // request (and its secret headers) to a host that was never vetted.
+    return globalThis.fetch(`${base}${pathname}${search}`, { ...init, redirect: 'manual' });
   };
   return { fetch } as unknown as Fetcher;
 }

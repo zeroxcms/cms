@@ -5,7 +5,7 @@
   </div>
 
   {% if hasFlash %}
-    <div class="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">{{ flash | escape }}</div>
+    <div class="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">{{ flash }}</div>
   {% endif %}
 
   <form id="menu-settings-form" method="POST" action="/admin/settings/system" class="min-w-0 space-y-6">
@@ -16,7 +16,7 @@
           <span class="block text-sm font-medium text-gray-700 mb-1">App name</span>
           <input type="text"
                  name="app_name"
-                 value="{{ appName | escape }}"
+                 value="{{ appName }}"
                  maxlength="80"
                  class="block min-w-0 w-full max-w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
         </label>
@@ -24,7 +24,7 @@
           <span class="block text-sm font-medium text-gray-700 mb-1">App icon</span>
           <select name="app_icon" class="block min-w-0 w-full max-w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
             {% for option in iconOptions %}
-              <option value="{{ option.value | escape }}"{% if option.selected %} selected{% endif %}>{{ option.label | escape }}</option>
+              <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
             {% endfor %}
           </select>
         </label>
@@ -37,7 +37,7 @@
         <span class="block text-sm font-medium text-gray-700 mb-1">/admin redirect path</span>
         <input type="text"
                name="admin_home_path"
-               value="{{ adminHomePath | escape }}"
+               value="{{ adminHomePath }}"
                placeholder="/admin/plugins/events/dashboard"
                class="block min-w-0 w-full max-w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
       </label>
@@ -49,7 +49,7 @@
         <span class="block text-sm font-medium text-gray-700 mb-1">Settings group weight</span>
         <input type="number"
                name="settings_group_weight"
-               value="{{ settingsGroupWeight | escape }}"
+               value="{{ settingsGroupWeight }}"
                class="block w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm">
       </label>
     </section>
@@ -70,26 +70,26 @@
             {% for option in mainOptions %}
               <tr>
                 <td class="px-3 py-3">
-                  <p class="font-semibold text-gray-900">{{ option.label | escape }}</p>
-                  <p class="mt-1 text-gray-500">{{ option.description | escape }}</p>
+                  <p class="font-semibold text-gray-900">{{ option.label }}</p>
+                  <p class="mt-1 text-gray-500">{{ option.description }}</p>
                 </td>
                 <td class="px-3 py-3">
                   <input type="checkbox"
                          name="visible_items"
-                         value="{{ option.value | escape }}"
+                         value="{{ option.value }}"
                          {% if option.checked %}checked{% endif %}
                          {% if option.locked %}disabled{% endif %}
-                         aria-label="Show {{ option.label | escape }}"
+                         aria-label="Show {{ option.label }}"
                          class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
                   {% if option.locked %}
-                    <input type="hidden" name="visible_items" value="{{ option.value | escape }}">
+                    <input type="hidden" name="visible_items" value="{{ option.value }}">
                   {% endif %}
                 </td>
                 <td class="px-3 py-3">
                   <input type="number"
-                         name="weight_{{ option.value | escape }}"
-                         value="{{ option.weight | escape }}"
-                         aria-label="{{ option.label | escape }} weight"
+                         name="weight_{{ option.value }}"
+                         value="{{ option.weight }}"
+                         aria-label="{{ option.label }} weight"
                          class="block w-20 rounded-lg border border-gray-300 px-3 py-2 text-sm">
                 </td>
               </tr>
@@ -116,26 +116,26 @@
             {% for option in settingsOptions %}
               <tr>
                 <td class="px-3 py-3">
-                  <p class="font-semibold text-gray-900">{{ option.label | escape }}</p>
-                  <p class="mt-1 text-gray-500">{{ option.description | escape }}</p>
+                  <p class="font-semibold text-gray-900">{{ option.label }}</p>
+                  <p class="mt-1 text-gray-500">{{ option.description }}</p>
                 </td>
                 <td class="px-3 py-3">
                   <input type="checkbox"
                          name="visible_items"
-                         value="{{ option.value | escape }}"
+                         value="{{ option.value }}"
                          {% if option.checked %}checked{% endif %}
                          {% if option.locked %}disabled{% endif %}
-                         aria-label="Show {{ option.label | escape }}"
+                         aria-label="Show {{ option.label }}"
                          class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
                   {% if option.locked %}
-                    <input type="hidden" name="visible_items" value="{{ option.value | escape }}">
+                    <input type="hidden" name="visible_items" value="{{ option.value }}">
                   {% endif %}
                 </td>
                 <td class="px-3 py-3">
                   <input type="number"
-                         name="weight_{{ option.value | escape }}"
-                         value="{{ option.weight | escape }}"
-                         aria-label="{{ option.label | escape }} weight"
+                         name="weight_{{ option.value }}"
+                         value="{{ option.weight }}"
+                         aria-label="{{ option.label }} weight"
                          class="block w-20 rounded-lg border border-gray-300 px-3 py-2 text-sm">
                 </td>
               </tr>
@@ -164,30 +164,30 @@
             {% for option in pluginOptions %}
               <tr>
                 <td class="px-3 py-3">
-                  <p class="font-semibold text-gray-900">{{ option.label | escape }}</p>
-                  <p class="mt-1 truncate text-gray-500">{{ option.href | escape }}</p>
+                  <p class="font-semibold text-gray-900">{{ option.label }}</p>
+                  <p class="mt-1 truncate text-gray-500">{{ option.href }}</p>
                 </td>
-                <td class="px-3 py-3 text-gray-600">{{ option.groupLabel | escape }}</td>
+                <td class="px-3 py-3 text-gray-600">{{ option.groupLabel }}</td>
                 <td class="px-3 py-3">
                   <input type="checkbox"
                          name="plugin_visible_items"
-                         value="{{ option.key | escape }}"
+                         value="{{ option.key }}"
                          {% if option.checked %}checked{% endif %}
-                         aria-label="Show {{ option.label | escape }}"
+                         aria-label="Show {{ option.label }}"
                          class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
                 </td>
                 <td class="px-3 py-3">
                   <input type="number"
-                         name="plugin_weight_{{ option.formKey | escape }}"
-                         value="{{ option.weight | escape }}"
-                         aria-label="{{ option.label | escape }} weight"
+                         name="plugin_weight_{{ option.formKey }}"
+                         value="{{ option.weight }}"
+                         aria-label="{{ option.label }} weight"
                          class="block w-20 rounded-lg border border-gray-300 px-3 py-2 text-sm">
                 </td>
                 <td class="px-3 py-3">
-                  <select name="plugin_icon_{{ option.formKey | escape }}" aria-label="{{ option.label | escape }} icon"
+                  <select name="plugin_icon_{{ option.formKey }}" aria-label="{{ option.label }} icon"
                           class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
                     {% for icon in iconOptions %}
-                      <option value="{{ icon.value | escape }}"{% if option.icon == icon.value %} selected{% endif %}>{{ icon.label | escape }}</option>
+                      <option value="{{ icon.value }}"{% if option.icon == icon.value %} selected{% endif %}>{{ icon.label }}</option>
                     {% endfor %}
                   </select>
                 </td>

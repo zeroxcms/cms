@@ -25,15 +25,15 @@
             {% for item in media %}
               <tr class="hover:bg-gray-50">
                 <td class="px-6 py-3">
-                  <a href="{{ item.mediaHref | escape }}" target="_blank" rel="noopener" class="block max-w-md truncate font-mono text-sm text-indigo-600 hover:text-indigo-800" title="{{ item.key | escape }}">{{ item.key | escape }}</a>
+                  <a href="{{ item.mediaHref }}" target="_blank" rel="noopener" class="block max-w-md truncate font-mono text-sm text-indigo-600 hover:text-indigo-800" title="{{ item.key }}">{{ item.key }}</a>
                 </td>
-                <td class="px-6 py-3 text-sm text-gray-500">{{ item.size | escape }}</td>
-                <td class="px-6 py-3 text-sm text-gray-500">{{ item.uploadedAt | escape }}</td>
+                <td class="px-6 py-3 text-sm text-gray-500">{{ item.size }}</td>
+                <td class="px-6 py-3 text-sm text-gray-500">{{ item.uploadedAt }}</td>
                 <td class="px-6 py-3">
                   {% if item.hasLinkedPages %}
                     <div class="flex flex-wrap gap-x-3 gap-y-1">
                       {% for page in item.linkedPages %}
-                        <a href="{{ page.editHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">{{ page.name | escape }} <span class="font-mono text-gray-400">/{{ page.slug | escape }}</span></a>
+                        <a href="{{ page.editHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">{{ page.name }} <span class="font-mono text-gray-400">/{{ page.slug }}</span></a>
                       {% endfor %}
                     </div>
                   {% else %}
@@ -41,11 +41,11 @@
                   {% endif %}
                 </td>
                 <td class="px-6 py-3 text-right">
-                  <form method="post" action="{{ deleteAction | escape }}" class="inline" data-confirm="Delete this file? This cannot be undone and may break pages that reference it.">
-                    <input type="hidden" name="key" value="{{ item.key | escape }}">
-                    <button type="submit" title="Delete file" aria-label="Delete {{ item.key | escape }}"
+                  <form method="post" action="{{ deleteAction }}" class="inline" data-confirm="Delete this file? This cannot be undone and may break pages that reference it.">
+                    <input type="hidden" name="key" value="{{ item.key }}">
+                    <button type="submit" title="Delete file" aria-label="Delete {{ item.key }}"
                             class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50 hover:text-red-700">
-                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#trash-can"></use></svg>
+                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#trash-can"></use></svg>
                       <span class="sr-only">Delete</span>
                     </button>
                   </form>
@@ -61,7 +61,7 @@
 
     {% if hasNextPage %}
       <div class="mt-4 flex justify-end">
-        <a href="{{ nextHref | escape }}" class="inline-flex h-10 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">Next page</a>
+        <a href="{{ nextHref }}" class="inline-flex h-10 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">Next page</a>
       </div>
     {% endif %}
   {% endunless %}

@@ -9,7 +9,7 @@
        title="Manage plugins"
        aria-label="Manage plugins"
        class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#beaker"></use></svg>
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#beaker"></use></svg>
       <span class="hidden lg:inline">Manage plugins</span>
     </a>
     {% endif %}
@@ -47,19 +47,19 @@
           {% for row in rows %}
             <tr class="hover:bg-gray-50">
               <td class="px-4 py-3">
-                <div class="font-medium text-gray-900">{{ row.pluginLabel | escape }}</div>
-                <div class="mt-0.5 text-xs font-mono text-gray-400">{{ row.pluginId | escape }}</div>
+                <div class="font-medium text-gray-900">{{ row.pluginLabel }}</div>
+                <div class="mt-0.5 text-xs font-mono text-gray-400">{{ row.pluginId }}</div>
               </td>
               <td class="px-4 py-3">
-                <div class="font-medium text-gray-900">{{ row.label | escape }}</div>
-                <div class="mt-0.5 text-xs font-mono text-gray-400">{{ row.key | escape }}</div>
-                {% if row.description != '' %}<div class="mt-0.5 text-xs text-gray-500">{{ row.description | escape }}</div>{% endif %}
+                <div class="font-medium text-gray-900">{{ row.label }}</div>
+                <div class="mt-0.5 text-xs font-mono text-gray-400">{{ row.key }}</div>
+                {% if row.description != '' %}<div class="mt-0.5 text-xs text-gray-500">{{ row.description }}</div>{% endif %}
               </td>
-              <td class="px-4 py-3 text-gray-700">{{ row.chargeLabel | escape }}</td>
-              <td class="px-4 py-3 font-medium text-gray-900">{{ row.effectiveLabel | escape }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ row.chargeLabel }}</td>
+              <td class="px-4 py-3 font-medium text-gray-900">{{ row.effectiveLabel }}</td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
                 {% if canConfigure %}
-                <a href="{{ row.manageHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Configure</a>
+                <a href="{{ row.manageHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Configure</a>
                 {% endif %}
               </td>
             </tr>
@@ -90,19 +90,19 @@
           {% for row in limitRows %}
             <tr class="hover:bg-gray-50">
               <td class="px-4 py-3">
-                <div class="font-medium text-gray-900">{{ row.pluginLabel | escape }}</div>
-                <div class="mt-0.5 text-xs font-mono text-gray-400">{{ row.pluginId | escape }}</div>
+                <div class="font-medium text-gray-900">{{ row.pluginLabel }}</div>
+                <div class="mt-0.5 text-xs font-mono text-gray-400">{{ row.pluginId }}</div>
               </td>
               <td class="px-4 py-3">
-                <div class="font-medium text-gray-900">{{ row.label | escape }}</div>
-                <div class="mt-0.5 text-xs font-mono text-gray-400">{{ row.key | escape }}</div>
-                {% if row.description != '' %}<div class="mt-0.5 text-xs text-gray-500">{{ row.description | escape }}</div>{% endif %}
+                <div class="font-medium text-gray-900">{{ row.label }}</div>
+                <div class="mt-0.5 text-xs font-mono text-gray-400">{{ row.key }}</div>
+                {% if row.description != '' %}<div class="mt-0.5 text-xs text-gray-500">{{ row.description }}</div>{% endif %}
               </td>
-              <td class="px-4 py-3 text-gray-700">{{ row.scopeLabel | escape }}</td>
-              <td class="px-4 py-3 font-medium text-gray-900">{{ row.effectiveLabel | escape }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ row.scopeLabel }}</td>
+              <td class="px-4 py-3 font-medium text-gray-900">{{ row.effectiveLabel }}</td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
                 {% if canConfigure %}
-                <a href="{{ row.manageHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Configure</a>
+                <a href="{{ row.manageHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Configure</a>
                 {% endif %}
               </td>
             </tr>

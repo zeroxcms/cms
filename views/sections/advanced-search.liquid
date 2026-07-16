@@ -1,30 +1,30 @@
 <div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <div class="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
     <div>
-      <h2 class="text-2xl font-bold text-gray-900">{{ pageTitle | escape }}</h2>
-      <p class="mt-1 text-sm text-gray-500">{{ resultCountLabel | escape }}</p>
+      <h2 class="text-2xl font-bold text-gray-900">{{ pageTitle }}</h2>
+      <p class="mt-1 text-sm text-gray-500">{{ resultCountLabel }}</p>
     </div>
     <div class="flex flex-col gap-2 sm:flex-row">
       {% if hasExportHref %}
-        <a href="{{ exportHref | escape }}"
+        <a href="{{ exportHref }}"
            title="Export"
            aria-label="Export"
            class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#download"></use></svg>
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#download"></use></svg>
           <span class="hidden lg:inline">Export</span>
         </a>
       {% endif %}
-      <a href="{{ listHref | escape }}"
+      <a href="{{ listHref }}"
          title="List"
          aria-label="List"
          class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#list"></use></svg>
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#list"></use></svg>
         <span class="hidden lg:inline">List</span>
       </a>
     </div>
   </div>
 
-  <form method="GET" action="{{ searchAction | escape }}" class="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+  <form method="GET" action="{{ searchAction }}" class="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
     <div class="grid gap-3 md:grid-cols-[minmax(10rem,1fr)_minmax(0,1fr)_9rem_8rem_8rem] md:items-end">
       <label class="block">
         <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Type</span>
@@ -32,12 +32,12 @@
           <select id="advanced_search_page_type" name="page_type" class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
             <option value="all" {% if pageType == 'all' %}selected{% endif %}>All Types</option>
             {% for option in pageTypes %}
-              <option value="{{ option.value | escape }}" {% if option.selected %}selected{% endif %}>{{ option.label | escape }}</option>
+              <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
             {% endfor %}
           </select>
         {% else %}
           <div class="flex h-10 w-full items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-700">
-            {{ pageType | escape }}
+            {{ pageType }}
           </div>
         {% endif %}
       </label>
@@ -79,12 +79,12 @@
           <div data-criterion-number class="flex h-10 items-center text-sm font-semibold text-gray-500">#{{ criterion.index }}</div>
           <label class="block">
             <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Search</span>
-            <input type="search" name="search{{ criterion.index }}" value="{{ criterion.term | escape }}" placeholder="name email company"
+            <input type="search" name="search{{ criterion.index }}" value="{{ criterion.term }}" placeholder="name email company"
                    class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
           </label>
           <label class="block">
             <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">Path</span>
-            <input type="text" name="path{{ criterion.index }}" value="{{ criterion.path | escape }}" placeholder="position[*].company" list="advanced-search-path-options"
+            <input type="text" name="path{{ criterion.index }}" value="{{ criterion.path }}" placeholder="position[*].company" list="advanced-search-path-options"
                    class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
           </label>
           <div>
@@ -95,14 +95,14 @@
                 {% if criterion.tagGroups.size > 0 %}
                   {% for group in criterion.tagGroups %}
                     <div class="mb-3 last:mb-0">
-                      <div class="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ group.name | escape }}</div>
+                      <div class="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ group.name }}</div>
                       <div class="grid gap-1">
                         {% for tag in group.tags %}
                           <label class="flex min-h-7 items-center gap-2 text-sm text-gray-700">
-                            <input type="checkbox" name="tags{{ criterion.index }}" value="{{ tag.idString | escape }}"
+                            <input type="checkbox" name="tags{{ criterion.index }}" value="{{ tag.idString }}"
                                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                                    {% if tag.selected %}checked{% endif %}>
-                            <span>{{ tag.name | escape }}</span>
+                            <span>{{ tag.name }}</span>
                           </label>
                         {% endfor %}
                       </div>
@@ -116,7 +116,7 @@
           </div>
           <button type="button" data-remove-criterion title="Remove criterion" aria-label="Remove criterion"
                   class="mt-6 inline-flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-red-600">
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#x"></use></svg>
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#x"></use></svg>
           </button>
         </div>
       {% endfor %}
@@ -143,13 +143,13 @@
               {% if tagGroups.size > 0 %}
                 {% for group in tagGroups %}
                   <div class="mb-3 last:mb-0">
-                    <div class="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ group.name | escape }}</div>
+                    <div class="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ group.name }}</div>
                     <div class="grid gap-1">
                       {% for tag in group.tags %}
                         <label class="flex min-h-7 items-center gap-2 text-sm text-gray-700">
-                          <input type="checkbox" name="tags__INDEX__" value="{{ tag.idString | escape }}"
+                          <input type="checkbox" name="tags__INDEX__" value="{{ tag.idString }}"
                                  class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                          <span>{{ tag.name | escape }}</span>
+                          <span>{{ tag.name }}</span>
                         </label>
                       {% endfor %}
                     </div>
@@ -163,7 +163,7 @@
         </div>
         <button type="button" data-remove-criterion title="Remove criterion" aria-label="Remove criterion"
                 class="mt-6 inline-flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-red-600">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#x"></use></svg>
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#x"></use></svg>
         </button>
       </div>
     </template>
@@ -173,11 +173,11 @@
               title="Add Criterion"
               aria-label="Add Criterion"
               class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#plus"></use></svg>
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#plus"></use></svg>
         <span class="hidden lg:inline">Add Criterion</span>
       </button>
       <div class="flex flex-col gap-2 sm:flex-row">
-      <a href="{{ resetHref | escape }}"
+      <a href="{{ resetHref }}"
          class="inline-flex h-10 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
         Reset
       </a>
@@ -185,7 +185,7 @@
               title="Search"
               aria-label="Search"
               class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm transition-colors hover:bg-indigo-700">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#search"></use></svg>
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#search"></use></svg>
       </button>
       </div>
     </div>
@@ -193,14 +193,14 @@
 
   <datalist id="advanced-search-path-options">
     {% for pathOption in pathOptions %}
-      <option value="{{ pathOption | escape }}"></option>
+      <option value="{{ pathOption }}"></option>
     {% endfor %}
   </datalist>
-  <script type="application/json" id="advanced-search-path-options-data">{{ pathOptionsByPageTypeJson }}</script>
+  <script type="application/json" id="advanced-search-path-options-data">{{ pathOptionsByPageTypeJson | raw }}</script>
 
   {% if hasResults %}
-    <form id="advanced-search-bulk-form" method="POST" action="{{ bulkAction | escape }}" class="mb-3 hidden rounded-xl border border-gray-200 bg-white p-3 shadow-sm" data-bulk-form aria-hidden="true">
-      <input type="hidden" name="return_to" value="{{ currentHref | escape }}">
+    <form id="advanced-search-bulk-form" method="POST" action="{{ bulkAction }}" class="mb-3 hidden rounded-xl border border-gray-200 bg-white p-3 shadow-sm" data-bulk-form aria-hidden="true">
+      <input type="hidden" name="return_to" value="{{ currentHref }}">
       <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div class="grid gap-3 sm:grid-cols-[minmax(9rem,12rem)_minmax(12rem,16rem)]">
           <label class="block">
@@ -255,22 +255,22 @@
             <tr class="transition-colors hover:bg-gray-50">
               <td class="px-6 py-4 align-top">
                 <input type="checkbox" name="page_ids" value="{{ page.id }}" form="advanced-search-bulk-form"
-                       data-bulk-page-checkbox title="Select {{ page.name | escape }}" aria-label="Select {{ page.name | escape }}"
+                       data-bulk-page-checkbox title="Select {{ page.name }}" aria-label="Select {{ page.name }}"
                        class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
               </td>
               <td class="px-6 py-4">
-                <a href="{{ page.editHref | escape }}" class="flex flex-col gap-1">
-                  <div class="font-medium text-gray-900">{{ page.name | escape }}</div>
-                  <div class="font-mono text-xs text-gray-500">/{{ page.slug | escape }}</div>
+                <a href="{{ page.editHref }}" class="flex flex-col gap-1">
+                  <div class="font-medium text-gray-900">{{ page.name }}</div>
+                  <div class="font-mono text-xs text-gray-500">/{{ page.slug }}</div>
                 </a>
               </td>
               <td class="px-6 py-4 text-sm text-gray-500">
                 {% if page.pageTypeHref %}
-                  <a href="{{ page.pageTypeHref | escape }}" class="font-medium text-indigo-600 hover:text-indigo-800 hover:underline">
-                    {{ page.pageType | escape }}
+                  <a href="{{ page.pageTypeHref }}" class="font-medium text-indigo-600 hover:text-indigo-800 hover:underline">
+                    {{ page.pageType }}
                   </a>
                 {% else %}
-                  {{ page.pageType | escape }}
+                  {{ page.pageType }}
                 {% endif %}
               </td>
               <td class="px-6 py-4">
@@ -278,7 +278,7 @@
                   <span class="text-sm text-gray-700">{{ page.weight }}</span>
                   {% if page.hasLiveWeightDrift %}
                     <span title="Live weight is {{ page.liveWeight }}; publish to sync" class="inline-flex items-center text-amber-600">
-                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#warning"></use></svg>
+                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#warning"></use></svg>
                     </span>
                   {% endif %}
                 </div>
@@ -291,7 +291,7 @@
                     </span>
                     {% if page.hasLiveLectDrift %}
                       <span title="Live content differs from draft; publish to sync" class="inline-flex items-center text-amber-600">
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#warning"></use></svg>
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#warning"></use></svg>
                         <span class="sr-only">Live content differs from draft</span>
                       </span>
                     {% endif %}
@@ -304,32 +304,32 @@
               </td>
               <td class="px-6 py-4">
                 <div class="flex flex-wrap items-center gap-2">
-                  <a href="{{ page.editHref | escape }}" title="Edit" aria-label="Edit {{ page.name | escape }}"
+                  <a href="{{ page.editHref }}" title="Edit" aria-label="Edit {{ page.name }}"
                      class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-indigo-600 transition-colors hover:bg-indigo-50 hover:text-indigo-800">
-                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#pencil-square"></use></svg>
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#pencil-square"></use></svg>
                     <span class="sr-only">Edit</span>
                   </a>
                   {% if page.isPublished %}
-                    <form method="POST" action="{{ page.unpublishAction | escape }}" class="inline shrink-0" data-confirm="Unpublish this page?">
-                      <button type="submit" title="Unpublish" aria-label="Unpublish {{ page.name | escape }}"
+                    <form method="POST" action="{{ page.unpublishAction }}" class="inline shrink-0" data-confirm="Unpublish this page?">
+                      <button type="submit" title="Unpublish" aria-label="Unpublish {{ page.name }}"
                               class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-yellow-600 transition-colors hover:bg-yellow-50 hover:text-yellow-800">
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#eye-off"></use></svg>
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#eye-off"></use></svg>
                         <span class="sr-only">Unpublish</span>
                       </button>
                     </form>
                   {% else %}
-                    <form method="POST" action="{{ page.publishAction | escape }}" class="inline shrink-0">
-                      <button type="submit" title="Publish" aria-label="Publish {{ page.name | escape }}"
+                    <form method="POST" action="{{ page.publishAction }}" class="inline shrink-0">
+                      <button type="submit" title="Publish" aria-label="Publish {{ page.name }}"
                               class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-green-600 transition-colors hover:bg-green-50 hover:text-green-800">
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#cloud-upload"></use></svg>
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#cloud-upload"></use></svg>
                         <span class="sr-only">Publish</span>
                       </button>
                     </form>
                   {% endif %}
-                  <form method="POST" action="{{ page.deleteAction | escape }}" class="inline shrink-0" data-confirm="Move this page to trash?">
-                    <button type="submit" title="Trash" aria-label="Move {{ page.name | escape }} to trash"
+                  <form method="POST" action="{{ page.deleteAction }}" class="inline shrink-0" data-confirm="Move this page to trash?">
+                    <button type="submit" title="Trash" aria-label="Move {{ page.name }} to trash"
                             class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50 hover:text-red-700">
-                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#trash-can"></use></svg>
+                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#trash-can"></use></svg>
                       <span class="sr-only">Trash</span>
                     </button>
                   </form>
@@ -357,10 +357,10 @@
       <div class="text-gray-500">Page {{ currentPage }} of {{ totalPages }}</div>
       <div class="flex gap-2">
         {% if hasPreviousPage %}
-          <a href="{{ previousHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Previous</a>
+          <a href="{{ previousHref }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Previous</a>
         {% endif %}
         {% if hasNextPage %}
-          <a href="{{ nextHref | escape }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Next</a>
+          <a href="{{ nextHref }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Next</a>
         {% endif %}
       </div>
     </div>

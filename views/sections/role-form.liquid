@@ -1,26 +1,26 @@
 <div class="min-w-0 max-w-2xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
-  <h2 class="text-2xl font-bold text-gray-900 mb-6">{{ heading | escape }}</h2>
+  <h2 class="text-2xl font-bold text-gray-900 mb-6">{{ heading }}</h2>
   {% if locked %}
     <div class="mb-4 px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-600">The admin role always has every permission and cannot be edited.</div>
   {% endif %}
   {% if hasError %}
-    <div class="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{{ error | escape }}</div>
+    <div class="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{{ error }}</div>
   {% endif %}
-  <form id="role-form" method="POST" action="{{ action | escape }}" class="min-w-0 space-y-4">
+  <form id="role-form" method="POST" action="{{ action }}" class="min-w-0 space-y-4">
     <label for="role_label" class="block min-w-0">
       <span class="block text-sm font-medium text-gray-700 mb-1">Name</span>
-      <input id="role_label" name="label" required value="{{ label | escape }}"{% if builtin %} readonly{% endif %} class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm{% if builtin %} bg-gray-50 text-gray-600{% endif %}">
+      <input id="role_label" name="label" required value="{{ label }}"{% if builtin %} readonly{% endif %} class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm{% if builtin %} bg-gray-50 text-gray-600{% endif %}">
     </label>
     {% if isNew %}
       <label for="role_name" class="block min-w-0">
         <span class="block text-sm font-medium text-gray-700 mb-1">Slug</span>
-        <input id="role_name" name="name" value="{{ name | escape }}" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono">
+        <input id="role_name" name="name" value="{{ name }}" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono">
         <span class="block text-xs text-gray-500 mt-1">Optional; derived from the name if blank. Used internally to identify the role.</span>
       </label>
     {% else %}
       <div class="block min-w-0">
         <span class="block text-sm font-medium text-gray-700 mb-1">Slug</span>
-        <p class="px-3 py-2 text-sm font-mono text-gray-500 bg-gray-50 border border-gray-200 rounded-lg">{{ name | escape }}</p>
+        <p class="px-3 py-2 text-sm font-mono text-gray-500 bg-gray-50 border border-gray-200 rounded-lg">{{ name }}</p>
       </div>
     {% endif %}
 
@@ -30,8 +30,8 @@
         <div class="grid grid-cols-1 gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 sm:grid-cols-2">
           {% for option in permissionOptions %}
             <label class="inline-flex items-center gap-2 rounded-md bg-white border border-gray-200 px-3 py-1.5 text-sm{% if locked %} text-gray-500{% endif %}">
-              <input type="checkbox" name="permissions" value="{{ option.value | escape }}"{% if option.checked %} checked{% endif %}{% if locked %} disabled{% endif %} class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-              <span>{{ option.label | escape }} <span class="block text-xs text-gray-400 font-mono">{{ option.value | escape }}</span></span>
+              <input type="checkbox" name="permissions" value="{{ option.value }}"{% if option.checked %} checked{% endif %}{% if locked %} disabled{% endif %} class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+              <span>{{ option.label }} <span class="block text-xs text-gray-400 font-mono">{{ option.value }}</span></span>
             </label>
           {% endfor %}
         </div>
@@ -40,7 +40,7 @@
 
   </form>
   {% if canDelete %}
-    <form id="role-delete-form" method="POST" action="{{ deleteAction | escape }}" data-confirm="Delete this role? It will be removed from any users that have it."></form>
+    <form id="role-delete-form" method="POST" action="{{ deleteAction }}" data-confirm="Delete this role? It will be removed from any users that have it."></form>
   {% endif %}
   <div class="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
     {% unless locked %}<button form="role-form" type="submit" class="w-full px-6 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm sm:w-auto">{% if isNew %}Create{% else %}Save{% endif %}</button>{% endunless %}

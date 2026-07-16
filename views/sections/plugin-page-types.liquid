@@ -1,14 +1,14 @@
 <div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <div class="flex items-center justify-between gap-4 mb-4">
     <div>
-      <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref | escape }}">← Plugins</a>
-      <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel | escape }} · Page types</h2>
+      <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref }}">← Plugins</a>
+      <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel }} · Page types</h2>
       <p class="mt-1 text-sm text-gray-500">Page types and taxonomies this plugin defines, plus delegated page-type access it requests.</p>
     </div>
   </div>
 
   {% if hasFlash %}
-    <div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">{{ flashMessage | escape }}</div>
+    <div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">{{ flashMessage }}</div>
   {% endif %}
 
   {% if unreachable %}
@@ -36,10 +36,10 @@
           <tbody>
             {% for pageType in definedPageTypes %}
               <tr class="border-t border-gray-100">
-                <td class="px-4 py-3 font-medium text-gray-900 font-mono">{{ pageType.slug | escape }}</td>
+                <td class="px-4 py-3 font-medium text-gray-900 font-mono">{{ pageType.slug }}</td>
                 <td class="px-4 py-3 text-gray-500">{{ pageType.fieldCount }}</td>
                 <td class="px-4 py-3 text-right">
-                  <a href="{{ pageType.viewHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">View</a>
+                  <a href="{{ pageType.viewHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">View</a>
                 </td>
               </tr>
             {% endfor %}
@@ -69,10 +69,10 @@
           <tbody>
             {% for taxonomy in definedTaxonomies %}
               <tr class="border-t border-gray-100">
-                <td class="px-4 py-3 font-medium text-gray-900">{{ taxonomy.name | escape }}</td>
-                <td class="px-4 py-3 text-gray-500 font-mono">{{ taxonomy.slug | escape }}</td>
+                <td class="px-4 py-3 font-medium text-gray-900">{{ taxonomy.name }}</td>
+                <td class="px-4 py-3 text-gray-500 font-mono">{{ taxonomy.slug }}</td>
                 <td class="px-4 py-3 text-right">
-                  <a href="{{ taxonomy.viewHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">View</a>
+                  <a href="{{ taxonomy.viewHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">View</a>
                 </td>
               </tr>
             {% endfor %}
@@ -103,24 +103,24 @@
             {% for pageType in pageTypes %}
               <tr class="border-t border-gray-100">
                 <td class="px-4 py-3">
-                  <div class="font-medium text-gray-900{% unless pageType.pageType == '*' %} font-mono{% endunless %}">{{ pageType.pageTypeLabel | escape }}</div>
+                  <div class="font-medium text-gray-900{% unless pageType.pageType == '*' %} font-mono{% endunless %}">{{ pageType.pageTypeLabel }}</div>
                   {% if pageType.pageType == '*' %}
                     <div class="text-xs text-gray-400 mt-0.5">Wildcard scope</div>
                   {% endif %}
                 </td>
                 <td class="px-4 py-3">
                   {% if pageType.readDeclared %}
-                    <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold {{ pageType.readStatusClass | escape }}">{{ pageType.readStatusLabel | escape }}</span>
+                    <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold {{ pageType.readStatusClass }}">{{ pageType.readStatusLabel }}</span>
                     {% if pageType.readApproved %}
-                      <div class="text-xs text-gray-400 mt-0.5">Approved by {{ pageType.readApprovedBy | escape }}</div>
-                      <form method="post" action="{{ pageType.revokeReadAction | escape }}" class="mt-2 inline" data-confirm="Revoke read access to {{ pageType.pageTypeLabel | escape }}?">
-                        <input type="hidden" name="page_type" value="{{ pageType.pageType | escape }}">
+                      <div class="text-xs text-gray-400 mt-0.5">Approved by {{ pageType.readApprovedBy }}</div>
+                      <form method="post" action="{{ pageType.revokeReadAction }}" class="mt-2 inline" data-confirm="Revoke read access to {{ pageType.pageTypeLabel }}?">
+                        <input type="hidden" name="page_type" value="{{ pageType.pageType }}">
                         <input type="hidden" name="access" value="read">
                         <button type="submit" class="px-3 py-1 rounded-lg border border-red-300 text-xs font-semibold text-red-700">Revoke</button>
                       </form>
                     {% else %}
-                      <form method="post" action="{{ pageType.approveReadAction | escape }}" class="mt-2 inline">
-                        <input type="hidden" name="page_type" value="{{ pageType.pageType | escape }}">
+                      <form method="post" action="{{ pageType.approveReadAction }}" class="mt-2 inline">
+                        <input type="hidden" name="page_type" value="{{ pageType.pageType }}">
                         <input type="hidden" name="access" value="read">
                         <button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Approve</button>
                       </form>
@@ -131,17 +131,17 @@
                 </td>
                 <td class="px-4 py-3">
                   {% if pageType.writeDeclared %}
-                    <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold {{ pageType.writeStatusClass | escape }}">{{ pageType.writeStatusLabel | escape }}</span>
+                    <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold {{ pageType.writeStatusClass }}">{{ pageType.writeStatusLabel }}</span>
                     {% if pageType.writeApproved %}
-                      <div class="text-xs text-gray-400 mt-0.5">Approved by {{ pageType.writeApprovedBy | escape }}</div>
-                      <form method="post" action="{{ pageType.revokeWriteAction | escape }}" class="mt-2 inline" data-confirm="Revoke write access to {{ pageType.pageTypeLabel | escape }}?">
-                        <input type="hidden" name="page_type" value="{{ pageType.pageType | escape }}">
+                      <div class="text-xs text-gray-400 mt-0.5">Approved by {{ pageType.writeApprovedBy }}</div>
+                      <form method="post" action="{{ pageType.revokeWriteAction }}" class="mt-2 inline" data-confirm="Revoke write access to {{ pageType.pageTypeLabel }}?">
+                        <input type="hidden" name="page_type" value="{{ pageType.pageType }}">
                         <input type="hidden" name="access" value="write">
                         <button type="submit" class="px-3 py-1 rounded-lg border border-red-300 text-xs font-semibold text-red-700">Revoke</button>
                       </form>
                     {% else %}
-                      <form method="post" action="{{ pageType.approveWriteAction | escape }}" class="mt-2 inline">
-                        <input type="hidden" name="page_type" value="{{ pageType.pageType | escape }}">
+                      <form method="post" action="{{ pageType.approveWriteAction }}" class="mt-2 inline">
+                        <input type="hidden" name="page_type" value="{{ pageType.pageType }}">
                         <input type="hidden" name="access" value="write">
                         <button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Approve</button>
                       </form>
