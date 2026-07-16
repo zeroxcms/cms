@@ -11,7 +11,7 @@ import type { BlueprintEntry } from '../cms-config';
 import type { PageType, PluginContentTypes } from '../types';
 
 /** Loads all database-defined page types, ordered for display. */
-export async function listDbPageTypes(db: D1Database): Promise<PageType[]> {
+export async function listDbPageTypes(db: D1DatabaseClient): Promise<PageType[]> {
   const { results } = await db
     .prepare('SELECT * FROM page_types ORDER BY weight ASC, name ASC')
     .all<PageType>();

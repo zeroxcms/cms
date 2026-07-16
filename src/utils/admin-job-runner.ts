@@ -224,7 +224,7 @@ async function emitPageLifecycle(
   await Promise.allSettled([auditPromise, hooksPromise]);
 }
 
-async function draftPagesByIds(db: D1Database, ids: number[]): Promise<Page[]> {
+async function draftPagesByIds(db: D1DatabaseClient, ids: number[]): Promise<Page[]> {
   const pages: Page[] = [];
   for (const chunk of chunks(ids)) {
     if (!chunk.length) continue;

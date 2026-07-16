@@ -264,7 +264,7 @@ export function advancedSearchCondition(
 }
 
 export async function performAdvancedSearch(
-  db: D1Database,
+  db: D1DatabaseClient,
   pageTypes: string[],
   criteria: AdvancedSearchCriterion[],
   operator: AdvancedSearchOperator,
@@ -353,7 +353,7 @@ export function advancedSearchWhere(
 }
 
 export async function advancedSearchMatchingPageIds(
-  db: D1Database,
+  db: D1DatabaseClient,
   pageTypes: string[],
   criteria: AdvancedSearchCriterion[],
   operator: AdvancedSearchOperator,

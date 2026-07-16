@@ -382,14 +382,14 @@ async function editorPageData(
   };
 }
 
-async function latestPageVersionId(db: D1Database, pageId: number): Promise<number | null> {
+async function latestPageVersionId(db: D1DatabaseClient, pageId: number): Promise<number | null> {
   const latest = await db.prepare('SELECT id FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, id DESC LIMIT 1')
     .bind(pageId)
     .first<{ id: number }>();
   return latest?.id ?? null;
 }
 
-async function deletePageVersion(db: D1Database, page: Page, versionId: number): Promise<boolean> {
+async function deletePageVersion(db: D1DatabaseClient, page: Page, versionId: number): Promise<boolean> {
   const version = await db.prepare('SELECT id FROM page_versions WHERE page_id = ? AND id = ?')
     .bind(page.id, versionId)
     .first<{ id: number }>();

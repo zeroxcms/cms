@@ -243,7 +243,7 @@ interface TagSchema {
   hasWeight: boolean;
 }
 
-async function tagSchema(db: D1Database): Promise<TagSchema> {
+async function tagSchema(db: D1DatabaseClient): Promise<TagSchema> {
   const columns = await db.prepare('PRAGMA table_info(tags)').all<{ name: string }>();
   const names = new Set(columns.results.map((column) => column.name));
   return {
@@ -252,7 +252,7 @@ async function tagSchema(db: D1Database): Promise<TagSchema> {
   };
 }
 
-async function listTags(db: D1Database, filterTaxonomy = ''): Promise<Tag[]> {
+async function listTags(db: D1DatabaseClient, filterTaxonomy = ''): Promise<Tag[]> {
   const schema = await tagSchema(db);
   const weightExpr = schema.hasWeight ? 'tags.weight' : '5';
   const taxonomyExpr = schema.hasTaxonomySlug ? 'tags.taxonomy_slug' : 'taxonomies.slug';

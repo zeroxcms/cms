@@ -3,7 +3,7 @@ import type { Page, PageTag } from '../types';
 import { savePageVersion } from './admin-queries';
 
 export async function savePageVersionAndSetCurrent(
-  db: D1Database,
+  db: D1DatabaseClient,
   pageId: number,
   lect: string | null,
   action: string | null,
@@ -16,7 +16,7 @@ export async function savePageVersionAndSetCurrent(
 }
 
 export async function setDraftPageTags(
-  db: D1Database,
+  db: D1DatabaseClient,
   pageId: number,
   tags: unknown,
   replace: boolean,
@@ -50,8 +50,8 @@ export interface PullPublishedPageResult {
 }
 
 export async function pullPublishedPageToDraft(
-  draftDb: D1Database,
-  publishedDb: D1Database,
+  draftDb: D1DatabaseClient,
+  publishedDb: D1DatabaseClient,
   uuid: string,
 ): Promise<PullPublishedPageResult | null> {
   const existing = await draftDb.prepare('SELECT * FROM draft_pages WHERE uuid = ?')
@@ -107,7 +107,7 @@ function numericTagIds(tags: unknown[]): number[] {
     .filter((tag): tag is number => Number.isFinite(tag));
 }
 
-async function existingDraftParentId(db: D1Database, parentId: number | null): Promise<number | null> {
+async function existingDraftParentId(db: D1DatabaseClient, parentId: number | null): Promise<number | null> {
   if (!parentId) return null;
   const parent = await db.prepare('SELECT id FROM draft_pages WHERE id = ?')
     .bind(parentId)
@@ -116,8 +116,8 @@ async function existingDraftParentId(db: D1Database, parentId: number | null): P
 }
 
 async function copyPublishedTagsToDraft(
-  draftDb: D1Database,
-  publishedDb: D1Database,
+  draftDb: D1DatabaseClient,
+  publishedDb: D1DatabaseClient,
   livePageId: number,
   draftPageId: number,
 ): Promise<void> {

@@ -11,7 +11,7 @@ import type { BlueprintEntry } from '../cms-config';
 import type { BlockType, PluginContentTypes } from '../types';
 
 /** Loads all database-defined block types, ordered for display. */
-export async function listDbBlockTypes(db: D1Database): Promise<BlockType[]> {
+export async function listDbBlockTypes(db: D1DatabaseClient): Promise<BlockType[]> {
   const { results } = await db
     .prepare('SELECT * FROM block_types ORDER BY weight ASC, name ASC')
     .all<BlockType>();

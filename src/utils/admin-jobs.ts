@@ -91,7 +91,7 @@ export function isCmsAdminJobMessage(body: unknown): body is CmsAdminJobMessage 
   return candidate.kind === CMS_ADMIN_JOB_KIND && typeof candidate.jobId === 'string' && candidate.jobId.length > 0;
 }
 
-export async function createPluginAdminActionJob(db: D1Database, input: PluginAdminActionInput): Promise<AdminJobRecord> {
+export async function createPluginAdminActionJob(db: D1DatabaseClient, input: PluginAdminActionInput): Promise<AdminJobRecord> {
   const now = jobTimestamp();
   const id = crypto.randomUUID();
   await db.prepare(
@@ -116,7 +116,7 @@ export async function createPluginAdminActionJob(db: D1Database, input: PluginAd
 }
 
 export async function createAdvancedSearchBulkActionJob(
-  db: D1Database,
+  db: D1DatabaseClient,
   input: AdvancedSearchBulkActionInput,
 ): Promise<AdminJobRecord> {
   const now = jobTimestamp();
@@ -138,7 +138,7 @@ export async function createAdvancedSearchBulkActionJob(
   return job;
 }
 
-export async function claimAdminJob(db: D1Database, id: string): Promise<AdminJobRecord | null> {
+export async function claimAdminJob(db: D1DatabaseClient, id: string): Promise<AdminJobRecord | null> {
   const now = jobTimestamp();
   const result = await db.prepare(
     `UPDATE admin_jobs
@@ -154,7 +154,7 @@ export async function claimAdminJob(db: D1Database, id: string): Promise<AdminJo
 }
 
 export async function completeAdminJob(
-  db: D1Database,
+  db: D1DatabaseClient,
   id: string,
   resultStatus: number,
   resultLocation: string | null,
@@ -173,7 +173,7 @@ export async function completeAdminJob(
 }
 
 export async function requeueAdminJob(
-  db: D1Database,
+  db: D1DatabaseClient,
   id: string,
   body: string,
 ): Promise<void> {
@@ -188,7 +188,7 @@ export async function requeueAdminJob(
   ).bind(body, now, id).run();
 }
 
-export async function failAdminJob(db: D1Database, id: string, error: unknown): Promise<void> {
+export async function failAdminJob(db: D1DatabaseClient, id: string, error: unknown): Promise<void> {
   const now = jobTimestamp();
   await db.prepare(
     `UPDATE admin_jobs
@@ -199,7 +199,7 @@ export async function failAdminJob(db: D1Database, id: string, error: unknown): 
   ).bind(errorText(error), now, id).run();
 }
 
-export async function getAdminJob(db: D1Database, id: string): Promise<AdminJobRecord | null> {
+export async function getAdminJob(db: D1DatabaseClient, id: string): Promise<AdminJobRecord | null> {
   const row = await db.prepare('SELECT * FROM admin_jobs WHERE id = ?').bind(id).first<AdminJobRow>();
   return row ? rowToRecord(row) : null;
 }

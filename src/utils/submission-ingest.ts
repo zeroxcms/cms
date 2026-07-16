@@ -53,7 +53,7 @@ export interface IngestResult {
 
 /** Submission origin is recorded in existing version history, avoiding any
  * page-schema flag while remaining stable across later edits and restore. */
-export async function isSubmissionMirror(db: D1Database, pageId: number): Promise<boolean> {
+export async function isSubmissionMirror(db: D1DatabaseClient, pageId: number): Promise<boolean> {
   const row = await db.prepare(
     `SELECT 1 FROM page_versions
      WHERE page_id = ? AND action IN ('ingest-submission', 'pull-published')

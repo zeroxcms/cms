@@ -95,7 +95,7 @@ function coerceLimitNumber(value: unknown): number | null {
  * declare a defaulted limit on a type it has no business with and block
  * another plugin's (or the editor's) page creation.
  */
-export async function limitScopeTypes(db: D1Database, manifest: PluginManifest): Promise<Set<string>> {
+export async function limitScopeTypes(db: D1DatabaseClient, manifest: PluginManifest): Promise<Set<string>> {
   const types = new Set(Object.keys(manifest.contentTypes?.blueprint ?? {}));
   const declaredWrites = manifest.contentTypes?.writeTypes ?? [];
   if (declaredWrites.length) {
@@ -203,7 +203,7 @@ export async function limitsForPageType(env: Env, pageType: string): Promise<Eff
 
 /** Counts existing pages the limit's scope group already holds. */
 export async function countLimitUsage(
-  db: D1Database,
+  db: D1DatabaseClient,
   def: NormalizedLimitDef,
   scopeValue: string | number | null,
 ): Promise<number> {

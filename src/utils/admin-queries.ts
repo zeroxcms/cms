@@ -15,7 +15,7 @@ export interface DashboardListResult {
 }
 
 /** Avatar URL for the signed-in user — replaces the avatar lookup duplicated across handlers. */
-export async function fetchUserAvatar(db: D1Database, userId: number): Promise<string | null> {
+export async function fetchUserAvatar(db: D1DatabaseClient, userId: number): Promise<string | null> {
   const row = await db.prepare('SELECT avatar_url FROM users WHERE id = ?')
     .bind(userId)
     .first<{ avatar_url: string | null }>();
@@ -23,7 +23,7 @@ export async function fetchUserAvatar(db: D1Database, userId: number): Promise<s
 }
 
 /** Display name for a user id (e.g. the page's `_modifier`); null when missing or unknown. */
-export async function fetchUserName(db: D1Database, userId: number | null | undefined): Promise<string | null> {
+export async function fetchUserName(db: D1DatabaseClient, userId: number | null | undefined): Promise<string | null> {
   if (!userId) return null;
   const row = await db.prepare('SELECT name, email FROM users WHERE id = ?')
     .bind(userId)
@@ -38,7 +38,7 @@ export async function fetchUserName(db: D1Database, userId: number | null | unde
  * own id as `excludeId` on update so it doesn't collide with itself.
  */
 export async function ensureUniqueDraftSlug(
-  db: D1Database,
+  db: D1DatabaseClient,
   slug: string,
   excludeId?: number,
 ): Promise<string> {
@@ -56,7 +56,7 @@ export async function ensureUniqueDraftSlug(
   return candidate;
 }
 
-export async function parentPageOption(db: D1Database, pageId: string | number | null | undefined): Promise<Page[]> {
+export async function parentPageOption(db: D1DatabaseClient, pageId: string | number | null | undefined): Promise<Page[]> {
   const id = num(pageId, 0);
   if (!id) return [];
   const page = await db.prepare('SELECT id, name, slug FROM draft_pages WHERE id = ?')
@@ -65,7 +65,7 @@ export async function parentPageOption(db: D1Database, pageId: string | number |
   return page ? [page] : [];
 }
 
-async function uniqueTagSlug(db: D1Database, baseSlug: string): Promise<string> {
+async function uniqueTagSlug(db: D1DatabaseClient, baseSlug: string): Promise<string> {
   let slug = baseSlug || 'tag';
   let suffix = 1;
   while (await db.prepare('SELECT id FROM tags WHERE slug = ?').bind(slug).first<{ id: number }>()) {
@@ -76,7 +76,7 @@ async function uniqueTagSlug(db: D1Database, baseSlug: string): Promise<string> 
 }
 
 /** Finds or creates a tag by (taxonomy, name) — used by the /__cms tag-ensure endpoint. */
-export async function ensureTagByName(db: D1Database, taxonomy: Taxonomy, name: string): Promise<number> {
+export async function ensureTagByName(db: D1DatabaseClient, taxonomy: Taxonomy, name: string): Promise<number> {
   const existing = await db.prepare('SELECT id FROM tags WHERE taxonomy_slug = ? AND name = ?')
     .bind(taxonomy.slug, name)
     .first<{ id: number }>();
@@ -92,7 +92,7 @@ export async function ensureTagByName(db: D1Database, taxonomy: Taxonomy, name: 
   return tag!.id;
 }
 
-export async function editorTaxonomy(db: D1Database): Promise<{ tags: Tag[]; taxonomies: Taxonomy[] }> {
+export async function editorTaxonomy(db: D1DatabaseClient): Promise<{ tags: Tag[]; taxonomies: Taxonomy[] }> {
   const [tags, taxonomies] = await Promise.all([
     db.prepare('SELECT * FROM tags ORDER BY weight ASC, name ASC').all<Tag>(),
     db.prepare('SELECT * FROM taxonomies ORDER BY name ASC').all<Taxonomy>(),
@@ -104,7 +104,7 @@ export async function editorTaxonomy(db: D1Database): Promise<{ tags: Tag[]; tax
 }
 
 export async function savePageVersion(
-  db: D1Database,
+  db: D1DatabaseClient,
   pageId: number,
   lect: string | null,
   action: string | null,
@@ -131,7 +131,7 @@ export async function savePageVersion(
  */
 export type SubmissionPageRef = Page & { submission_origin: number };
 
-export async function trashDraftPage(db: D1Database, pageId: number): Promise<SubmissionPageRef | null> {
+export async function trashDraftPage(db: D1DatabaseClient, pageId: number): Promise<SubmissionPageRef | null> {
   const page = await db.prepare(
     `SELECT dp.*,
        EXISTS(SELECT 1 FROM page_versions pv
@@ -240,7 +240,7 @@ export interface TrashedPageRef {
  * Pages not found are silently skipped (same as the single-page variant).
  * Returns light refs to the pages that were actually trashed.
  */
-export async function trashDraftPages(db: D1Database, ids: number[]): Promise<TrashedPageRef[]> {
+export async function trashDraftPages(db: D1DatabaseClient, ids: number[]): Promise<TrashedPageRef[]> {
   if (!ids.length) return [];
   const ph = ids.map(() => '?').join(',');
 
@@ -306,7 +306,7 @@ export async function trashDraftPages(db: D1Database, ids: number[]): Promise<Tr
  * link by their lect pointer, not by parent page.
  */
 export async function restoreTrashedPages(
-  db: D1Database,
+  db: D1DatabaseClient,
   opts: { pageType?: string | null; withinLastHour?: boolean } = {},
 ): Promise<number> {
   const conds: string[] = [];
@@ -359,7 +359,7 @@ export async function restoreTrashedPages(
 }
 
 export async function listDashboardDraftPages(
-  db: D1Database,
+  db: D1DatabaseClient,
   options: { pageType?: string; page: number; limit: number },
 ): Promise<DashboardListResult> {
   const whereSql = options.pageType ? 'WHERE page_type = ?' : '';
@@ -392,7 +392,7 @@ export async function listDashboardDraftPages(
 }
 
 export async function listAllDashboardDraftPages(
-  db: D1Database,
+  db: D1DatabaseClient,
   options: { pageType?: string } = {},
 ): Promise<Page[]> {
   const whereSql = options.pageType ? 'WHERE page_type = ?' : '';
@@ -407,7 +407,7 @@ export async function listAllDashboardDraftPages(
 }
 
 export async function listDashboardDraftPageUuids(
-  db: D1Database,
+  db: D1DatabaseClient,
   options: { pageType?: string } = {},
 ): Promise<string[]> {
   const whereSql = options.pageType ? 'WHERE page_type = ?' : '';
@@ -422,7 +422,7 @@ export async function listDashboardDraftPageUuids(
 }
 
 export async function listDashboardDraftPagesByUuids(
-  db: D1Database,
+  db: D1DatabaseClient,
   uuids: string[],
   options: { pageType?: string } = {},
 ): Promise<Page[]> {

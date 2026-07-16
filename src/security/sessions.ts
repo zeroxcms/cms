@@ -43,7 +43,7 @@ export async function issueAuthTokens(user: AuthDbUser, jwtSecret: string): Prom
   return { accessPayload, accessToken, refreshToken, refreshJti };
 }
 
-export async function storeRefreshSession(db: D1Database, userId: number, refreshJti: string): Promise<void> {
+export async function storeRefreshSession(db: D1DatabaseClient, userId: number, refreshJti: string): Promise<void> {
   await db.prepare(
     `INSERT INTO sessions (user_id, refresh_token_hash, expires_at)
      VALUES (?, ?, datetime('now', '+7 days'))`,
@@ -53,7 +53,7 @@ export async function storeRefreshSession(db: D1Database, userId: number, refres
 }
 
 export async function rotateAuthSession(
-  db: D1Database,
+  db: D1DatabaseClient,
   jwtSecret: string,
   refreshToken: string,
 ): Promise<RotateAuthSessionResult> {
@@ -119,7 +119,7 @@ export async function rotateAuthSession(
 }
 
 export async function revokeRefreshSession(
-  db: D1Database,
+  db: D1DatabaseClient,
   jwtSecret: string,
   refreshToken: string,
 ): Promise<void> {
@@ -135,14 +135,14 @@ export async function revokeRefreshSession(
 }
 
 export async function findRefreshSessionUserId(
-  db: D1Database,
+  db: D1DatabaseClient,
   refreshJti: string,
 ): Promise<number | null> {
   const session = await findRefreshSession(db, await hashToken(refreshJti));
   return session?.user_id ?? null;
 }
 
-export function capUserSessions(db: D1Database, userId: number): Promise<D1Result> {
+export function capUserSessions(db: D1DatabaseClient, userId: number): Promise<D1Result> {
   return db.prepare(
     `DELETE FROM sessions WHERE user_id = ?1 AND id NOT IN (
        SELECT id FROM sessions WHERE user_id = ?1 ORDER BY id DESC LIMIT ?2
@@ -150,7 +150,7 @@ export function capUserSessions(db: D1Database, userId: number): Promise<D1Resul
   ).bind(userId, MAX_SESSIONS_PER_USER).run();
 }
 
-export function purgeExpiredSessions(db: D1Database): Promise<D1Result> {
+export function purgeExpiredSessions(db: D1DatabaseClient): Promise<D1Result> {
   return db.prepare('DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP').run();
 }
 
@@ -179,7 +179,7 @@ interface RefreshSession {
   is_previous: number;
 }
 
-async function findRefreshSession(db: D1Database, refreshHash: string): Promise<RefreshSession | null> {
+async function findRefreshSession(db: D1DatabaseClient, refreshHash: string): Promise<RefreshSession | null> {
   return db.prepare(
     `SELECT id,
             user_id,

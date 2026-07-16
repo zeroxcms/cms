@@ -21,10 +21,11 @@ import {
 } from './security/http';
 import { generateCspNonce, requestContext } from './utils/request-context';
 import { viewRevision } from './utils/view-revision';
-import type { Env, Variables } from './types';
+import type { Env, Variables, WorkerEnv } from './types';
 import { isCmsAdminJobMessage } from './utils/admin-jobs';
 import { runCmsAdminJob } from './utils/admin-job-runner';
 import { ingestSubmissions } from './utils/submission-ingest';
+import { withD1Sessions } from './utils/d1-sessions';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -163,21 +164,23 @@ app.onError(async (err, c) => {
 });
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    return app.fetch(request, env, ctx);
+  async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
+    return app.fetch(request, withD1Sessions(env), ctx);
   },
 
-  async queue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
+  async queue(batch: MessageBatch<unknown>, env: WorkerEnv): Promise<void> {
     for (const message of batch.messages) {
-      if (isCmsAdminJobMessage(message.body)) await runCmsAdminJob(env, message.body.jobId);
+      if (isCmsAdminJobMessage(message.body)) {
+        await runCmsAdminJob(withD1Sessions(env), message.body.jobId);
+      }
     }
   },
 
   // Cron: pull live-only submission rows (published DB → draft pages).
   // Each tick handles one bounded batch and advances the cursor; plugins can
   // trigger the same ingest on demand via POST /__cms/ingest/submissions.
-  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
-    const result = await ingestSubmissions(env);
+  async scheduled(_controller: ScheduledController, env: WorkerEnv, _ctx: ExecutionContext): Promise<void> {
+    const result = await ingestSubmissions(withD1Sessions(env));
     if (result.scanned) console.log('submission ingest:', JSON.stringify(result));
   },
 };

@@ -289,7 +289,7 @@ async function currentAuthenticatedUserId(c: AppContext): Promise<number | null>
   return findRefreshSessionUserId(c.env.DB, refreshPayload.jti);
 }
 
-async function findUserByOAuthIdentity(db: D1Database, oauthId: string): Promise<AuthDbUser | null> {
+async function findUserByOAuthIdentity(db: D1DatabaseClient, oauthId: string): Promise<AuthDbUser | null> {
   const linked = await db.prepare(
     `SELECT u.id, u.email, u.name, u.role
        FROM user_oauth_identities i
@@ -307,7 +307,7 @@ async function findUserByOAuthIdentity(db: D1Database, oauthId: string): Promise
 }
 
 async function insertOAuthIdentity(
-  db: D1Database,
+  db: D1DatabaseClient,
   userId: number,
   identity: NormalizedUser,
 ): Promise<boolean> {
@@ -326,7 +326,7 @@ async function insertOAuthIdentity(
 }
 
 async function updateUserProfileFromOAuth(
-  db: D1Database,
+  db: D1DatabaseClient,
   userId: number,
   user: NormalizedUser,
 ): Promise<AuthDbUser | null> {

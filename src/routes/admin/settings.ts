@@ -59,7 +59,7 @@ function pageReferencesMedia(lect: string | null, key: string): boolean {
 }
 
 async function linkedPagesForMedia(
-  db: D1Database,
+  db: D1DatabaseClient,
   keys: string[],
 ): Promise<Map<string, ContentListMediaItem['linkedPages']>> {
   const links = new Map<string, ContentListMediaItem['linkedPages']>(keys.map((key) => [key, []]));

@@ -6,7 +6,7 @@
 
 import type { LivePageSnapshot, PublishAdapter, PublishSnapshot } from './adapter';
 
-export function d1Adapter(publishedDb: D1Database): PublishAdapter {
+export function d1Adapter(publishedDb: D1DatabaseClient): PublishAdapter {
   return {
     id: 'd1',
 

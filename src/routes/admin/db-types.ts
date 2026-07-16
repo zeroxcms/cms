@@ -51,7 +51,7 @@ interface TypeCrudSpec<Row extends DbTypeRow, Values extends BaseTypeFormValues>
   resolvedSlugs: (config: CmsConfig) => string[];
   /** Where a plugin manifest declares this kind of type. */
   manifestTypes: (plugin: ResolvedPlugin) => Record<string, unknown> | undefined;
-  listRows: (db: D1Database) => Promise<Row[]>;
+  listRows: (db: D1DatabaseClient) => Promise<Row[]>;
   formValues: (form: FormData) => Values;
   /** Columns beyond slug/name/blueprint/weight, with their binds. */
   extraColumns: string[];
@@ -77,7 +77,7 @@ function dbTypeRoutes<Row extends DbTypeRow, Values extends BaseTypeFormValues>(
   const renderForm = async (c: AppContext, model: TypeFormModel): Promise<Response> =>
     renderPage(c, typeFormPage, { copy: spec.copy, ...(await spec.decorate(c, model)) });
 
-  const fetchRow = (db: D1Database, id: number) =>
+  const fetchRow = (db: D1DatabaseClient, id: number) =>
     db.prepare(`SELECT * FROM ${spec.table} WHERE id = ?`).bind(id).first<Row>();
 
   const binds = (values: Values, slug: string) =>

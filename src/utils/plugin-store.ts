@@ -17,7 +17,7 @@ function missingTable(error: unknown): boolean {
 }
 
 /** Every registered plugin (enabled or not), ordered for display. */
-export async function listPlugins(db: D1Database): Promise<PluginRecord[]> {
+export async function listPlugins(db: D1DatabaseClient): Promise<PluginRecord[]> {
   try {
     const { results } = await db
       .prepare('SELECT * FROM plugins ORDER BY sort_order ASC, id ASC')
@@ -30,7 +30,7 @@ export async function listPlugins(db: D1Database): Promise<PluginRecord[]> {
 }
 
 /** Active plugins only — the set the registry resolves and merges. */
-export async function listEnabledPlugins(db: D1Database): Promise<PluginRecord[]> {
+export async function listEnabledPlugins(db: D1DatabaseClient): Promise<PluginRecord[]> {
   try {
     const { results } = await db
       .prepare('SELECT * FROM plugins WHERE enabled = 1 ORDER BY sort_order ASC, id ASC')
@@ -42,11 +42,11 @@ export async function listEnabledPlugins(db: D1Database): Promise<PluginRecord[]
   }
 }
 
-export async function getPlugin(db: D1Database, id: number): Promise<PluginRecord | null> {
+export async function getPlugin(db: D1DatabaseClient, id: number): Promise<PluginRecord | null> {
   return db.prepare('SELECT * FROM plugins WHERE id = ?').bind(id).first<PluginRecord>();
 }
 
-export async function getPluginByUrl(db: D1Database, url: string): Promise<PluginRecord | null> {
+export async function getPluginByUrl(db: D1DatabaseClient, url: string): Promise<PluginRecord | null> {
   return db.prepare('SELECT * FROM plugins WHERE url = ?').bind(url).first<PluginRecord>();
 }
 
@@ -68,7 +68,7 @@ export function generatePluginSecret(): string {
 }
 
 /** Inserts a plugin. Returns an error message (e.g. duplicate URL) or null. */
-export async function createPlugin(db: D1Database, input: PluginInput): Promise<string | null> {
+export async function createPlugin(db: D1DatabaseClient, input: PluginInput): Promise<string | null> {
   try {
     await db
       .prepare('INSERT INTO plugins (label, url, enabled, config, sort_order, secret) VALUES (?, ?, ?, ?, ?, ?)')
@@ -85,7 +85,7 @@ export async function createPlugin(db: D1Database, input: PluginInput): Promise<
 
 /** Rotates a plugin's secret. The old secret stops working immediately on the
  *  next request — the plugin Worker must be updated to the new value to match. */
-export async function setPluginSecret(db: D1Database, id: number, secret: string): Promise<void> {
+export async function setPluginSecret(db: D1DatabaseClient, id: number, secret: string): Promise<void> {
   await db
     .prepare('UPDATE plugins SET secret = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
     .bind(secret, id)
@@ -93,7 +93,7 @@ export async function setPluginSecret(db: D1Database, id: number, secret: string
 }
 
 /** Updates a plugin. Returns an error message or null. */
-export async function updatePlugin(db: D1Database, id: number, input: PluginInput): Promise<string | null> {
+export async function updatePlugin(db: D1DatabaseClient, id: number, input: PluginInput): Promise<string | null> {
   try {
     await db
       .prepare(
@@ -111,13 +111,13 @@ export async function updatePlugin(db: D1Database, id: number, input: PluginInpu
   }
 }
 
-export async function setPluginEnabled(db: D1Database, id: number, enabled: boolean): Promise<void> {
+export async function setPluginEnabled(db: D1DatabaseClient, id: number, enabled: boolean): Promise<void> {
   await db
     .prepare('UPDATE plugins SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
     .bind(enabled ? 1 : 0, id)
     .run();
 }
 
-export async function deletePlugin(db: D1Database, id: number): Promise<void> {
+export async function deletePlugin(db: D1DatabaseClient, id: number): Promise<void> {
   await db.prepare('DELETE FROM plugins WHERE id = ?').bind(id).run();
 }

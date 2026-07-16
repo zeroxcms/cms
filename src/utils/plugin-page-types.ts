@@ -25,7 +25,7 @@ export function pageTypeScopeAllows(scope: Set<string>, pageType: string): boole
 }
 
 /** All delegated page-type approvals for a plugin, ordered for display. */
-export async function listPageTypeApprovals(db: D1Database, pluginId: string): Promise<PluginPageTypeApproval[]> {
+export async function listPageTypeApprovals(db: D1DatabaseClient, pluginId: string): Promise<PluginPageTypeApproval[]> {
   try {
     const { results } = await db
       .prepare('SELECT * FROM plugin_page_type_approvals WHERE plugin_id = ? ORDER BY page_type ASC, access ASC')
@@ -39,7 +39,7 @@ export async function listPageTypeApprovals(db: D1Database, pluginId: string): P
 }
 
 export async function getPageTypeApproval(
-  db: D1Database,
+  db: D1DatabaseClient,
   pluginId: string,
   pageType: string,
   access: PluginPageTypeAccess,
@@ -56,7 +56,7 @@ export async function getPageTypeApproval(
 }
 
 export async function approvePageTypeAccess(
-  db: D1Database,
+  db: D1DatabaseClient,
   pluginId: string,
   pageType: string,
   access: PluginPageTypeAccess,
@@ -75,7 +75,7 @@ export async function approvePageTypeAccess(
 }
 
 export async function revokePageTypeAccess(
-  db: D1Database,
+  db: D1DatabaseClient,
   pluginId: string,
   pageType: string,
   access: PluginPageTypeAccess,

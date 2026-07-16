@@ -5,6 +5,11 @@
 import type { BlueprintEntry } from './cms-config';
 import type { CmsAdminJobMessage } from './utils/admin-jobs';
 
+declare global {
+  /** Query surface shared by a raw D1 binding and a D1 Sessions API client. */
+  type D1DatabaseClient = Pick<D1DatabaseSession, 'prepare' | 'batch'>;
+}
+
 export const USER_ROLES = ['admin', 'editor', 'moderator', 'viewer'] as const;
 
 export type UserRole = typeof USER_ROLES[number];
@@ -474,8 +479,8 @@ export interface ResolvedPlugin {
 // Cloudflare Worker environment bindings
 // ============================================================
 export interface Env {
-  DB: D1Database;
-  PUBLISHED_DB: D1Database;
+  DB: D1DatabaseClient;
+  PUBLISHED_DB: D1DatabaseClient;
   VIEWS: Fetcher;
   /** Cloudflare Worker version metadata; changes on every deploy. */
   CF_VERSION_METADATA?: WorkerVersionMetadata;
@@ -531,6 +536,12 @@ export interface Env {
   AUTH_RATE_LIMITER?: RateLimiter;
   UPLOAD_RATE_LIMITER?: RateLimiter;
 }
+
+/** Raw bindings supplied by Cloudflare before request/job-scoped sessions are created. */
+export type WorkerEnv = Omit<Env, 'DB' | 'PUBLISHED_DB'> & {
+  DB: D1Database;
+  PUBLISHED_DB: D1Database;
+};
 
 /** Shape of a Workers Rate Limiting binding. */
 export interface RateLimiter {

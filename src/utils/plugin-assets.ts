@@ -15,7 +15,7 @@ function missingTable(error: unknown): boolean {
 }
 
 /** All approvals for a plugin, ordered by path. */
-export async function listApprovals(db: D1Database, pluginId: string): Promise<PluginAssetApproval[]> {
+export async function listApprovals(db: D1DatabaseClient, pluginId: string): Promise<PluginAssetApproval[]> {
   try {
     const { results } = await db
       .prepare('SELECT * FROM plugin_asset_approvals WHERE plugin_id = ? ORDER BY path ASC')
@@ -28,7 +28,7 @@ export async function listApprovals(db: D1Database, pluginId: string): Promise<P
   }
 }
 
-export async function getAssetApproval(db: D1Database, pluginId: string, path: string): Promise<PluginAssetApproval | null> {
+export async function getAssetApproval(db: D1DatabaseClient, pluginId: string, path: string): Promise<PluginAssetApproval | null> {
   try {
     return await db
       .prepare('SELECT * FROM plugin_asset_approvals WHERE plugin_id = ? AND path = ?')
@@ -42,7 +42,7 @@ export async function getAssetApproval(db: D1Database, pluginId: string, path: s
 
 /** Approves (or re-approves) a plugin asset, pinning the given integrity hash. */
 export async function approveAsset(
-  db: D1Database,
+  db: D1DatabaseClient,
   pluginId: string,
   path: string,
   integrity: string,
@@ -61,7 +61,7 @@ export async function approveAsset(
     .run();
 }
 
-export async function revokeAsset(db: D1Database, pluginId: string, path: string): Promise<void> {
+export async function revokeAsset(db: D1DatabaseClient, pluginId: string, path: string): Promise<void> {
   await db.prepare('DELETE FROM plugin_asset_approvals WHERE plugin_id = ? AND path = ?').bind(pluginId, path).run();
 }
 

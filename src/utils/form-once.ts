@@ -116,7 +116,7 @@ export type FormOnceClaim = 'claimed' | 'duplicate' | 'unverified';
  * 'unverified' covers missing, malformed, forged, and expired tokens; callers
  * allow those through (soft enforcement, see header comment).
  */
-export async function claimFormOnceToken(db: D1Database, secret: string, submitted: string | null): Promise<FormOnceClaim> {
+export async function claimFormOnceToken(db: D1DatabaseClient, secret: string, submitted: string | null): Promise<FormOnceClaim> {
   if (!submitted) return 'unverified';
   if (!(await verifySubmittedToken(secret, submitted))) return 'unverified';
   // RETURNING (not meta.changes) confirms whether this call inserted the row.
@@ -129,7 +129,7 @@ export async function claimFormOnceToken(db: D1Database, secret: string, submitt
 
 /** Releases a claim after the downstream work failed, so a retry of the same
  *  form (same token) is not misread as a duplicate. */
-export async function releaseFormOnceToken(db: D1Database, submitted: string): Promise<void> {
+export async function releaseFormOnceToken(db: D1DatabaseClient, submitted: string): Promise<void> {
   try {
     await db.prepare('DELETE FROM used_form_tokens WHERE token = ?1').bind(submitted).run();
   } catch (error) {
@@ -140,7 +140,7 @@ export async function releaseFormOnceToken(db: D1Database, submitted: string): P
 
 /** Occasionally prunes rows old enough that their page token can no longer
  *  verify anyway. Call fire-and-forget (waitUntil) after a successful claim. */
-export function maybeCleanupFormOnceTokens(db: D1Database): Promise<unknown> | null {
+export function maybeCleanupFormOnceTokens(db: D1DatabaseClient): Promise<unknown> | null {
   if (Math.random() >= 0.02) return null;
   const cutoff = Math.floor(Date.now() / 1000) - FORM_ONCE_TTL_SECONDS * 2;
   return db

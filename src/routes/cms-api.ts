@@ -511,7 +511,7 @@ function tagIds(tags: unknown): number[] {
   return tags.map(asFiniteNumber).filter((tagId): tagId is number => tagId !== null);
 }
 
-async function draftPageIds(db: D1Database, ids: number[]): Promise<Set<number>> {
+async function draftPageIds(db: D1DatabaseClient, ids: number[]): Promise<Set<number>> {
   const unique = [...new Set(ids)];
   const out = new Set<number>();
   for (let index = 0; index < unique.length; index += 100) {
@@ -525,7 +525,7 @@ async function draftPageIds(db: D1Database, ids: number[]): Promise<Set<number>>
   return out;
 }
 
-async function reservedPageIds(db: D1Database, ids: number[]): Promise<Set<number>> {
+async function reservedPageIds(db: D1DatabaseClient, ids: number[]): Promise<Set<number>> {
   const unique = [...new Set(ids)];
   const out = new Set<number>();
   // Each id is bound twice (draft + trash). Keep each statement at no more
@@ -548,7 +548,7 @@ async function reservedPageIds(db: D1Database, ids: number[]): Promise<Set<numbe
 
 /** Allocates a whole batch of page ids with one collision query in the normal
  * case, rather than spending one D1 subrequest per generated id. */
-async function generatedPageIds(db: D1Database, count: number, usedIds: Set<number>): Promise<number[]> {
+async function generatedPageIds(db: D1DatabaseClient, count: number, usedIds: Set<number>): Promise<number[]> {
   const ids: number[] = [];
   while (ids.length < count) {
     const candidates = Array.from({ length: count - ids.length }, () => cmsId(usedIds));
@@ -558,7 +558,7 @@ async function generatedPageIds(db: D1Database, count: number, usedIds: Set<numb
   return ids;
 }
 
-async function reservedPageVersionIds(db: D1Database, ids: number[]): Promise<Set<number>> {
+async function reservedPageVersionIds(db: D1DatabaseClient, ids: number[]): Promise<Set<number>> {
   const unique = [...new Set(ids)];
   const out = new Set<number>();
   for (let index = 0; index < unique.length; index += 100) {
@@ -574,7 +574,7 @@ async function reservedPageVersionIds(db: D1Database, ids: number[]): Promise<Se
 
 /** Explicit version ids let bulk writes set current_page_version_id in the
  * same DB.batch as the version INSERT. Collision-check all candidates at once. */
-async function generatedPageVersionIds(db: D1Database, count: number): Promise<number[]> {
+async function generatedPageVersionIds(db: D1DatabaseClient, count: number): Promise<number[]> {
   const ids: number[] = [];
   const usedIds = new Set<number>();
   while (ids.length < count) {
@@ -784,7 +784,7 @@ async function createPages(c: AppContext, auth: PluginAuth, items: PageInput[]):
   return { ok: true, created, errors };
 }
 
-async function existingSlugSet(db: D1Database, baseSlugs: string[]): Promise<Set<string>> {
+async function existingSlugSet(db: D1DatabaseClient, baseSlugs: string[]): Promise<Set<string>> {
   const bases = [...new Set(baseSlugs)];
   const out = new Set<string>();
   for (let index = 0; index < bases.length; index += 25) {
@@ -846,7 +846,7 @@ interface BulkPageRow {
  * Ids, uuids, and timestamps are assigned by the caller so a whole batch
  * commits in a single DB.batch without per-row SELECT-backs.
  */
-function bulkPageInsertStatements(db: D1Database, row: BulkPageRow): D1PreparedStatement[] {
+function bulkPageInsertStatements(db: D1DatabaseClient, row: BulkPageRow): D1PreparedStatement[] {
   return [
     db.prepare(
       `INSERT INTO draft_pages (id, uuid, created_at, updated_at, name, slug, weight, start, end, timezone, page_type, current_page_version_id, lect, page_id, creator)
@@ -863,7 +863,7 @@ function bulkPageInsertStatements(db: D1Database, row: BulkPageRow): D1PreparedS
 }
 
 function bulkPageUpdateStatements(
-  db: D1Database,
+  db: D1DatabaseClient,
   row: { id: number; versionId: number; updatedAt: string; lect: string; action: string },
 ): D1PreparedStatement[] {
   return [
@@ -1032,7 +1032,7 @@ cmsApiRoutes.post('/credits/charge', async (c) => {
 
 // List pages of a content type the plugin owns.
 /** Tags for a set of pages, keyed by page id — the include_tags list/search projection. */
-async function pageTagsByPageId(db: D1Database, pageIds: number[]): Promise<Map<number, ApiPageTag[]>> {
+async function pageTagsByPageId(db: D1DatabaseClient, pageIds: number[]): Promise<Map<number, ApiPageTag[]>> {
   const result = new Map<number, ApiPageTag[]>();
   if (!pageIds.length) return result;
   // One JSON-array bind instead of a placeholder per id: a full 500-row page
