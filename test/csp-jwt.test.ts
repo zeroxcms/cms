@@ -107,4 +107,12 @@ describe('jwt iss/aud claims', () => {
     expect(await verifyJWT(`${header}.${payload}.${sigEncoded}`, env.JWT_SECRET)).toBeNull();
   });
 
+  it.each([
+    ['malformed compact serialization', async () => 'not-a-jwt'],
+    ['invalid signature', async () => signJWT(basePayload, 'another-secret-that-must-not-verify')],
+    ['expired boundary token', async () => signJWT({ ...basePayload, exp: Math.floor(Date.now() / 1000) }, env.JWT_SECRET)],
+  ])('rejects a %s', async (_label, makeToken) => {
+    expect(await verifyJWT(await makeToken(), env.JWT_SECRET)).toBeNull();
+  });
+
 });

@@ -12,6 +12,11 @@ import type { Env as AppEnv, JWTPayload } from '../src/types';
 const IncomingRequest = Request;
 const worker = (exports as unknown as { default: Fetcher & { queue(batch: MessageBatch<unknown>, env: AppEnv): Promise<void> } }).default;
 let ipCounter = 0;
+const appleKeyPair = crypto.subtle.generateKey(
+  { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+  true,
+  ['sign', 'verify'],
+);
 
 interface RouteCase {
   name: string;
@@ -145,6 +150,21 @@ describe('app shell routes', () => {
     expect(response.status).toBe(403);
     await expect(response.text()).resolves.toBe('Forbidden');
     expect(response.headers.get('X-Frame-Options')).toBe('DENY');
+  });
+
+  it('lets an explicit hostile Origin override a spoofed same-origin fetch hint', async () => {
+    const response = await fetchWorker('/admin/pages', {
+      method: 'POST',
+      headers: {
+        Cookie: await authCookie(),
+        Origin: 'https://evil.example.com',
+        'Sec-Fetch-Site': 'same-origin',
+      },
+      body: form({ name: 'Must not exist', slug: 'must-not-exist', page_type: 'default' }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await env.DB.prepare("SELECT id FROM draft_pages WHERE slug = 'must-not-exist'").first()).toBeNull();
   });
 
   it('rejects mutations with no browser origin signals (fail closed)', async () => {
@@ -417,11 +437,7 @@ describe('auth routes', () => {
     expect(location.searchParams.get('response_mode')).toBe('form_post');
     expect(location.searchParams.get('nonce')).toBe(state);
 
-    const keyPair = await crypto.subtle.generateKey(
-      { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
-      true,
-      ['sign', 'verify'],
-    );
+    const keyPair = await appleKeyPair;
     const publicJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
     const idToken = await signedIdToken({
       iss: 'https://appleid.apple.com',
@@ -458,6 +474,30 @@ describe('auth routes', () => {
     expect(await env.DB.prepare('SELECT user_id, provider, provider_user_id FROM user_oauth_identities WHERE oauth_id = ?')
       .bind('apple:apple-user')
       .first()).toMatchObject({ provider: 'apple', provider_user_id: 'apple-user' });
+  });
+
+  it.each([
+    ['wrong issuer', { iss: 'https://evil.example.com' }],
+    ['wrong audience', { aud: 'another-client' }],
+    ['expired token', { exp: Math.floor(Date.now() / 1000) - 1 }],
+    ['missing nonce', { nonce: undefined }],
+    ['mismatched nonce', { nonce: 'not-the-oauth-state' }],
+  ])('rejects an Apple ID token with %s before creating a session', async (_label, overrides) => {
+    const before = await env.DB.prepare('SELECT COUNT(*) AS total FROM sessions').first<{ total: number }>();
+    const callback = await appleCallback(overrides);
+
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get('Location')).toBe('/auth/login?error=invalid_id_token');
+    expect(await env.DB.prepare('SELECT COUNT(*) AS total FROM sessions').first<{ total: number }>()).toEqual(before);
+  });
+
+  it('rejects an Apple ID token whose signature does not match its JWK', async () => {
+    const before = await env.DB.prepare('SELECT COUNT(*) AS total FROM sessions').first<{ total: number }>();
+    const callback = await appleCallback({}, true);
+
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get('Location')).toBe('/auth/login?error=invalid_id_token');
+    expect(await env.DB.prepare('SELECT COUNT(*) AS total FROM sessions').first<{ total: number }>()).toEqual(before);
   });
 
   it('purges expired sessions during refresh', async () => {
@@ -2709,6 +2749,47 @@ async function signedIdToken(payload: Record<string, unknown>, key: CryptoKey, k
   for (const byte of signature) binary += String.fromCharCode(byte);
   const encodedSignature = btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
   return `${signingInput}.${encodedSignature}`;
+}
+
+async function appleCallback(overrides: Record<string, unknown>, corruptSignature = false): Promise<Response> {
+  const start = await fetchWorker('/auth/start?provider=apple');
+  const location = new URL(start.headers.get('Location') ?? '');
+  const state = location.searchParams.get('state') ?? '';
+  const stateCookie = cookieValue(start.headers.get('Set-Cookie'), 'oauth_state');
+  const keyPair = await appleKeyPair;
+  const publicJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+  let idToken = await signedIdToken({
+    iss: 'https://appleid.apple.com',
+    aud: 'test.apple.client',
+    exp: Math.floor(Date.now() / 1000) + 600,
+    nonce: state,
+    sub: `apple-negative-${crypto.randomUUID()}`,
+    email: 'apple-negative@example.com',
+    ...overrides,
+  }, keyPair.privateKey, 'test-apple-key');
+  if (corruptSignature) {
+    const [header, claims, signature] = idToken.split('.');
+    idToken = `${header}.${claims}.${'A'.repeat(signature.length)}`;
+  }
+
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = input.toString();
+    if (url === 'https://appleid.apple.com/auth/token') return Response.json({ id_token: idToken });
+    if (url === 'https://appleid.apple.com/auth/keys') {
+      return Response.json({ keys: [{ ...publicJwk, kid: 'test-apple-key', alg: 'RS256', use: 'sig' }] });
+    }
+    return new Response('Unexpected fetch', { status: 500 });
+  }));
+
+  return fetchWorker('/auth/callback', {
+    method: 'POST',
+    headers: {
+      Cookie: `oauth_state=${stateCookie}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Sec-Fetch-Site': 'cross-site',
+    },
+    body: form({ code: 'abc', state }),
+  });
 }
 
 /** Runs the full PKCE flow against a mocked eventuai provider and returns the callback response. */

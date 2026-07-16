@@ -108,7 +108,7 @@ export async function verifyJWT(
     if (payload.type !== 'access' && payload.type !== 'refresh' && payload.type !== 'oauth_state') return null;
     if (payload.iss !== JWT_ISS || payload.aud !== JWT_AUD) return null;
 
-    if (payload.exp < Math.floor(Date.now() / 1000)) return null;
+    if (payload.exp <= Math.floor(Date.now() / 1000)) return null;
 
     return payload;
   } catch {

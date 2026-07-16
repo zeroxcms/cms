@@ -107,6 +107,40 @@ describe('Plugin API auth + scoping', () => {
     expect(res.status).toBe(403);
   });
 
+  it('invalidates the old credential immediately after plugin-secret rotation', async () => {
+    const before = await env.DB.prepare("SELECT COUNT(*) AS total FROM draft_pages WHERE page_type = 'guest'")
+      .first<{ total: number }>();
+    await env.DB.prepare('UPDATE plugins SET secret = ?').bind('rotated-plugin-secret').run();
+    clearManifestCache();
+
+    const oldSecret = await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Must not exist' });
+    expect(oldSecret.status).toBe(403);
+    expect(oldSecret.headers.get('Cache-Control')).toBe('no-store');
+    expect(await env.DB.prepare("SELECT COUNT(*) AS total FROM draft_pages WHERE page_type = 'guest'")
+      .first<{ total: number }>()).toEqual(before);
+
+    const rotatedSecret = await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Allowed after rotation' }, {
+      'x-plugin-secret': 'rotated-plugin-secret',
+    });
+    expect(rotatedSecret.status).toBe(201);
+  });
+
+  it.each([
+    ['disabled', 'UPDATE plugins SET enabled = 0'],
+    ['deleted', 'DELETE FROM plugins'],
+  ])('denies a %s plugin before it can write', async (_state, mutation) => {
+    const before = await env.DB.prepare("SELECT COUNT(*) AS total FROM draft_pages WHERE page_type = 'guest'")
+      .first<{ total: number }>();
+    await env.DB.prepare(mutation).run();
+    clearManifestCache();
+
+    const response = await cmsApi('POST', '/__cms/pages', { page_type: 'guest', name: 'Must not exist' });
+    expect(response.status).toBe(403);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(await env.DB.prepare("SELECT COUNT(*) AS total FROM draft_pages WHERE page_type = 'guest'")
+      .first<{ total: number }>()).toEqual(before);
+  });
+
   it('rejects writes to a page type the plugin does not own', async () => {
     const res = await cmsApi('POST', '/__cms/pages', { page_type: 'contact', name: 'X' });
     expect(res.status).toBe(403);

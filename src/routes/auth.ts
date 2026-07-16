@@ -245,7 +245,7 @@ function idTokenClaims(
     return null;
   }
   const exp = claims['exp'];
-  if (typeof exp !== 'number' || exp < Math.floor(Date.now() / 1000)) return null;
+  if (typeof exp !== 'number' || exp <= Math.floor(Date.now() / 1000)) return null;
   return claims;
 }
 

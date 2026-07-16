@@ -82,6 +82,10 @@ function isPrivateHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal')) return true;
   if (host === '::1' || host === '0.0.0.0') return true;
+  // WHATWG URL canonicalizes IPv4-mapped IPv6 addresses to hexadecimal, e.g.
+  // [::ffff:127.0.0.1] becomes [::ffff:7f00:1]. Block the mapped loopback and
+  // private IPv4 ranges as well as their dotted spelling.
+  if (/^::ffff:(?:7f[0-9a-f]{2}|a[0-9a-f]{2}|a9fe|c0a8|ac1[0-9a-f]|64[4-7][0-9a-f]):[0-9a-f]{1,4}$/i.test(host)) return true;
   if (/^f[cd][0-9a-f]{2}:/.test(host) || /^fe80:/.test(host)) return true; // IPv6 ULA / link-local
   const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (m) {

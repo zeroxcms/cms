@@ -542,6 +542,9 @@ describe('plugin URL SSRF guard', () => {
     ['.internal suffix', 'https://metadata.internal'],
     ['IPv6 ULA', 'https://[fd00::1]'],
     ['IPv6 loopback', 'https://[::1]'],
+    ['decimal IPv4 loopback', 'https://2130706433'],
+    ['hexadecimal IPv4 loopback', 'https://0x7f000001'],
+    ['IPv4-mapped IPv6 loopback', 'https://[::ffff:127.0.0.1]'],
   ])('rejects a %s plugin URL', async (_label, url) => {
     const response = await fetchWorker('/admin/plugins-manage', {
       method: 'POST',

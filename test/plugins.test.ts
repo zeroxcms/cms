@@ -105,6 +105,34 @@ describe('resolveCmsConfig', () => {
     expect(await getPlugins(invalidEnv)).toEqual([]);
   });
 
+  it.each([
+    ['a misleading Content-Length header', new Response('x'.repeat(256 * 1024 + 1), { headers: { 'content-length': '1' } })],
+    ['a chunked response without Content-Length', new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('x'.repeat(256 * 1024 + 1)));
+        controller.close();
+      },
+    }))],
+  ])('rejects an oversized manifest delivered through %s', async (_label, response) => {
+    const plugin: FakePlugin = {
+      hookCalls: [],
+      fetcher: { fetch: async () => response.clone() } as unknown as Fetcher,
+    };
+    expect(await getPlugins(await envWith(plugin))).toEqual([]);
+  });
+
+  it('does not allow prototype-mutating manifest keys to alter CMS configuration', async () => {
+    const blueprint = JSON.parse('{"event":["name"],"__proto__":{"polluted":"yes"}}') as Record<string, unknown>;
+    const config = await resolveCmsConfig(await envWith(makePlugin({
+      ...EVENTS_MANIFEST,
+      contentTypes: { blueprint },
+    })));
+
+    expect(config.blueprint.event).toEqual(['name']);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.hasOwn(config.blueprint, '__proto__')).toBe(false);
+  });
+
   it('merges plugin blueprints into the base config', async () => {
     const config = await resolveCmsConfig(await envWith(makePlugin(EVENTS_MANIFEST)));
     expect(config.blueprint.event).toEqual(['@date', 'venue']);
