@@ -53,6 +53,10 @@ const MANIFEST = {
     // plugin's content.
     { key: 'sabotage', label: 'Sabotage', charge: 'page_create', page_type: 'contact', default: 999 },
   ],
+  limits: [
+    { key: 'max_events', label: 'Maximum events', page_type: 'event', scope: 'total', default: 50 },
+    { key: 'edm_rate', label: 'EDM send rate', scope: 'per_second', default: 5 },
+  ],
 } as unknown as PluginManifest;
 
 let ipCounter = 0;
@@ -629,7 +633,45 @@ describe('profile and plugins-manage pages', () => {
     expect(html).toContain('"chargeCount":4');
     expect(html).toContain('"paidCount":3');
     expect(html).toContain('"effectiveLabel":"10 credits"');
-    expect(html).toContain('"sourceLabel":"Admin override"');
+    // Usage limits are summarized alongside credits on the same page.
+    expect(html).toContain('"hasLimitRows":true');
+    expect(html).toContain('"label":"Maximum events"');
+    expect(html).toContain('"scopeLabel":"Total"');
+    expect(html).toContain('"scopeLabel":"Per second"');
+    // Admins can reach the configure links from the summary.
+    expect(html).toContain('"canConfigure":true');
+  });
+
+  it('lets a non-manager view the summary but not the configure links or routes', async () => {
+    await saveCreditValues(env, PLUGIN_ID, { create_event: 10 });
+    const editorCookie = await authCookie('editor');
+    const editorFetch = (path: string, init: RequestInit = {}): Promise<Response> => {
+      const headers = new Headers(init.headers);
+      headers.set('Cookie', editorCookie);
+      headers.set('Sec-Fetch-Site', 'same-origin');
+      ipCounter += 1;
+      headers.set('CF-Connecting-IP', `10.9.${Math.floor(ipCounter / 250)}.${(ipCounter % 250) + 1}`);
+      return worker.fetch(new Request(`http://localhost${path}`, { redirect: 'manual', ...init, headers }));
+    };
+
+    // An editor (no plugin:manage) can view the read-only summary…
+    const page = await editorFetch('/admin/settings/credits');
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain('"pluginLabel":"Events Suite"');
+    // …but the Configure links are withheld.
+    expect(html).toContain('"canConfigure":false');
+
+    // …and the configure route itself stays gated by plugin:manage.
+    const row = await env.DB.prepare('SELECT id FROM plugins WHERE url = ?').bind(pluginUrl).first<{ id: number }>();
+    const denied = await editorFetch(`/admin/plugins-manage/${row!.id}/credits`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ value_create_event: '99' }),
+    });
+    expect(denied.status).toBe(403);
+    // The override is unchanged — the editor's POST never took effect.
+    expect(await loadCreditValues(env, PLUGIN_ID)).toEqual({ create_event: 10 });
   });
 });
 

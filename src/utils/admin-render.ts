@@ -88,7 +88,9 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     if (key === 'users') return permissions.has('users:manage');
     if (key === 'roles') return permissions.has('roles:manage');
     if (key === 'plugins') return permissions.has('plugin:manage');
-    if (key === 'credits') return permissions.has('plugin:manage');
+    // Credit summary is read-only and visible to every admin user; only the
+    // configure links inside it require plugin:manage.
+    if (key === 'credits') return true;
     if (key === 'languages') return permissions.has('menu:manage');
     if (key === 'system') return permissions.has('menu:manage');
     return true;

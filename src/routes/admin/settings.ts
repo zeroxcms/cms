@@ -2,14 +2,15 @@ import { Hono } from 'hono';
 import { requirePermission } from '../../middleware/auth';
 import { systemSettingsPage } from '../../templates/settings';
 import { contentListPage, type ContentListMediaItem } from '../../templates/content-list';
-import { creditSummaryPage, type CreditSummaryRow } from '../../templates/credit-summary';
+import { creditSummaryPage, type CreditSummaryRow, type LimitSummaryRow } from '../../templates/credit-summary';
 import { languagesPage, translationsPage, type LocaleViewRow } from '../../templates/i18n';
 import type { Env, Variables } from '../../types';
 import { getPlugins, pluginNav } from '../../plugins/registry';
 import { listPlugins } from '../../utils/plugin-store';
 import { effectiveCreditsForPlugin, type EffectiveCredit } from '../../utils/credits';
+import { effectiveLimitsForPlugin, type NormalizedLimitDef } from '../../utils/plugin-limits';
 import { logAudit } from '../../utils/audit';
-import { renderPage } from '../../utils/admin-render';
+import { renderPage, userCan } from '../../utils/admin-render';
 import {
   APP_ICON_OPTIONS,
   SIDEBAR_MENU_ITEMS,
@@ -39,7 +40,10 @@ export const settingsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>(
 settingsRoutes.use('/settings/system', requirePermission('menu:manage'));
 settingsRoutes.use('/settings/menu', requirePermission('menu:manage'));
 settingsRoutes.use('/settings/content', requirePermission('menu:manage'));
-settingsRoutes.use('/settings/credits', requirePermission('plugin:manage'));
+// The credit summary is a read-only view any admin user may see; editing the
+// prices happens under /plugins-manage/* which stays gated by plugin:manage.
+// So no per-route permission here — editorGuard already limits it to signed-in
+// admin users, and the "Configure" links are hidden below for non-managers.
 settingsRoutes.use('/settings/languages', requirePermission('menu:manage'));
 settingsRoutes.use('/settings/languages/*', requirePermission('menu:manage'));
 settingsRoutes.use('/settings/translations', requirePermission('menu:manage'));
@@ -253,16 +257,37 @@ function creditSummaryChargeLabel(credit: EffectiveCredit): string {
     : `Metered per ${credit.def.unit}`;
 }
 
+function limitSummaryScopeLabel(def: NormalizedLimitDef): string {
+  if (def.scope === 'per_second') return 'Per second';
+  if (def.scope === 'per_parent') return 'Per parent page';
+  if (def.scope === 'per_pointer') return `Per ${def.pointerKey}`;
+  return 'Total';
+}
+
+// Shared row comparator: group by plugin, then by human label, then key.
+function bySummaryOrder(
+  a: { pluginLabel: string; label: string; key: string },
+  b: { pluginLabel: string; label: string; key: string },
+): number {
+  return a.pluginLabel.localeCompare(b.pluginLabel)
+    || a.label.localeCompare(b.label)
+    || a.key.localeCompare(b.key);
+}
+
 settingsRoutes.get('/settings/credits', async (c) => {
   const [plugins, pluginRecords] = await Promise.all([
     getPlugins(c.env),
     listPlugins(c.env.DB),
   ]);
   const recordIds = new Map(pluginRecords.map((record) => [record.url, record.id]));
+  const manageHref = (binding: string, section: 'credits' | 'limits'): string => {
+    const id = recordIds.get(binding);
+    return id ? `/admin/plugins-manage/${id}/${section}` : '/admin/plugins-manage';
+  };
+
   const rows: CreditSummaryRow[] = (await Promise.all(plugins.map(async (plugin) => {
     const credits = await effectiveCreditsForPlugin(c.env, plugin);
     const pluginLabel = plugin.manifest.name || plugin.label || plugin.manifest.id;
-    const pluginRecordId = recordIds.get(plugin.binding);
     return credits.map((credit) => ({
       pluginLabel,
       pluginId: plugin.manifest.id,
@@ -271,25 +296,36 @@ settingsRoutes.get('/settings/credits', async (c) => {
       description: credit.def.description,
       chargeLabel: creditSummaryChargeLabel(credit),
       effectiveLabel: credit.value === 0 ? 'Free' : `${credit.value} credits`,
-      defaultLabel: credit.def.defaultValue === 0 ? 'Free' : `${credit.def.defaultValue} credits`,
-      sourceLabel: credit.configured ? 'Admin override' : 'Plugin default',
-      manageHref: pluginRecordId
-        ? `/admin/plugins-manage/${pluginRecordId}/credits`
-        : '/admin/plugins-manage',
+      manageHref: manageHref(plugin.binding, 'credits'),
     }));
-  }))).flat().sort((a, b) => (
-    a.pluginLabel.localeCompare(b.pluginLabel)
-      || a.label.localeCompare(b.label)
-      || a.key.localeCompare(b.key)
-  ));
-  const pluginCount = new Set(rows.map((row) => row.pluginId)).size;
+  }))).flat().sort(bySummaryOrder);
+
+  const limitRows: LimitSummaryRow[] = (await Promise.all(plugins.map(async (plugin) => {
+    const limits = await effectiveLimitsForPlugin(c.env, plugin);
+    const pluginLabel = plugin.manifest.name || plugin.label || plugin.manifest.id;
+    return limits.map((limit) => ({
+      pluginLabel,
+      pluginId: plugin.manifest.id,
+      key: limit.def.key,
+      label: limit.def.label,
+      description: limit.def.description,
+      scopeLabel: limitSummaryScopeLabel(limit.def),
+      effectiveLabel: limit.value === null ? 'Unlimited' : `${limit.value}`,
+      manageHref: manageHref(plugin.binding, 'limits'),
+    }));
+  }))).flat().sort(bySummaryOrder);
+
+  const pluginCount = new Set([...rows, ...limitRows].map((row) => row.pluginId)).size;
   const paidCount = rows.filter((row) => row.effectiveLabel !== 'Free').length;
 
   return renderPage(c, creditSummaryPage, {
     rows,
+    limitRows,
     pluginCount,
     chargeCount: rows.length,
     paidCount,
+    // Everyone may view the summary; only plugin managers see the edit links.
+    canConfigure: await userCan(c, 'plugin:manage'),
   });
 });
 

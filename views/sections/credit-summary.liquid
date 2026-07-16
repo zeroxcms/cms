@@ -4,6 +4,7 @@
       <h1 class="text-2xl font-bold text-gray-900">Credit Summary</h1>
       <p class="mt-1 text-sm text-gray-500">All chargeable actions declared by enabled plugins and the prices currently used by the CMS.</p>
     </div>
+    {% if canConfigure %}
     <a href="/admin/plugins-manage"
        title="Manage plugins"
        aria-label="Manage plugins"
@@ -11,6 +12,7 @@
       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#beaker"></use></svg>
       <span class="hidden lg:inline">Manage plugins</span>
     </a>
+    {% endif %}
   </div>
 
   <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -28,15 +30,15 @@
     </div>
   </div>
 
+  <h2 class="mb-3 text-lg font-semibold text-gray-900">Chargeable actions</h2>
   <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-x-auto">
-    <table class="w-full min-w-[900px] text-left text-sm">
+    <table class="w-full min-w-[720px] text-left text-sm">
       <thead class="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wider text-gray-500">
         <tr>
           <th class="px-4 py-3 font-semibold">Plugin</th>
           <th class="px-4 py-3 font-semibold">Action</th>
           <th class="px-4 py-3 font-semibold">Charged</th>
           <th class="px-4 py-3 font-semibold">Effective price</th>
-          <th class="px-4 py-3 font-semibold">Source</th>
           <th class="px-4 py-3"></th>
         </tr>
       </thead>
@@ -54,19 +56,60 @@
                 {% if row.description != '' %}<div class="mt-0.5 text-xs text-gray-500">{{ row.description | escape }}</div>{% endif %}
               </td>
               <td class="px-4 py-3 text-gray-700">{{ row.chargeLabel | escape }}</td>
-              <td class="px-4 py-3">
-                <div class="font-medium text-gray-900">{{ row.effectiveLabel | escape }}</div>
-                <div class="mt-0.5 text-xs text-gray-400">Default: {{ row.defaultLabel | escape }}</div>
-              </td>
-              <td class="px-4 py-3 text-gray-700">{{ row.sourceLabel | escape }}</td>
+              <td class="px-4 py-3 font-medium text-gray-900">{{ row.effectiveLabel | escape }}</td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
+                {% if canConfigure %}
                 <a href="{{ row.manageHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Configure</a>
+                {% endif %}
               </td>
             </tr>
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="6" class="px-4 py-10 text-center text-sm text-gray-500">No enabled plugin declares chargeable actions.</td>
+            <td colspan="5" class="px-4 py-10 text-center text-sm text-gray-500">No enabled plugin declares chargeable actions.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="mb-3 mt-8 text-lg font-semibold text-gray-900">Usage limits</h2>
+  <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-x-auto">
+    <table class="w-full min-w-[720px] text-left text-sm">
+      <thead class="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wider text-gray-500">
+        <tr>
+          <th class="px-4 py-3 font-semibold">Plugin</th>
+          <th class="px-4 py-3 font-semibold">Limit</th>
+          <th class="px-4 py-3 font-semibold">Scope</th>
+          <th class="px-4 py-3 font-semibold">Effective limit</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% if hasLimitRows %}
+          {% for row in limitRows %}
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-3">
+                <div class="font-medium text-gray-900">{{ row.pluginLabel | escape }}</div>
+                <div class="mt-0.5 text-xs font-mono text-gray-400">{{ row.pluginId | escape }}</div>
+              </td>
+              <td class="px-4 py-3">
+                <div class="font-medium text-gray-900">{{ row.label | escape }}</div>
+                <div class="mt-0.5 text-xs font-mono text-gray-400">{{ row.key | escape }}</div>
+                {% if row.description != '' %}<div class="mt-0.5 text-xs text-gray-500">{{ row.description | escape }}</div>{% endif %}
+              </td>
+              <td class="px-4 py-3 text-gray-700">{{ row.scopeLabel | escape }}</td>
+              <td class="px-4 py-3 font-medium text-gray-900">{{ row.effectiveLabel | escape }}</td>
+              <td class="px-4 py-3 text-right whitespace-nowrap">
+                {% if canConfigure %}
+                <a href="{{ row.manageHref | escape }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Configure</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="5" class="px-4 py-10 text-center text-sm text-gray-500">No enabled plugin declares usage limits.</td>
           </tr>
         {% endif %}
       </tbody>

@@ -2234,9 +2234,13 @@ describe('permission-aware admin UI', () => {
     expect(editorPayload.layoutData.canManageUsers).toBe(false);
     expect(editorPayload.layoutData.canManageRoles).toBe(false);
     expect(editorPayload.layoutData.canManageMenu).toBe(false);
+    // The credit summary is a read-only view open to every admin user, so an
+    // editor still sees its nav link even without plugin:manage.
+    expect(editorPayload.layoutData.sidebarSettingsNav).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Credit Summary', href: '/admin/settings/credits' }),
+    ]));
     expect(editorPayload.layoutData.sidebarSettingsNav).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'System' }),
-      expect.objectContaining({ label: 'Credit Summary' }),
     ]));
   });
 
