@@ -1,0 +1,10 @@
+{
+  "sections": {
+    "main": {
+      "type": "credit-summary"
+    }
+  },
+  "order": [
+    "main"
+  ]
+}

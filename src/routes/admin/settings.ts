@@ -2,8 +2,11 @@ import { Hono } from 'hono';
 import { requirePermission } from '../../middleware/auth';
 import { systemSettingsPage } from '../../templates/settings';
 import { contentListPage, type ContentListMediaItem } from '../../templates/content-list';
+import { creditSummaryPage, type CreditSummaryRow } from '../../templates/credit-summary';
 import type { Env, Variables } from '../../types';
-import { pluginNav } from '../../plugins/registry';
+import { getPlugins, pluginNav } from '../../plugins/registry';
+import { listPlugins } from '../../utils/plugin-store';
+import { effectiveCreditsForPlugin, type EffectiveCredit } from '../../utils/credits';
 import { logAudit } from '../../utils/audit';
 import { renderPage } from '../../utils/admin-render';
 import {
@@ -24,6 +27,7 @@ export const settingsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>(
 settingsRoutes.use('/settings/system', requirePermission('menu:manage'));
 settingsRoutes.use('/settings/menu', requirePermission('menu:manage'));
 settingsRoutes.use('/settings/content', requirePermission('menu:manage'));
+settingsRoutes.use('/settings/credits', requirePermission('plugin:manage'));
 
 const MEDIA_LIST_PAGE_SIZE = 50;
 
@@ -109,6 +113,52 @@ settingsRoutes.get('/settings/content', async (c) => {
     : '';
 
   return renderPage(c, contentListPage, { bucketConfigured: true, media, nextHref });
+});
+
+function creditSummaryChargeLabel(credit: EffectiveCredit): string {
+  return credit.def.charge === 'page_create'
+    ? `On create: ${credit.def.pageType}`
+    : `Metered per ${credit.def.unit}`;
+}
+
+settingsRoutes.get('/settings/credits', async (c) => {
+  const [plugins, pluginRecords] = await Promise.all([
+    getPlugins(c.env),
+    listPlugins(c.env.DB),
+  ]);
+  const recordIds = new Map(pluginRecords.map((record) => [record.url, record.id]));
+  const rows: CreditSummaryRow[] = (await Promise.all(plugins.map(async (plugin) => {
+    const credits = await effectiveCreditsForPlugin(c.env, plugin);
+    const pluginLabel = plugin.manifest.name || plugin.label || plugin.manifest.id;
+    const pluginRecordId = recordIds.get(plugin.binding);
+    return credits.map((credit) => ({
+      pluginLabel,
+      pluginId: plugin.manifest.id,
+      key: credit.def.key,
+      label: credit.def.label,
+      description: credit.def.description,
+      chargeLabel: creditSummaryChargeLabel(credit),
+      effectiveLabel: credit.value === 0 ? 'Free' : `${credit.value} credits`,
+      defaultLabel: credit.def.defaultValue === 0 ? 'Free' : `${credit.def.defaultValue} credits`,
+      sourceLabel: credit.configured ? 'Admin override' : 'Plugin default',
+      manageHref: pluginRecordId
+        ? `/admin/plugins-manage/${pluginRecordId}/credits`
+        : '/admin/plugins-manage',
+    }));
+  }))).flat().sort((a, b) => (
+    a.pluginLabel.localeCompare(b.pluginLabel)
+      || a.label.localeCompare(b.label)
+      || a.key.localeCompare(b.key)
+  ));
+  const pluginCount = new Set(rows.map((row) => row.pluginId)).size;
+  const paidCount = rows.filter((row) => row.effectiveLabel !== 'Free').length;
+
+  return renderPage(c, creditSummaryPage, {
+    rows,
+    pluginCount,
+    chargeCount: rows.length,
+    paidCount,
+  });
 });
 
 settingsRoutes.get('/settings/system', async (c) => {

@@ -47,6 +47,15 @@ describe('sidebar active route state', () => {
     ]);
   });
 
+  it('activates the Credit Summary item in Settings', () => {
+    const main = [item('Settings', '', { icon: 'settings', isSettingsGroup: true })];
+    const settings = [item('Credit Summary', '/admin/settings/credits', { icon: 'tag' })];
+    const result = withActiveSidebarItems('/admin/settings/credits', main, settings);
+
+    expect(result.sidebarNav[0].isActive).toBe(true);
+    expect(result.sidebarSettingsNav[0].isActive).toBe(true);
+  });
+
   it('selects the longest matching plugin route across sidebar groups', () => {
     const main = [
       item('Events', '/admin/plugins/events'),

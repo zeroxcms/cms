@@ -619,6 +619,18 @@ describe('profile and plugins-manage pages', () => {
     expect(save.status).toBe(302);
     expect(await loadCreditValues(env, PLUGIN_ID)).toEqual({ create_event: 10, send_edm: 0 });
   });
+
+  it('summarizes chargeable actions across plugins', async () => {
+    await saveCreditValues(env, PLUGIN_ID, { create_event: 10 });
+    const page = await adminFetch('/admin/settings/credits');
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain('"pluginLabel":"Events Suite"');
+    expect(html).toContain('"chargeCount":4');
+    expect(html).toContain('"paidCount":3');
+    expect(html).toContain('"effectiveLabel":"10 credits"');
+    expect(html).toContain('"sourceLabel":"Admin override"');
+  });
 });
 
 describe('shared credit pool', () => {

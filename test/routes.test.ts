@@ -722,6 +722,7 @@ describe('admin routes', () => {
     { name: 'POST /admin/roles/admin (locked)', method: 'POST', path: '/admin/roles/admin', body: form({ permissions: 'content:write' }), authenticated: true, expectedStatus: 403 },
     { name: 'POST /admin/roles/:name/delete (custom)', method: 'POST', path: '/admin/roles/authors/delete', authenticated: true, expectedStatus: 302, location: '/admin/roles' },
     { name: 'GET /admin/settings/system', path: '/admin/settings/system', authenticated: true, expectedStatus: 200 },
+    { name: 'GET /admin/settings/credits', path: '/admin/settings/credits', authenticated: true, expectedStatus: 200 },
     { name: 'GET /admin/settings/menu (legacy redirect)', path: '/admin/settings/menu', authenticated: true, expectedStatus: 302, location: '/admin/settings/system' },
     { name: 'POST /admin/settings/system', method: 'POST', path: '/admin/settings/system', body: form({ visible_items: 'pages' }), authenticated: true, expectedStatus: 302, location: '/admin/settings/system?flash=saved' },
   ])('$name', async (route) => {
@@ -2156,6 +2157,7 @@ describe('permission-aware admin UI', () => {
     expect(adminPayload.layoutData.sidebarSettingsNav).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'Users & Credits' }),
       expect.objectContaining({ label: 'Roles' }),
+      expect.objectContaining({ label: 'Credit Summary', href: '/admin/settings/credits' }),
       expect.objectContaining({ label: 'System' }),
     ]));
 
@@ -2165,6 +2167,7 @@ describe('permission-aware admin UI', () => {
     expect(editorPayload.layoutData.canManageMenu).toBe(false);
     expect(editorPayload.layoutData.sidebarSettingsNav).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'System' }),
+      expect.objectContaining({ label: 'Credit Summary' }),
     ]));
   });
 
