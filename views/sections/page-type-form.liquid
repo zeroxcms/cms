@@ -1,33 +1,33 @@
 <div class="min-w-0 max-w-2xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
-  <h2 class="text-2xl font-bold text-gray-900 mb-6">{{ heading }}</h2>
+  <h2 class="text-2xl font-bold text-gray-900 mb-6">{{ headingKey | t }}</h2>
   {% if readOnly %}
-    <div class="mb-4 px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-600">This page type is defined in the config file and cannot be edited here.</div>
+    <div class="mb-4 px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-600">{{ "view_strings.sections_page_type_form.this_page_type_is_defined_in_the_config_file_and_cannot_be_edited_here" | t }}</div>
   {% endif %}
   {% if hasError %}
     <div class="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{{ error }}</div>
   {% endif %}
   <form id="page-type-form" method="POST" action="{{ action }}" class="min-w-0 space-y-4">
     <label for="page_type_name" class="block min-w-0">
-      <span class="block text-sm font-medium text-gray-700 mb-1">Name</span>
+      <span class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_page_type_form.name" | t }}</span>
       <input id="page_type_name" name="name" required value="{{ name }}"{% if readOnly %} readonly{% endif %} class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm{% if readOnly %} bg-gray-50 text-gray-600{% endif %}">
     </label>
     <label for="page_type_slug" class="block min-w-0">
-      <span class="block text-sm font-medium text-gray-700 mb-1">Slug</span>
+      <span class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_page_type_form.slug" | t }}</span>
       <input id="page_type_slug" name="slug" value="{{ slug }}"{% if readOnly %} readonly{% endif %} class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono{% if readOnly %} bg-gray-50 text-gray-600{% endif %}">
-      {% unless readOnly %}<span class="block text-xs text-gray-500 mt-1">The page-type key used on pages (e.g. <code>event</code>). Cannot collide with a config or existing type.</span>{% endunless %}
+      {% unless readOnly %}<span class="block text-xs text-gray-500 mt-1">{{ "view_strings.sections_page_type_form.the_page_type_key_used_on_pages_e_g" | t }} <code>{{ "view_strings.sections_page_type_form.event" | t }}</code>{{ "view_strings.sections_page_type_form.cannot_collide_with_a_config_or_existing_type" | t }}</span>{% endunless %}
     </label>
     <label for="page_type_weight" class="block min-w-0">
-      <span class="block text-sm font-medium text-gray-700 mb-1">Weight</span>
+      <span class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_page_type_form.weight" | t }}</span>
       <input id="page_type_weight" name="weight" type="number" value="{{ weight }}"{% if readOnly %} readonly{% endif %} class="block min-w-0 w-32 max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm{% if readOnly %} bg-gray-50 text-gray-600{% endif %}">
     </label>
     <label for="page_type_blueprint" class="block min-w-0">
-      <span class="block text-sm font-medium text-gray-700 mb-1">Blueprint (JSON array)</span>
+      <span class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_page_type_form.blueprint_json_array" | t }}</span>
       <textarea id="page_type_blueprint" name="blueprint" rows="8"{% if readOnly %} readonly{% endif %} class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono{% if readOnly %} bg-gray-50 text-gray-600{% endif %}" spellcheck="false">{{ blueprint }}</textarea>
-      {% unless readOnly %}<span class="block text-xs text-gray-500 mt-1">Field definitions, e.g. <code>["@date", "name", "body:text", {"items": ["name"]}]</code></span>{% endunless %}
+      {% unless readOnly %}<span class="block text-xs text-gray-500 mt-1">{{ "view_strings.sections_page_type_form.field_definitions_e_g" | t }} <code>["@date", "name", "body:text", {"items": ["name"]}]</code></span>{% endunless %}
     </label>
 
     <fieldset class="min-w-0">
-      <legend class="block text-sm font-medium text-gray-700 mb-1">Blocks</legend>
+      <legend class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_page_type_form.blocks" | t }}</legend>
       {% if hasBlockOptions %}
         <div class="flex flex-wrap gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
           {% for option in blockOptions %}
@@ -38,13 +38,13 @@
           {% endfor %}
         </div>
       {% else %}
-        <p class="text-sm text-gray-400">No block types defined yet. Add some under <a href="/admin/block_types" class="text-indigo-600 hover:text-indigo-800">Block Types</a>.</p>
+        <p class="text-sm text-gray-400">{{ "view_strings.sections_page_type_form.no_block_types_defined_yet_add_some_under" | t }} <a href="/admin/block_types" class="text-indigo-600 hover:text-indigo-800">{{ "view_strings.sections_page_type_form.block_types" | t }}</a>.</p>
       {% endif %}
-      {% unless readOnly %}<span class="block text-xs text-gray-500 mt-1">Blocks available to pages of this type.</span>{% endunless %}
+      {% unless readOnly %}<span class="block text-xs text-gray-500 mt-1">{{ "view_strings.sections_page_type_form.blocks_available_to_pages_of_this_type" | t }}</span>{% endunless %}
     </fieldset>
 
     <fieldset class="min-w-0">
-      <legend class="block text-sm font-medium text-gray-700 mb-1">Taxonomies</legend>
+      <legend class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_page_type_form.taxonomies" | t }}</legend>
       {% if hasTaxonomyOptions %}
         <div class="flex flex-wrap gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
           {% for option in taxonomyOptions %}
@@ -55,20 +55,20 @@
           {% endfor %}
         </div>
       {% else %}
-        <p class="text-sm text-gray-400">No taxonomies defined yet. Add some under <a href="/admin/taxonomies" class="text-indigo-600 hover:text-indigo-800">Taxonomies</a>.</p>
+        <p class="text-sm text-gray-400">{{ "view_strings.sections_page_type_form.no_taxonomies_defined_yet_add_some_under" | t }} <a href="/admin/taxonomies" class="text-indigo-600 hover:text-indigo-800">{{ "view_strings.sections_page_type_form.taxonomies" | t }}</a>.</p>
       {% endif %}
-      {% unless readOnly %}<span class="block text-xs text-gray-500 mt-1">Taxonomies shown when editing pages of this type.</span>{% endunless %}
+      {% unless readOnly %}<span class="block text-xs text-gray-500 mt-1">{{ "view_strings.sections_page_type_form.taxonomies_shown_when_editing_pages_of_this_type" | t }}</span>{% endunless %}
     </fieldset>
 
   </form>
   {% if isEdit %}
-    <form id="page-type-delete-form" method="POST" action="{{ deleteAction }}" data-confirm="Delete this page type? Existing pages keep their type string."></form>
+    <form id="page-type-delete-form" method="POST" action="{{ deleteAction }}" data-confirm="{{ "view_strings.sections_page_type_form.delete_this_page_type_existing_pages_keep_their_type_string" | t }}"></form>
   {% endif %}
   <div class="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-    {% unless readOnly %}<button form="page-type-form" type="submit" class="w-full px-6 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm sm:w-auto">Save</button>{% endunless %}
+    {% unless readOnly %}<button form="page-type-form" type="submit" class="w-full px-6 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm sm:w-auto">{{ "view_strings.sections_page_type_form.save" | t }}</button>{% endunless %}
     <a href="/admin/page_types" class="w-full px-6 py-2 text-center bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors sm:w-auto">{% if readOnly %}Back{% else %}Cancel{% endif %}</a>
     {% if isEdit %}{% unless readOnly %}
-      <button form="page-type-delete-form" type="submit" class="w-full px-6 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-colors shadow-sm sm:ml-auto sm:w-auto">Delete</button>
+      <button form="page-type-delete-form" type="submit" class="w-full px-6 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-colors shadow-sm sm:ml-auto sm:w-auto">{{ "view_strings.sections_page_type_form.delete" | t }}</button>
     {% endunless %}{% endif %}
   </div>
 </div>

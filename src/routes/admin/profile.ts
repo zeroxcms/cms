@@ -170,10 +170,10 @@ profileRoutes.post('/profile/locale', async (c) => {
   const requested = String(form.get('locale') ?? '');
   const { uiLocales } = await localeRegistry(c.env);
   if (!uiLocales.some((locale) => locale.code === requested)) {
-    return c.redirect('/admin/profile?error=Interface+language+is+not+enabled', 303);
+    return c.redirect('/admin/profile?error=profile.language_not_enabled', 303);
   }
   setUiLocaleCookie(c, requested);
-  return c.redirect('/admin/profile?flash=Interface+language+saved', 303);
+  return c.redirect('/admin/profile?flash=profile.language_saved', 303);
 });
 
 // Send credits to another user. Recipients are looked up by email and must be

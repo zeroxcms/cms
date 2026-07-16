@@ -35,6 +35,7 @@ import {
   SIDEBAR_MENU_ITEMS,
   defaultPluginNavWeight,
   loadAppBrandingSettings,
+  loadSystemTimezone,
   loadSidebarChromeSettings,
   pluginSidebarKey,
   type SidebarMenuItemKey,
@@ -65,7 +66,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
   const user = c.get('user');
   const userRoles = user.role.split(',').map((role) => role.trim()).filter(Boolean);
   const fallbackSiteTitle = c.env.SITE_TITLE ?? '0xCMS';
-  const [userAvatar, navItems, permissions, branding, userCredits, sharedCredits, cmsOnce, uiLocale] = await Promise.all([
+  const [userAvatar, navItems, permissions, branding, userCredits, sharedCredits, cmsOnce, uiLocale, systemTimezone] = await Promise.all([
     fetchUserAvatar(c.env.DB, userIdFromContext(c)),
     pluginNav(c.env),
     userPermissions(c),
@@ -74,6 +75,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     getSharedCreditBalance(c.env),
     mintFormOnceToken(c.env.JWT_SECRET),
     resolveUiLocale(c),
+    loadSystemTimezone(c.env),
   ]);
   const sidebarSettings = await loadSidebarChromeSettings(c.env);
   const menuSettings = sidebarSettings.items;
@@ -104,6 +106,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     .map((entry) => ({
       item: {
         label: entry.item.label,
+        translationKey: `nav.${entry.item.key}`,
         href: entry.item.href,
         icon: entry.item.icon,
       },
@@ -115,6 +118,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     .map((entry) => ({
       item: {
         label: entry.item.label,
+        translationKey: `nav.${entry.item.key}`,
         href: entry.item.href,
         icon: entry.item.icon,
       },
@@ -143,6 +147,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     sidebarNavEntries.push({
       item: {
         label: 'Settings',
+        translationKey: 'nav.settings',
         href: '',
         icon: 'settings',
         isSettingsGroup: true,
@@ -176,6 +181,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     uiLocale: uiLocale.code,
     uiDirection: uiLocale.direction,
     catalogHref: `/admin/i18n/catalog/${encodeURIComponent(uiLocale.code)}`,
+    systemTimezone,
     canManageUsers: permissions.has('users:manage'),
     canManageRoles: permissions.has('roles:manage'),
     canManagePlugins: permissions.has('plugin:manage'),

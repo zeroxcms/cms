@@ -24,6 +24,7 @@ import {
 import { normalizeRoles } from '../utils/roles';
 import { loadAppBrandingSettings } from '../utils/settings';
 import { viewRevision } from '../utils/view-revision';
+import { buildTranslationCatalog, resolveUiLocale } from '../utils/i18n';
 import { loginPage } from '../templates/login';
 import type { Env, Variables, JWTPayload } from '../types';
 import type { AppContext } from '../utils/context';
@@ -408,11 +409,26 @@ authRoutes.use('/start', authRateLimit);
 authRoutes.use('/callback', authRateLimit);
 authRoutes.use('/refresh', authRateLimit);
 
+// The login page is public, so it cannot use the authenticated admin catalog
+// endpoint. Translation catalogs contain UI copy only and are safe to expose.
+authRoutes.get('/i18n/catalog/:locale', async (c) => {
+  try {
+    return c.json(await buildTranslationCatalog(c.env, c.req.param('locale')), 200, {
+      'Cache-Control': 'private, no-cache',
+    });
+  } catch {
+    return c.json({ error: 'Locale not found' }, 404);
+  }
+});
+
 // GET /auth/login – show the login page (HTML)
 authRoutes.get('/login', async (c) => {
   const providers = getEnabledProviders(c.env);
   const error = c.req.query('error');
-  const branding = await loadAppBrandingSettings(c.env, c.env.SITE_TITLE ?? '0xCMS');
+  const [branding, uiLocale] = await Promise.all([
+    loadAppBrandingSettings(c.env, c.env.SITE_TITLE ?? '0xCMS'),
+    resolveUiLocale(c),
+  ]);
   return c.html(
     await loginPage(c.env.VIEWS, {
       siteTitle: branding.appName,
@@ -420,6 +436,9 @@ authRoutes.get('/login', async (c) => {
       providers: providers.length > 0 ? providers : ['github'],
       error,
       viewRevision: viewRevision(c.env),
+      uiLocale: uiLocale.code,
+      uiDirection: uiLocale.direction,
+      catalogHref: `/auth/i18n/catalog/${encodeURIComponent(uiLocale.code)}`,
     }),
   );
 });

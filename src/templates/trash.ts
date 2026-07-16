@@ -36,6 +36,7 @@ export async function trashPage(views: Fetcher, opts: BaseTemplateProps & {
     flash,
     hasFlash: !!flash,
     pageCountLabel: `${total} ${typeSuffix}page${total === 1 ? '' : 's'} in trash`,
+    singularCount: total === 1,
     hasPages: total > 0,
     anyTrash: grandTotal > 0,
     emptyTrashAction: '/admin/trash/empty',

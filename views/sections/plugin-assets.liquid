@@ -1,9 +1,9 @@
 <div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <div class="flex items-center justify-between gap-4 mb-4">
     <div>
-      <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref }}">← Plugins</a>
+      <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref }}">{{ "view_strings.sections_plugin_assets.plugins" | t }}</a>
       <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel }} · Assets</h2>
-      <p class="mt-1 text-sm text-gray-500">JS/CSS files this plugin wants to run inside CMS chrome. Approving a file pins its content hash — if the plugin's file ever changes, it stops running until re-approved.</p>
+      <p class="mt-1 text-sm text-gray-500">{{ "view_strings.sections_plugin_assets.js_css_files_this_plugin_wants_to_run_inside_cms_chrome_approving_a_file" | t }}</p>
     </div>
   </div>
 
@@ -13,15 +13,15 @@
 
   {% if unreachable %}
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-sm text-gray-500">
-      This plugin is not reachable right now, so its declared assets can't be listed.
+      {{ "view_strings.sections_plugin_assets.this_plugin_is_not_reachable_right_now_so_its_declared_assets_can_t_be_l" | t }}
     </div>
   {% else %}
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
       <table class="w-full min-w-[560px] text-left text-sm">
         <thead class="bg-gray-50 text-left text-xs uppercase text-gray-500">
           <tr>
-            <th class="px-4 py-2">Asset</th>
-            <th class="px-4 py-2">Status</th>
+            <th class="px-4 py-2">{{ "view_strings.sections_plugin_assets.asset" | t }}</th>
+            <th class="px-4 py-2">{{ "view_strings.sections_plugin_assets.status" | t }}</th>
             <th class="px-4 py-2"></th>
           </tr>
         </thead>
@@ -39,24 +39,24 @@
                 </td>
                 <td class="px-4 py-3">
                   <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold {{ asset.statusClass }}">{{ asset.statusLabel }}</span>
-                  {% if asset.fetchError %}<div class="text-xs text-red-600 mt-1">Could not fetch current file from plugin</div>{% endif %}
+                  {% if asset.fetchError %}<div class="text-xs text-red-600 mt-1">{{ "view_strings.sections_plugin_assets.could_not_fetch_current_file_from_plugin" | t }}</div>{% endif %}
                 </td>
                 <td class="px-4 py-3 text-right whitespace-nowrap">
                   {% if asset.approved %}
                     <form method="post" action="{{ asset.revokeAction }}" class="inline" data-confirm="Revoke approval for {{ asset.path }}? It will stop running in CMS chrome.">
                       <input type="hidden" name="path" value="{{ asset.path }}">
-                      <button type="submit" class="px-3 py-1 rounded-lg border border-red-300 text-xs font-semibold text-red-700">Revoke</button>
+                      <button type="submit" class="px-3 py-1 rounded-lg border border-red-300 text-xs font-semibold text-red-700">{{ "view_strings.sections_plugin_assets.revoke" | t }}</button>
                     </form>
                     {% if asset.drifted %}
                       <form method="post" action="{{ asset.approveAction }}" class="inline">
                         <input type="hidden" name="path" value="{{ asset.path }}">
-                        <button type="submit" class="ml-1 px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Re-approve</button>
+                        <button type="submit" class="ml-1 px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white">{{ "view_strings.sections_plugin_assets.re_approve" | t }}</button>
                       </form>
                     {% endif %}
                   {% else %}
                     <form method="post" action="{{ asset.approveAction }}" class="inline">
                       <input type="hidden" name="path" value="{{ asset.path }}">
-                      <button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Approve</button>
+                      <button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white">{{ "view_strings.sections_plugin_assets.approve" | t }}</button>
                     </form>
                   {% endif %}
                 </td>
@@ -64,7 +64,7 @@
             {% endfor %}
           {% else %}
             <tr>
-              <td colspan="3" class="px-4 py-8 text-center text-sm text-gray-500">This plugin declares no assets.</td>
+              <td colspan="3" class="px-4 py-8 text-center text-sm text-gray-500">{{ "view_strings.sections_plugin_assets.this_plugin_declares_no_assets" | t }}</td>
             </tr>
           {% endif %}
         </tbody>

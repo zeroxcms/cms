@@ -1,20 +1,24 @@
-<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-100 px-4">
+<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-100 px-4"
+     data-auth-login
+     data-connecting-prefix="{{ "login.connecting_to" | t }}"
+     data-redirecting-prefix="{{ "login.redirecting_to" | t }}"
+     data-provider-fallback="{{ "login.provider_fallback" | t }}">
   <div class="w-full max-w-md">
     <div class="text-center mb-8">
       <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 shadow-lg mb-4">
         <svg class="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ appIcon }}"></use></svg>
       </div>
       <h1 class="text-2xl font-bold text-gray-900 sm:text-3xl">{{ siteTitle }}</h1>
-      <p class="mt-2 text-gray-500">Sign in to manage your content</p>
+      <p class="mt-2 text-gray-500">{{ "view_strings.sections_login.sign_in_to_manage_your_content" | t }}</p>
     </div>
 
     <div class="bg-white rounded-2xl shadow-xl p-6 sm:p-8">
       {% if error %}
         <div class="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
           {% if isForbidden %}
-            You do not have permission to access the admin panel.
+            {{ "login.no_permission" | t }}
           {% else %}
-            Authentication error: {{ error }}
+            {{ "login.authentication_error" | t }}: {{ error }}
           {% endif %}
         </div>
       {% endif %}
@@ -26,7 +30,7 @@
              data-provider-label="{{ provider.label }}"
              class="flex items-center justify-center gap-3 w-full px-4 py-3 rounded-xl border-2 {{ provider.buttonClass }} font-semibold transition-all duration-150 group">
             <span class="{{ provider.iconClass }} transition-colors">{{ provider.icon | raw }}</span>
-            <span data-auth-provider-text>Continue with {{ provider.label }}</span>
+            <span data-auth-provider-text>{{ "login.continue_with" | t }} {{ provider.label }}</span>
           </a>
         {% endfor %}
       </div>
@@ -39,11 +43,11 @@
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z"></path>
         </svg>
-        <span data-auth-loading-text>Connecting...</span>
+        <span data-auth-loading-text>{{ "view_strings.sections_login.connecting" | t }}</span>
       </div>
 
       <p class="mt-6 text-center text-xs text-gray-400">
-{{ siteTitle }} is free to sign up for with your everyday account, but access is restricted to authorized users.
+        {{ siteTitle }} {{ "login.signup_notice" | t }}
       </p>
     </div>
   </div>
@@ -53,6 +57,7 @@
   (function() {
     function bindAuthLoading() {
       var links = Array.from(document.querySelectorAll('[data-auth-provider]'));
+      var login = document.querySelector('[data-auth-login]');
       var message = document.querySelector('[data-auth-loading-message]');
       var messageText = document.querySelector('[data-auth-loading-text]');
       if (!links.length || !(message instanceof HTMLElement)) return;
@@ -68,10 +73,13 @@
             return;
           }
 
-          var label = link.dataset.providerLabel || 'your sign-in provider';
+          var fallback = login instanceof HTMLElement ? login.dataset.providerFallback || 'your sign-in provider' : 'your sign-in provider';
+          var connectingPrefix = login instanceof HTMLElement ? login.dataset.connectingPrefix || 'Connecting to' : 'Connecting to';
+          var redirectingPrefix = login instanceof HTMLElement ? login.dataset.redirectingPrefix || 'Redirecting to' : 'Redirecting to';
+          var label = link.dataset.providerLabel || fallback;
           var text = link.querySelector('[data-auth-provider-text]');
-          if (text) text.textContent = 'Connecting to ' + label + '...';
-          if (messageText) messageText.textContent = 'Redirecting to ' + label + ' for sign in...';
+          if (text) text.textContent = connectingPrefix + ' ' + label + '...';
+          if (messageText) messageText.textContent = redirectingPrefix + ' ' + label + '...';
           message.classList.remove('hidden');
           message.classList.add('flex');
 

@@ -11,7 +11,7 @@ export async function usersPage(views: Fetcher, opts: BaseTemplateProps & {
     name: string;
     email: string;
     identityProviders: Array<{ provider: string; label: string }>;
-    rolesLabel: string;
+    roles: Array<{ label: string; labelKey: string }>;
     editHref: string;
     deleteAction: string;
     canDelete: boolean;
@@ -68,7 +68,7 @@ export async function userFormPage(views: Fetcher, opts: BaseTemplateProps & {
   email: string;
   error?: string;
   flash?: string;
-  roleOptions: Array<{ value: string; label: string; checked: boolean }>;
+  roleOptions: Array<{ value: string; label: string; labelKey: string; checked: boolean }>;
   creditBalance: number;
   creditAdjustAction: string;
   canShareCredits: boolean;

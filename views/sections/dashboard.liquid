@@ -1,15 +1,20 @@
 <div class="min-w-0 max-w-full overflow-x-hidden px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <div class="flex flex-col gap-4 mb-6 xl:flex-row xl:items-center xl:justify-between">
     <div>
-      <h2 class="text-2xl font-bold text-gray-900">{{ pageTitle }}</h2>
-      <p class="text-sm text-gray-500 mt-1">{{ pageCountLabel }}</p>
+      <h2 class="text-2xl font-bold text-gray-900">{{ "nav.pages" | t }}{% if pageTypeFilter != '' %}: {{ pageTypeFilter }}{% endif %}</h2>
+      <p class="text-sm text-gray-500 mt-1">
+        {% if paginatedCount %}{{ "pages.count.showing" | t }} {{ paginationStart }}-{{ paginationEnd }} {{ "pages.count.of" | t }} {% endif %}{{ pageCount }}
+        {% if statusFilter == 'live' %}{% if singularCount %}{{ "pages.count.live_page" | t }}{% else %}{{ "pages.count.live_pages" | t }}{% endif %}
+        {% elsif statusFilter == 'draft' %}{% if singularCount %}{{ "pages.count.draft_page" | t }}{% else %}{{ "pages.count.draft_pages" | t }}{% endif %}
+        {% else %}{% if singularCount %}{{ "pages.count.page" | t }}{% else %}{{ "pages.count.pages" | t }}{% endif %} {{ "pages.count.in_draft" | t }}{% endif %}
+      </p>
       {% if hasStatusFilters %}
         <div class="mt-3 inline-flex h-9 overflow-hidden rounded-lg border border-gray-300 bg-white text-sm font-semibold shadow-sm">
           {% for filter in statusFilters %}
             <a href="{{ filter.href }}"
                {% if filter.isActive %}aria-current="page"{% endif %}
                class="inline-flex items-center border-r border-gray-300 px-3 last:border-r-0 {% if filter.isActive %}bg-indigo-600 text-white{% else %}text-gray-700 hover:bg-gray-50{% endif %}">
-              {{ filter.label }}
+              {% if filter.translationKey %}{{ filter.translationKey | t }}{% else %}{{ filter.label }}{% endif %}
             </a>
           {% endfor %}
         </div>
@@ -22,38 +27,38 @@
         <input type="hidden" name="sort" value="updated_at">
         <input type="hidden" name="order" value="DESC">
         <input type="hidden" name="path1" value="">
-        <label for="dashboard_search" class="sr-only">Search pages</label>
-        <input id="dashboard_search" type="search" name="search1" value="{{ searchValue }}" placeholder="{{ searchPlaceholder }}"
+        <label for="dashboard_search" class="sr-only">{{ "view_strings.sections_dashboard.search_pages" | t }}</label>
+        <input id="dashboard_search" type="search" name="search1" value="{{ searchValue }}" placeholder="{% if pageTypeFilter != '' %}{{ "view_strings.sections_dashboard.search" | t }} {{ pageTypeFilter }} {{ "nav.pages" | t }}{% else %}{{ "view_strings.sections_dashboard.search_pages" | t }}{% endif %}"
                class="h-10 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
         <button type="submit"
-                title="Search"
-                aria-label="Search pages"
+                title="{{ "view_strings.sections_dashboard.search" | t }}"
+                aria-label="{{ "view_strings.sections_dashboard.search_pages" | t }}"
                 class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#search"></use></svg>
         </button>
       </form>
       {% if hasExportHref %}
         <a href="{{ exportHref }}"
-           title="Export CSV"
-           aria-label="Export CSV"
+           title="{{ "view_strings.sections_dashboard.export_csv" | t }}"
+           aria-label="{{ "view_strings.sections_dashboard.export_csv" | t }}"
            class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#download"></use></svg>
-          <span class="hidden lg:inline">Export CSV</span>
+          <span class="hidden lg:inline">{{ "view_strings.sections_dashboard.export_csv" | t }}</span>
         </a>
       {% endif %}
       {% if hasImportHref %}
         <a href="{{ importHref }}"
-           title="Import CSV"
-           aria-label="Import CSV"
+           title="{{ "view_strings.sections_dashboard.import_csv" | t }}"
+           aria-label="{{ "view_strings.sections_dashboard.import_csv" | t }}"
            class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#upload"></use></svg>
-          <span class="hidden lg:inline">Import CSV</span>
+          <span class="hidden lg:inline">{{ "view_strings.sections_dashboard.import_csv" | t }}</span>
         </a>
       {% endif %}
       <a href="/admin/pages/new"
          class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#plus"></use></svg>
-        <span class="hidden lg:inline">New Page</span>
+        <span class="hidden lg:inline">{{ "view_strings.sections_dashboard.new_page" | t }}</span>
       </a>
     </div>
   </div>
@@ -70,13 +75,13 @@
       {% if hasPages %}
       <thead class="bg-gray-50 border-b border-gray-200">
         <tr>
-          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Page</th>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_dashboard.page" | t }}</th>
           {% if showPageTypeColumn %}
-            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_dashboard.type" | t }}</th>
           {% endif %}
-          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
-          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_dashboard.weight" | t }}</th>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_dashboard.status" | t }}</th>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_dashboard.actions" | t }}</th>
         </tr>
       </thead>
       {% endif %}
@@ -119,7 +124,7 @@
                            class="min-w-0 w-20 max-w-full px-2 py-1 border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
                     <button type="submit"
                             class="shrink-0 px-2.5 py-1 rounded-lg border border-gray-300 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50">
-                      Save
+                      {{ "view_strings.sections_dashboard.save" | t }}
                     </button>
                     {% if page.hasLiveWeightDrift %}
                       <span title="Live weight is {{ page.liveWeight }}; publish to sync"
@@ -134,25 +139,25 @@
                 <div class="flex items-center gap-2">
                   {% if page.isPublished %}
                     <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Live
+                      <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>{{ "view_strings.sections_dashboard.live" | t }}
                     </span>
                     {% if page.isDraftMissing %}
-                      <span title="Published page is missing from drafts"
+                      <span title="{{ "view_strings.sections_dashboard.published_page_is_missing_from_drafts" | t }}"
                             class="inline-flex items-center text-amber-600">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#warning"></use></svg>
-                        <span class="sr-only">Published page is missing from drafts</span>
+                        <span class="sr-only">{{ "view_strings.sections_dashboard.published_page_is_missing_from_drafts" | t }}</span>
                       </span>
                     {% endif %}
                     {% if page.hasLiveLectDrift %}
-                      <span title="Live content differs from draft; publish to sync"
+                      <span title="{{ "view_strings.sections_dashboard.live_content_differs_from_draft_publish_to_sync" | t }}"
                             class="inline-flex items-center text-amber-600">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#warning"></use></svg>
-                        <span class="sr-only">Live content differs from draft</span>
+                        <span class="sr-only">{{ "view_strings.sections_dashboard.live_content_differs_from_draft" | t }}</span>
                       </span>
                     {% endif %}
                   {% else %}
                     <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                      <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>Draft
+                      <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>{{ "view_strings.sections_dashboard.draft" | t }}
                     </span>
                   {% endif %}
                 </div>
@@ -162,58 +167,58 @@
                   {% if page.isDraftMissing %}
                     <form method="POST" action="{{ page.pullAction }}" class="inline shrink-0">
                       <button type="submit"
-                              title="Ingest submission"
+                              title="{{ "view_strings.sections_dashboard.ingest_submission" | t }}"
                               aria-label="Ingest submission {{ page.name }}"
                               class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-indigo-600 hover:bg-indigo-50 hover:text-indigo-800 transition-colors">
                         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#download"></use></svg>
-                        <span class="sr-only">Ingest submission</span>
+                        <span class="sr-only">{{ "view_strings.sections_dashboard.ingest_submission" | t }}</span>
                       </button>
                     </form>
                   {% else %}
                     <a href="{{ page.readHref }}"
-                       title="View"
+                       title="{{ "view_strings.sections_dashboard.view" | t }}"
                        aria-label="View {{ page.name }}"
                        class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors">
                       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#eye"></use></svg>
-                      <span class="sr-only">View</span>
+                      <span class="sr-only">{{ "view_strings.sections_dashboard.view" | t }}</span>
                     </a>
                     <a href="{{ page.editHref }}"
-                       title="Edit"
+                       title="{{ "view_strings.sections_dashboard.edit" | t }}"
                        aria-label="Edit {{ page.name }}"
                        class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-indigo-600 hover:bg-indigo-50 hover:text-indigo-800 transition-colors">
                       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#pencil-square"></use></svg>
-                      <span class="sr-only">Edit</span>
+                      <span class="sr-only">{{ "view_strings.sections_dashboard.edit" | t }}</span>
                     </a>
                     {% if page.isPublished %}
                       <form method="POST" action="{{ page.unpublishAction }}" class="inline shrink-0"
-                            data-confirm="Unpublish this page?">
+                            data-confirm="{{ "view_strings.sections_dashboard.unpublish_this_page" | t }}">
                         <button type="submit"
-                                title="Unpublish"
+                                title="{{ "view_strings.sections_dashboard.unpublish" | t }}"
                                 aria-label="Unpublish {{ page.name }}"
                                 class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-yellow-600 hover:bg-yellow-50 hover:text-yellow-800 transition-colors">
                           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#eye-off"></use></svg>
-                          <span class="sr-only">Unpublish</span>
+                          <span class="sr-only">{{ "view_strings.sections_dashboard.unpublish" | t }}</span>
                         </button>
                       </form>
                     {% else %}
                       <form method="POST" action="{{ page.publishAction }}" class="inline shrink-0">
                         <button type="submit"
-                                title="Publish"
+                                title="{{ "view_strings.sections_dashboard.publish" | t }}"
                                 aria-label="Publish {{ page.name }}"
                                 class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-green-600 hover:bg-green-50 hover:text-green-800 transition-colors">
                           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#cloud-upload"></use></svg>
-                          <span class="sr-only">Publish</span>
+                          <span class="sr-only">{{ "view_strings.sections_dashboard.publish" | t }}</span>
                         </button>
                       </form>
                     {% endif %}
                     <form method="POST" action="{{ page.deleteAction }}" class="inline shrink-0"
-                          data-confirm="Move this page to trash?">
+                          data-confirm="{{ "view_strings.sections_dashboard.move_this_page_to_trash" | t }}">
                       <button type="submit"
-                              title="Trash"
+                              title="{{ "view_strings.sections_dashboard.trash" | t }}"
                               aria-label="Move {{ page.name }} to trash"
                               class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors">
                         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#trash-can"></use></svg>
-                        <span class="sr-only">Trash</span>
+                        <span class="sr-only">{{ "view_strings.sections_dashboard.trash" | t }}</span>
                       </button>
                     </form>
                   {% endif %}
@@ -225,7 +230,7 @@
           <tr>
             <td colspan="{{ emptyColspan }}" class="px-6 py-12 text-center text-gray-400">
               <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#document-plus"></use></svg>
-              No pages yet. <a href="/admin/pages/new" class="text-indigo-600 hover:underline">Create your first page</a>.
+              {{ "view_strings.sections_dashboard.no_pages_yet" | t }} <a href="/admin/pages/new" class="text-indigo-600 hover:underline">{{ "view_strings.sections_dashboard.create_your_first_page" | t }}</a>.
             </td>
           </tr>
         {% endif %}
@@ -234,20 +239,35 @@
   </div>
 
   {% if showPagination %}
-    <div class="mt-4 flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-      <div class="text-gray-500">Page {{ currentPage }} of {{ totalPages }}</div>
-      <div class="flex flex-wrap gap-2">
-        {% if hasFirstPage %}
-          <a href="{{ firstHref }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">First</a>
-        {% endif %}
+    <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
+      <p class="text-sm text-gray-500">
+        {{ "pages.count.showing" | t }} {{ paginationStart }}-{{ paginationEnd }} {{ "pages.count.of" | t }} {{ pageCount }}
+      </p>
+      <div class="flex items-center gap-2">
         {% if hasPreviousPage %}
-          <a href="{{ previousHref }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Previous</a>
+          <a href="{{ previousHref }}"
+             class="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#arrow-left"></use></svg>
+            {{ "common.previous" | t }}
+          </a>
+        {% else %}
+          <span class="inline-flex h-9 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-semibold text-gray-400">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#arrow-left"></use></svg>
+            {{ "common.previous" | t }}
+          </span>
         {% endif %}
+        <span class="text-xs font-medium text-gray-500">{{ "profile.pagination_page" | t }} {{ currentPage }} {{ "profile.pagination_of" | t }} {{ totalPages }}</span>
         {% if hasNextPage %}
-          <a href="{{ nextHref }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Next</a>
-        {% endif %}
-        {% if hasLastPage %}
-          <a href="{{ lastHref }}" class="inline-flex h-9 items-center rounded-lg border border-gray-300 bg-white px-3 font-semibold text-gray-700 hover:bg-gray-50">Last</a>
+          <a href="{{ nextHref }}"
+             class="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+            {{ "common.next" | t }}
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#chevron-right"></use></svg>
+          </a>
+        {% else %}
+          <span class="inline-flex h-9 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-semibold text-gray-400">
+            {{ "common.next" | t }}
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#chevron-right"></use></svg>
+          </span>
         {% endif %}
       </div>
     </div>

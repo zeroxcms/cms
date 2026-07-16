@@ -4,7 +4,9 @@ import { renderView } from './liquid';
 export interface RoleListItem {
   name: string;
   label: string;
+  labelKey: string;
   badge: string;
+  badgeKey: string;
   permissionCount: number;
   editHref: string;
   deleteAction: string;

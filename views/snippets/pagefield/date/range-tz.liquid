@@ -2,19 +2,19 @@
   <legend class="block text-sm font-medium text-gray-700 mb-1">{{ field.label }}</legend>
   <div class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
     <label for="{{ field.id }}_from" class="min-w-0 block">
-      <span class="block text-xs font-medium text-gray-500 mb-1">From</span>
+      <span class="block text-xs font-medium text-gray-500 mb-1">{{ "view_strings.snippets_pagefield_date_range_tz.from" | t }}</span>
       <input id="{{ field.id }}_from" type="datetime-local" name="{{ names.value }}"
              value="{{ values.value }}"
              class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
     </label>
     <label for="{{ field.id }}_to" class="min-w-0 block">
-      <span class="block text-xs font-medium text-gray-500 mb-1">To</span>
+      <span class="block text-xs font-medium text-gray-500 mb-1">{{ "view_strings.snippets_pagefield_date_range_tz.to" | t }}</span>
       <input id="{{ field.id }}_to" type="datetime-local" name="{{ names.end }}"
              value="{{ values.end }}"
              class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
     </label>
     <label for="{{ field.id }}_timezone" class="min-w-0 block">
-      <span class="block text-xs font-medium text-gray-500 mb-1">Timezone</span>
+      <span class="block text-xs font-medium text-gray-500 mb-1">{{ "view_strings.snippets_pagefield_date_range_tz.timezone" | t }}</span>
       <input id="{{ field.id }}_timezone" type="text" name="{{ names.timezone }}"
              value="{{ values.timezone }}"
              placeholder="Asia/Hong_Kong"

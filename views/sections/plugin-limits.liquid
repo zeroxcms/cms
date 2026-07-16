@@ -1,9 +1,9 @@
 <div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <div class="flex items-center justify-between gap-4 mb-4">
     <div>
-      <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref }}">← Plugins</a>
+      <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref }}">{{ "view_strings.sections_plugin_limits.plugins" | t }}</a>
       <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel }} · Limits</h2>
-      <p class="mt-1 text-sm text-gray-500">Quotas and operational limits this plugin declares. Page quotas are enforced by the CMS; operational limits are enforced by the plugin. Leave a value blank to use the plugin default; tick Unlimited to lift a default.</p>
+      <p class="mt-1 text-sm text-gray-500">{{ "view_strings.sections_plugin_limits.quotas_and_operational_limits_this_plugin_declares_page_quotas_are_enfor" | t }}</p>
     </div>
   </div>
 
@@ -13,7 +13,7 @@
 
   {% if unreachable %}
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-sm text-gray-500">
-      This plugin is not reachable right now, so its declared limits can't be listed.
+      {{ "view_strings.sections_plugin_limits.this_plugin_is_not_reachable_right_now_so_its_declared_limits_can_t_be_l" | t }}
     </div>
   {% else %}
     <form method="post" action="{{ saveAction }}">
@@ -21,11 +21,11 @@
         <table class="w-full min-w-[680px] text-left text-sm">
           <thead class="bg-gray-50 text-left text-xs uppercase text-gray-500">
             <tr>
-              <th class="px-4 py-2">Limit</th>
-              <th class="px-4 py-2">Scope</th>
-              <th class="px-4 py-2">Usage</th>
-              <th class="px-4 py-2">Effective</th>
-              <th class="px-4 py-2">Configure</th>
+              <th class="px-4 py-2">{{ "view_strings.sections_plugin_limits.limit" | t }}</th>
+              <th class="px-4 py-2">{{ "view_strings.sections_plugin_limits.scope" | t }}</th>
+              <th class="px-4 py-2">{{ "view_strings.sections_plugin_limits.usage" | t }}</th>
+              <th class="px-4 py-2">{{ "view_strings.sections_plugin_limits.effective" | t }}</th>
+              <th class="px-4 py-2">{{ "view_strings.sections_plugin_limits.configure" | t }}</th>
             </tr>
           </thead>
           <tbody>
@@ -44,17 +44,17 @@
                     <div class="text-xs text-gray-400 mt-0.5">Default: {{ limit.defaultLabel }}</div>
                   </td>
                   <td class="px-4 py-3">
-                    <input name="value_{{ limit.key }}" type="number" min="0" step="1" value="{{ limit.value }}" placeholder="Default"
+                    <input name="value_{{ limit.key }}" type="number" min="0" step="1" value="{{ limit.value }}" placeholder="{{ "view_strings.sections_plugin_limits.default" | t }}"
                            class="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                     <label class="flex items-center gap-2 text-sm text-gray-700 mt-2">
-                      <input name="unlimited_{{ limit.key }}" type="checkbox" value="1"{% if limit.unlimited %} checked{% endif %}> Unlimited
+                      <input name="unlimited_{{ limit.key }}" type="checkbox" value="1"{% if limit.unlimited %} checked{% endif %}> {{ "view_strings.sections_plugin_limits.unlimited" | t }}
                     </label>
                   </td>
                 </tr>
               {% endfor %}
             {% else %}
               <tr>
-                <td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500">This plugin declares no configurable limits.</td>
+                <td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500">{{ "view_strings.sections_plugin_limits.this_plugin_declares_no_configurable_limits" | t }}</td>
               </tr>
             {% endif %}
           </tbody>
@@ -62,7 +62,7 @@
       </div>
       {% if hasLimits %}
         <div class="mt-4">
-          <button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Save limits</button>
+          <button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white">{{ "view_strings.sections_plugin_limits.save_limits" | t }}</button>
         </div>
       {% endif %}
     </form>

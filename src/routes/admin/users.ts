@@ -8,7 +8,7 @@ import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 import { renderPage } from '../../utils/admin-render';
 import { allRoleOptions } from '../../utils/role-store';
-import { ROLE_LABELS, effectivePermissions, resolveRolePermissions, splitRoles } from '../../utils/roles';
+import { ROLE_LABELS, builtinRoleTranslationKey, effectivePermissions, resolveRolePermissions, splitRoles } from '../../utils/roles';
 import { adjustCredits, adjustSharedCredits, getSharedCreditBalance, listCreditLedger, listSharedCreditLedger, transferSharedCredits } from '../../utils/credits';
 import { creditLedgerRowForView } from '../../templates/users';
 import type { AppContext } from '../../utils/context';
@@ -62,14 +62,16 @@ interface UserIdentityProviderRow {
   provider: string;
 }
 
-function rolesLabel(role: string, options: Array<{ name: string; label: string }>): string {
+function rolesForView(role: string, options: Array<{ name: string; label: string }>): Array<{ label: string; labelKey: string }> {
   const byName = new Map(options.map((option) => [option.name, option.label]));
   return role
     .split(',')
     .map((name) => name.trim())
     .filter(Boolean)
-    .map((name) => byName.get(name) ?? ROLE_LABELS[name as keyof typeof ROLE_LABELS] ?? name)
-    .join(', ');
+    .map((name) => ({
+      label: byName.get(name) ?? ROLE_LABELS[name as keyof typeof ROLE_LABELS] ?? name,
+      labelKey: builtinRoleTranslationKey(name),
+    }));
 }
 
 function hasAdminRole(role: string): boolean {
@@ -135,7 +137,7 @@ usersRoutes.get('/users', async (c) => {
         name: user.name,
         email: user.email,
         identityProviders: providers.map((provider) => ({ provider, label: providerLabel(provider) })),
-        rolesLabel: rolesLabel(user.role, options),
+        roles: rolesForView(user.role, options),
         editHref: `/admin/users/${user.id}/edit`,
         deleteAction: `/admin/users/${user.id}/delete`,
         canDelete: user.id !== currentUserId && (!hasAdminRole(user.role) || (adminCount?.n ?? 0) > 1),
@@ -312,7 +314,12 @@ async function userForm(c: AppContext, user: User, error?: string, flash?: strin
     email: user.email,
     error,
     flash,
-    roleOptions: options.map((option) => ({ value: option.name, label: option.label, checked: held.has(option.name) })),
+    roleOptions: options.map((option) => ({
+      value: option.name,
+      label: option.label,
+      labelKey: builtinRoleTranslationKey(option.name),
+      checked: held.has(option.name),
+    })),
     creditBalance: user.credits ?? 0,
     creditAdjustAction: `/admin/users/${user.id}/credits`,
     canShareCredits,

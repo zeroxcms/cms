@@ -2,6 +2,12 @@ import { PERMISSIONS, USER_ROLES, type Env, type Permission, type UserRole } fro
 
 const VALID_ROLES = new Set<string>(USER_ROLES);
 
+/** Translation key for a built-in role, or blank for a custom role. */
+export function builtinRoleTranslationKey(role: string): string {
+  const normalized = role.trim().toLowerCase();
+  return VALID_ROLES.has(normalized) ? `roles.names.${normalized}` : '';
+}
+
 /** Built-in role display labels, shown in the Users/Roles admin. */
 export const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'Admin',

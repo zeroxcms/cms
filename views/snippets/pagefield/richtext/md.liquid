@@ -1,7 +1,7 @@
 <label for="{{ field.id }}" class="min-w-0 block">
   <span class="flex items-center justify-between gap-2 mb-1">
     <span class="block text-sm font-medium text-gray-700">{{ field.label }}{% if field.required %} *{% endif %}</span>
-    <span class="text-xs text-gray-400">Markdown / HTML</span>
+    <span class="text-xs text-gray-400">{{ "view_strings.snippets_pagefield_richtext_md.markdown_html" | t }}</span>
   </span>
   <textarea id="{{ field.id }}" name="{{ field.inputName }}" rows="10"
             placeholder="{{ field.placeholder }}"

@@ -1,34 +1,34 @@
 <div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <div class="flex items-center justify-between gap-4 mb-4">
-    <h2 class="text-2xl font-bold text-gray-900">Tags</h2>
+    <h2 class="text-2xl font-bold text-gray-900">{{ "view_strings.sections_tags.tags" | t }}</h2>
     <div class="flex flex-row gap-2 sm:items-center">
       <a href="/admin/taxonomies"
-         title="Taxonomies"
-         aria-label="Taxonomies"
+         title="{{ "view_strings.sections_tags.taxonomies" | t }}"
+         aria-label="{{ "view_strings.sections_tags.taxonomies" | t }}"
          class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#tag"></use></svg>
-        <span class="hidden lg:inline">Taxonomies</span>
+        <span class="hidden lg:inline">{{ "view_strings.sections_tags.taxonomies" | t }}</span>
       </a>
       <a href="/admin/tags/new"
-         title="New Tag"
-         aria-label="New Tag"
+         title="{{ "view_strings.sections_tags.new_tag" | t }}"
+         aria-label="{{ "view_strings.sections_tags.new_tag" | t }}"
          class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#plus"></use></svg>
-        <span class="hidden lg:inline">New Tag</span>
+        <span class="hidden lg:inline">{{ "view_strings.sections_tags.new_tag" | t }}</span>
       </a>
     </div>
   </div>
   <form method="GET" class="mb-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-    <label for="filter_taxonomy" class="sr-only">Filter by taxonomy</label>
+    <label for="filter_taxonomy" class="sr-only">{{ "view_strings.sections_tags.filter_by_taxonomy" | t }}</label>
     <select id="filter_taxonomy" name="filter_taxonomy" class="min-w-0 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm sm:w-auto">
-      <option value="">All taxonomies</option>
+      <option value="">{{ "view_strings.sections_tags.all_taxonomies" | t }}</option>
       {% for option in filterOptions %}
         <option value="{{ option.id }}" {% if option.selected %}selected{% endif %}>{{ option.name }}</option>
       {% endfor %}
     </select>
     <button type="submit"
-            title="Filter"
-            aria-label="Filter tags"
+            title="{{ "view_strings.sections_tags.filter" | t }}"
+            aria-label="{{ "view_strings.sections_tags.filter_tags" | t }}"
             class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">
       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#list-filter"></use></svg>
     </button>
@@ -38,9 +38,9 @@
       <thead class="bg-gray-50 border-b border-gray-200">
         <tr>
           <th class="w-10 px-3 py-3"></th>
-          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Weight</th>
-          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_tags.name" | t }}</th>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_tags.weight" | t }}</th>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_tags.type" | t }}</th>
           <th class="px-6 py-3"></th>
         </tr>
       </thead>
@@ -49,7 +49,7 @@
           {% for tag in tags %}
             <tr class="hover:bg-gray-50" data-id="{{ tag.id }}">
               <td class="px-3 py-3 text-gray-300">
-                <span data-reorder-handle title="Drag to reorder" aria-label="Drag to reorder" class="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-md hover:bg-gray-100 hover:text-gray-500">
+                <span data-reorder-handle title="{{ "view_strings.sections_tags.drag_to_reorder" | t }}" aria-label="{{ "view_strings.sections_tags.drag_to_reorder" | t }}" class="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-md hover:bg-gray-100 hover:text-gray-500">
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#menu"></use></svg>
                 </span>
               </td>
@@ -60,12 +60,12 @@
               <td class="px-6 py-3 text-sm text-gray-500">{{ tag.weight }}</td>
               <td class="px-6 py-3 text-sm text-gray-500">{{ tag.taxonomyName }}</td>
               <td class="px-6 py-3 text-right">
-                <a href="{{ tag.editHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
+                <a href="{{ tag.editHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">{{ "view_strings.sections_tags.edit" | t }}</a>
               </td>
             </tr>
           {% endfor %}
         {% else %}
-          <tr><td colspan="6" class="px-6 py-10 text-center text-gray-400">No tags yet.</td></tr>
+          <tr><td colspan="6" class="px-6 py-10 text-center text-gray-400">{{ "view_strings.sections_tags.no_tags_yet" | t }}</td></tr>
         {% endif %}
       </tbody>
     </table>

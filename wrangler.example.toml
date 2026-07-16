@@ -14,14 +14,16 @@ binding = "CF_VERSION_METADATA"
 [[d1_databases]]
 binding = "DB"
 database_name = "cms"
-database_id = "036882b7-c7d1-4163-9a40-cba28bc87233"
+# Replace with the id from `wrangler d1 create cms`.
+# (The two database ids must differ — local dev/tests key databases by id.)
+database_id = "00000000-0000-0000-0000-000000000001"
 migrations_dir = "migrations"
 
 [[d1_databases]]
 binding = "PUBLISHED_DB"
 database_name = "cms-published"
 # Replace with the id from `wrangler d1 create cms-published`.
-database_id = "94cc01db-8028-48eb-923f-e440423aeb3f"
+database_id = "00000000-0000-0000-0000-000000000002"
 migrations_dir = "migrations/published"
 
 [[r2_buckets]]
@@ -101,17 +103,19 @@ simple = { limit = 30, period = 60 }
 # and do not need to be listed here.
 # PUBLISH_TARGETS = "d1,r2"
 # Comma-separated list of enabled OAuth providers: "github", "google", "microsoft", "apple", "eventuai"
-ENABLED_PROVIDERS = "eventuai,github,google,microsoft"
+ENABLED_PROVIDERS = "github"
 # Per-provider OAuth client IDs – add the ones you use
-EVENTUAI_CLIENT_ID = "RnFAoAkXz1JLwaKx"
-GITHUB_CLIENT_ID = "Ov23lis6jG7x2nBmbFM1"
-GOOGLE_CLIENT_ID = "314543822201-i1n5al6ddo2afmuait7d2hormpgv3pue.apps.googleusercontent.com"
-MICROSOFT_CLIENT_ID = "768c819f-4981-420d-a0d6-529fd0b8642f"
-MICROSOFT_TENANT = "common"
+GITHUB_CLIENT_ID = "your-github-oauth-client-id"
+# GOOGLE_CLIENT_ID = ""
+# MICROSOFT_CLIENT_ID = ""
+# MICROSOFT_TENANT = "common"
 # APPLE_CLIENT_ID = ""
+# EVENTUAI_CLIENT_ID = ""
 # Shared redirect URI – registered with every enabled provider
-OAUTH_REDIRECT_URI = "https://cms.eventuai.com/auth/callback"
-CANONICAL_ORIGIN = "https://cms.eventuai.com"
+OAUTH_REDIRECT_URI = "https://cms.example.com/auth/callback"
+# Your CMS's public origin. Non-matching hostnames are redirected here (GET)
+# or rejected (mutations). Leave unset to skip canonical-host enforcement.
+CANONICAL_ORIGIN = "https://cms.example.com"
 SITE_TITLE = "0xCMS"
 # Default timezone applied to a page's start/end window when none is set.
 # UTC offset (e.g. "+0800") or an IANA name (e.g. "Asia/Hong_Kong").

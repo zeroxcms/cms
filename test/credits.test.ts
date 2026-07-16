@@ -865,6 +865,7 @@ describe('shared credit administration', () => {
     const html = await res.text();
     expect(html).toContain('sharedCreditBalance');
     expect(html).toContain('/admin/users/shared-credits');
+    expect(html.indexOf('data-privacy-table')).toBeLessThan(html.indexOf('/admin/users/shared-credits'));
   });
 
   it('lets a user donate their own credits to the pool from the profile', async () => {

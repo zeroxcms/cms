@@ -618,6 +618,7 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
     : '';
   const versions = structured?.versions.map((version) => ({
     date: formatVersionDate(version.created_at, defaultTimezone),
+    createdAt: version.created_at,
     description: version.action ?? '',
     href: `${versionHrefBase}?version=${version.id}`,
     active: selectedVersion?.id === version.id,
@@ -639,6 +640,7 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
     selectedVersion: selectedVersion
       ? {
           date: formatVersionDate(selectedVersion.created_at, defaultTimezone),
+          createdAt: selectedVersion.created_at,
           restoreAction: `revert:${selectedVersion.id}`,
           currentHref: page ? `/admin/pages/${page.id}/edit` : action,
         }

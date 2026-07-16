@@ -5,14 +5,14 @@
       <span class="sr-only">{{ field.label }} label</span>
       <input id="{{ field.id }}_label" type="text" name="{{ names.label }}"
              value="{{ values.label }}"
-             placeholder="Label"
+             placeholder="{{ "view_strings.snippets_pagefield_link_basic.label" | t }}"
              class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
     </label>
     <label for="{{ field.id }}_url" class="min-w-0 block">
       <span class="sr-only">{{ field.label }} URL</span>
       <input id="{{ field.id }}_url" type="text" name="{{ names.url }}"
              value="{{ values.url }}"
-             placeholder="/path-or-url"
+             placeholder="{{ "view_strings.snippets_pagefield_link_basic.path_or_url" | t }}"
              class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
     </label>
   </div>

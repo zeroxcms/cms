@@ -173,12 +173,17 @@
 
   function renderControls() {
     var revealed = storedRevealed();
+    var root = document.documentElement;
+    var revealLabel = root.getAttribute('data-privacy-reveal-label') || 'Reveal';
+    var hideLabel = root.getAttribute('data-privacy-hide-label') || 'Hide';
+    var revealFieldsLabel = root.getAttribute('data-privacy-reveal-fields-label') || 'Reveal private fields';
+    var hideFieldsLabel = root.getAttribute('data-privacy-hide-fields-label') || 'Hide private fields';
     document.querySelectorAll('[data-privacy-toggle]').forEach(function(button) {
       button.setAttribute('aria-pressed', revealed ? 'true' : 'false');
-      button.setAttribute('aria-label', revealed ? 'Hide private fields' : 'Reveal private fields');
-      button.setAttribute('title', (revealed ? 'Hide private fields' : 'Reveal private fields') + ' (Alt+Shift+R)');
+      button.setAttribute('aria-label', revealed ? hideFieldsLabel : revealFieldsLabel);
+      button.setAttribute('title', (revealed ? hideFieldsLabel : revealFieldsLabel) + ' (Alt+Shift+R)');
       var label = button.querySelector('[data-privacy-toggle-label]');
-      if (label) label.textContent = revealed ? 'Hide' : 'Reveal';
+      if (label) label.textContent = revealed ? hideLabel : revealLabel;
     });
   }
 

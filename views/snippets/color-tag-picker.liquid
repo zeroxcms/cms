@@ -27,8 +27,8 @@
               name="color"
               value=""
               class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-500 hover:bg-gray-50"
-              title="No color tag"
-              aria-label="No color tag"
+              title="{{ "view_strings.snippets_color_tag_picker.no_color_tag" | t }}"
+              aria-label="{{ "view_strings.snippets_color_tag_picker.no_color_tag" | t }}"
               role="menuitemradio"
               aria-checked="{% if current == blank %}true{% else %}false{% endif %}"
               data-color-tag-option
@@ -63,8 +63,8 @@
   </span>
 {% else %}
   <span class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-        title="No color tag"
-        aria-label="No color tag">
+        title="{{ "view_strings.snippets_color_tag_picker.no_color_tag" | t }}"
+        aria-label="{{ "view_strings.snippets_color_tag_picker.no_color_tag" | t }}">
     <span class="block h-3.5 w-3.5 rounded-full border border-dashed border-gray-400"></span>
   </span>
 {% endif %}

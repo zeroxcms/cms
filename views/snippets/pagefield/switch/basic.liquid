@@ -4,7 +4,7 @@
           class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           {% if field.required %}required{% endif %}>
     <option value=""{% if field.value == "" or field.value == nil %} selected{% endif %}>—</option>
-    <option value="yes"{% if field.value == "yes" %} selected{% endif %}>Yes</option>
-    <option value="no"{% if field.value == "no" %} selected{% endif %}>No</option>
+    <option value="yes"{% if field.value == "yes" %} selected{% endif %}>{{ "view_strings.snippets_pagefield_switch_basic.yes" | t }}</option>
+    <option value="no"{% if field.value == "no" %} selected{% endif %}>{{ "view_strings.snippets_pagefield_switch_basic.no" | t }}</option>
   </select>
 </label>

@@ -1,8 +1,10 @@
 import { currentCspNonce } from '../utils/request-context';
+import { builtinRoleTranslationKey } from '../utils/roles';
 import { isClientView, type RenderedView } from './liquid';
 
 export interface SidebarNavItem {
   label: string;
+  translationKey?: string;
   href: string;
   icon: string;
   isSettingsGroup?: boolean;
@@ -80,6 +82,8 @@ export interface BaseTemplateProps extends NavFlags {
   uiLocale: string;
   uiDirection: 'ltr' | 'rtl';
   catalogHref: string;
+  /** IANA timezone used by client-side date/time localization. */
+  systemTimezone: string;
   canManageUsers: boolean;
   canManageRoles: boolean;
   canManagePlugins: boolean;
@@ -127,6 +131,7 @@ export async function adminLayout(
     uiLocale: base.uiLocale,
     uiDirection: base.uiDirection,
     catalogHref: base.catalogHref,
+    systemTimezone: base.systemTimezone,
     approvedPluginAssets: opts.approvedPluginAssets,
     editorSync: opts.editorSync ?? false,
   });
@@ -165,6 +170,7 @@ export interface LayoutOptions extends NavFlags {
   uiLocale?: string;
   uiDirection?: 'ltr' | 'rtl';
   catalogHref?: string;
+  systemTimezone?: string;
   /** Admin-approved plugin assets available to the current page's plugin (if any). */
   approvedPluginAssets?: ApprovedPluginAssets;
   /** Load the CMS-owned live editor presence/sync script for plugin edit views. */
@@ -176,6 +182,10 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
   const normalizedUserAvatar = userAvatar.trim();
   const hasUserAvatar = normalizedUserAvatar.length > 0;
   const userRoleLabel = userRole.split(',').map((role) => role.trim()).filter(Boolean).join(', ');
+  const userRoleItems = userRole.split(',').map((role) => role.trim()).filter(Boolean).map((role) => ({
+    label: role,
+    labelKey: builtinRoleTranslationKey(role),
+  }));
   const nonce = currentCspNonce();
   const revision = opts.viewRevision || 'dev';
   const revisionQuery = assetRevisionQuery(revision);
@@ -188,6 +198,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     userAvatar: normalizedUserAvatar,
     hasUserAvatar,
     userRoleLabel,
+    userRoleItems,
     userCredits,
     sharedCredits,
     userInitial: userName.trim().charAt(0).toUpperCase() || '?',
@@ -217,6 +228,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     nonce,
     uiLocale: opts.uiLocale || 'en',
     uiDirection: opts.uiDirection || 'ltr',
+    systemTimezone: opts.systemTimezone || '+0000',
   };
   const payload = {
     nonce,

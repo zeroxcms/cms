@@ -1,5 +1,13 @@
 <!DOCTYPE html>
-<html lang="{{ uiLocale | default: 'en' }}" dir="{{ uiDirection | default: 'ltr' }}" class="h-full overflow-x-hidden bg-gray-50">
+<html
+  lang="{{ uiLocale | default: 'en' }}"
+  dir="{{ uiDirection | default: 'ltr' }}"
+  class="h-full overflow-x-hidden bg-gray-50"
+  data-privacy-reveal-label="{{ "privacy.reveal" | t }}"
+  data-privacy-hide-label="{{ "privacy.hide" | t }}"
+  data-privacy-reveal-fields-label="{{ "privacy.reveal_fields" | t }}"
+  data-privacy-hide-fields-label="{{ "privacy.hide_fields" | t }}"
+>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -30,13 +38,17 @@
         var isLight = theme === 'light';
         document.querySelectorAll('[data-theme-toggle]').forEach(function(toggle) {
           if (!(toggle instanceof HTMLButtonElement)) return;
+          var lightLabel = toggle.getAttribute('data-theme-light-label') || 'Light';
+          var darkLabel = toggle.getAttribute('data-theme-dark-label') || 'Dark';
+          var switchToLight = toggle.getAttribute('data-theme-switch-light') || 'Switch to light theme';
+          var switchToDark = toggle.getAttribute('data-theme-switch-dark') || 'Switch to dark theme';
           toggle.setAttribute('aria-pressed', isLight ? 'true' : 'false');
-          toggle.setAttribute('aria-label', isLight ? 'Switch to dark theme' : 'Switch to light theme');
+          toggle.setAttribute('aria-label', isLight ? switchToDark : switchToLight);
           toggle.querySelectorAll('[data-theme-icon]').forEach(function(icon) {
             icon.classList.toggle('hidden', icon.getAttribute('data-theme-icon') !== theme);
           });
           var label = toggle.querySelector('[data-theme-toggle-label]');
-          if (label) label.textContent = isLight ? 'Light' : 'Dark';
+          if (label) label.textContent = isLight ? lightLabel : darkLabel;
         });
       }
 
@@ -360,7 +372,7 @@
 <body class="h-full overflow-x-hidden">
   {% if admin %}
     <header class="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-gray-700 bg-gray-900 px-4 py-3 text-white shadow-xl md:hidden" data-admin-mobile-bar>
-      <a href="/admin" aria-label="Go to admin dashboard" class="flex min-w-0 items-center gap-3">
+      <a href="/admin" aria-label="{{ "shell.go_to_dashboard" | t }}" class="flex min-w-0 items-center gap-3">
         <svg class="h-7 w-7 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ appIcon }}"></use></svg>
         <span class="min-w-0 truncate text-lg font-bold tracking-tight">{{ siteTitle }}</span>
       </a>
@@ -369,7 +381,7 @@
               data-mobile-menu-open
               aria-controls="admin-mobile-menu"
               aria-expanded="false"
-              aria-label="Open menu">
+              aria-label="{{ "shell.open_menu" | t }}">
         <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#menu"></use></svg>
       </button>
     </header>
@@ -378,14 +390,14 @@
            class="fixed inset-0 z-50 hidden max-h-screen min-h-screen flex-col overflow-hidden bg-gray-900 text-white shadow-xl md:fixed md:inset-y-0 md:left-0 md:flex md:min-h-0 md:w-64"
            data-admin-sidebar>
       <div class="flex items-center justify-between gap-3 border-b border-gray-700 px-4 py-3 md:px-6 md:py-5">
-        <a href="/admin" aria-label="Go to admin dashboard" class="flex min-w-0 items-center gap-3">
+        <a href="/admin" aria-label="{{ "shell.go_to_dashboard" | t }}" class="flex min-w-0 items-center gap-3">
           <svg class="h-7 w-7 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ appIcon }}"></use></svg>
           <span class="min-w-0 truncate text-lg font-bold tracking-tight">{{ siteTitle }}</span>
         </a>
         <button type="button"
                 class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-700 text-gray-300 transition-colors hover:bg-gray-700 hover:text-white md:hidden"
                 data-mobile-menu-close
-                aria-label="Close menu">
+                aria-label="{{ "shell.close_menu" | t }}">
           <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#x"></use></svg>
         </button>
       </div>
@@ -395,7 +407,7 @@
             <details class="group overflow-hidden"{% if item.isActive %} open{% endif %}>
               <summary class="flex cursor-pointer list-none items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-gray-700 hover:text-white [&::-webkit-details-marker]:hidden {% if item.isActive %}font-semibold text-white{% else %}text-gray-300{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ item.icon }}"></use></svg>
-                <span>{{ item.label }}</span>
+                <span>{% if item.translationKey %}{{ item.translationKey | t }}{% else %}{{ item.label }}{% endif %}</span>
                 <svg class="ml-auto h-4 w-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#chevron-right"></use></svg>
               </summary>
               <div class="mt-1 ml-3 space-y-1 border-l border-gray-700 pl-3">
@@ -404,7 +416,7 @@
                      {% if settingItem.isActive %}aria-current="page"{% endif %}
                      class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors {% if settingItem.isActive %}bg-indigo-600 font-semibold text-white shadow-sm hover:bg-indigo-700{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ settingItem.icon }}"></use></svg>
-                    {{ settingItem.label }}
+                    {% if settingItem.translationKey %}{{ settingItem.translationKey | t }}{% else %}{{ settingItem.label }}{% endif %}
                   </a>
                 {% endfor %}
               </div>
@@ -414,7 +426,7 @@
                {% if item.isActive %}aria-current="page"{% endif %}
                class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors {% if item.isActive %}bg-indigo-600 font-semibold text-white shadow-sm hover:bg-indigo-700{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ item.icon }}"></use></svg>
-              {{ item.label }}
+              {% if item.translationKey %}{{ item.translationKey | t }}{% else %}{{ item.label }}{% endif %}
             </a>
           {% endif %}
         {% endfor %}
@@ -425,7 +437,7 @@
             <div class="relative w-8 h-8 shrink-0">
               <img src="{{ userAvatar }}"
                    class="w-8 h-8 rounded-full object-cover"
-                   alt="avatar"
+                   alt="{{ "profile.avatar" | t }}"
                    data-avatar-img>
               <div class="hidden w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-sm font-bold"
                    data-avatar-fallback>{{ userInitial }}</div>
@@ -436,20 +448,20 @@
           {% endif %}
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-white truncate">{{ userName }}</p>
-            <p class="text-xs text-gray-400 capitalize">{{ userRoleLabel }}</p>
+            <p class="text-xs text-gray-400">{% for role in userRoleItems %}{% if role.labelKey %}{{ role.labelKey | t }}{% else %}{{ role.label }}{% endif %}{% unless forloop.last %}, {% endunless %}{% endfor %}</p>
             <p class="mt-1 flex items-center gap-1 text-xs font-medium text-amber-400">
               <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="12" cy="12" r="8" stroke-width="2"></circle>
                 <path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 8.5v7M10 10.5h2.5a1.5 1.5 0 010 3H10m0 0h3"></path>
               </svg>
-              <span>{{ userCredits }} credit{% unless userCredits == 1 %}s{% endunless %}</span>
+              <span>{{ userCredits }} {% if userCredits == 1 %}{{ "shell.credit" | t }}{% else %}{{ "shell.credits" | t }}{% endif %}</span>
             </p>
             <p class="mt-0.5 flex items-center gap-1 text-xs font-medium text-sky-400">
               <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="9" cy="12" r="6.5" stroke-width="2"></circle>
                 <path stroke-width="2" stroke-linecap="round" d="M14.5 5.7a6.5 6.5 0 010 12.6"></path>
               </svg>
-              <span>{{ sharedCredits }} shared</span>
+              <span>{{ sharedCredits }} {{ "shell.shared" | t }}</span>
             </p>
           </div>
           <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#chevron-right"></use></svg>
@@ -458,17 +470,21 @@
           <button type="button"
                   class="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-700 px-2.5 py-1.5 text-sm text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
                   data-theme-toggle
+                  data-theme-light-label="{{ "shell.theme.light" | t }}"
+                  data-theme-dark-label="{{ "shell.theme.dark" | t }}"
+                  data-theme-switch-light="{{ "shell.theme.switch_to_light" | t }}"
+                  data-theme-switch-dark="{{ "shell.theme.switch_to_dark" | t }}"
                   aria-pressed="false"
-                  aria-label="Switch to light theme">
+                  aria-label="{{ "shell.theme.switch_to_light" | t }}">
             <svg class="h-4 w-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" data-theme-icon="light"><use href="{{ iconHrefPrefix }}#sun"></use></svg>
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" data-theme-icon="dark"><use href="{{ iconHrefPrefix }}#moon"></use></svg>
-            <span data-theme-toggle-label>Dark</span>
+            <span data-theme-toggle-label>{{ "shell.theme.dark" | t }}</span>
           </button>
           <form method="POST" action="/auth/logout" class="inline">
             <button type="submit"
                     class="flex shrink-0 items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#logout"></use></svg>
-              Sign out
+              {{ "shell.sign_out" | t }}
             </button>
           </form>
         </div>

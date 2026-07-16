@@ -1,16 +1,16 @@
 {% if hasSettings %}
   <section class="min-w-0 space-y-3 [&_input]:bg-[#141a26]">
-    <p class="text-sm font-semibold text-gray-700">Settings</p>
+    <p class="text-sm font-semibold text-gray-700">{{ "view_strings.snippets_structured_editor.settings" | t }}</p>
     {{ settingsHtml | raw }}
   </section>
 {% endif %}
 
 <div class="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-5 sm:p-6">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-    <p class="text-sm font-semibold text-gray-700">Content</p>
+    <p class="text-sm font-semibold text-gray-700">{{ "view_strings.snippets_structured_editor.content" | t }}</p>
     {% if hasLanguageContent %}
       <label for="structured_language" class="flex min-w-0 w-full items-center gap-2 text-xs text-gray-500 sm:w-auto">
-        Language
+        {{ "view_strings.snippets_structured_editor.language" | t }}
         <select
           id="structured_language"
           name="_language"
@@ -26,17 +26,17 @@
   {{ contentHtml | raw }}
   <div class="border-t border-gray-100 pt-5 space-y-4">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <p class="text-sm font-semibold text-gray-700">Blocks</p>
+      <p class="text-sm font-semibold text-gray-700">{{ "view_strings.snippets_structured_editor.blocks" | t }}</p>
       {% if hasBlockOptions %}
         <div class="flex min-w-0 w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
-          <label for="block_select" class="sr-only">Block type</label>
+          <label for="block_select" class="sr-only">{{ "view_strings.snippets_structured_editor.block_type" | t }}</label>
           <select id="block_select" name="block-select" class="min-w-0 w-full px-2 py-1 border border-gray-300 rounded-lg text-xs sm:w-auto">
             {% for option in blockOptions %}
               <option value="{{ option.value }}">{{ option.value }}</option>
             {% endfor %}
           </select>
           <button type="submit" name="action" value="block-add"
-                  class="w-full shrink-0 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-semibold sm:w-auto">Add Block</button>
+                  class="w-full shrink-0 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-semibold sm:w-auto">{{ "view_strings.snippets_structured_editor.add_block" | t }}</button>
         </div>
       {% endif %}
     </div>
@@ -55,14 +55,14 @@
                        class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg font-bold focus:border-indigo-500 focus:outline-none">
               </div>
               <button type="submit" name="action" value="{{ block.deleteAction }}"
-                      class="text-xs font-semibold text-red-600 hover:text-red-700">Delete Block</button>
+                      class="text-xs font-semibold text-red-600 hover:text-red-700">{{ "view_strings.snippets_structured_editor.delete_block" | t }}</button>
             </div>
           </div>
           <input type="hidden" name="#{{ block.index }}@_type" value="{{ block.type }}">
           <input type="hidden" name="#{{ block.index }}@_id" value="{{ block.id }}">
           {% if block.hasSettings %}
             <div class="space-y-3">
-              <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">Settings</p>
+              <p class="text-xs font-semibold uppercase tracking-wide text-gray-400">{{ "view_strings.snippets_structured_editor.settings" | t }}</p>
               {{ block.settingsHtml | raw }}
             </div>
           {% endif %}
@@ -70,7 +70,7 @@
         </div>
       {% endfor %}
     {% else %}
-      <p class="text-sm text-gray-400">No blocks yet.</p>
+      <p class="text-sm text-gray-400">{{ "view_strings.snippets_structured_editor.no_blocks_yet" | t }}</p>
     {% endif %}
   </div>
 </div>

@@ -1,24 +1,24 @@
 <div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <div class="flex items-center justify-between gap-4 mb-4">
     <div>
-      <h2 class="text-2xl font-bold text-gray-900">Roles</h2>
-      <p class="mt-1 text-sm text-gray-500">Assign permissions to roles. The admin role always has every permission.</p>
+      <h2 class="text-2xl font-bold text-gray-900">{{ "view_strings.sections_roles.roles" | t }}</h2>
+      <p class="mt-1 text-sm text-gray-500">{{ "view_strings.sections_roles.assign_permissions_to_roles_the_admin_role_always_has_every_permission" | t }}</p>
     </div>
     <a href="/admin/roles/new"
-       title="New Role"
-       aria-label="New Role"
+       title="{{ "view_strings.sections_roles.new_role" | t }}"
+       aria-label="{{ "view_strings.sections_roles.new_role" | t }}"
        class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">
       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#plus"></use></svg>
-      <span class="hidden lg:inline">New Role</span>
+      <span class="hidden lg:inline">{{ "view_strings.sections_roles.new_role" | t }}</span>
     </a>
   </div>
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
     <table class="w-full min-w-[560px] text-left">
       <thead class="bg-gray-50 border-b border-gray-200">
         <tr>
-          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
-          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
-          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Permissions</th>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_roles.role" | t }}</th>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_roles.type" | t }}</th>
+          <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_roles.permissions" | t }}</th>
           <th class="px-6 py-3"></th>
         </tr>
       </thead>
@@ -26,23 +26,23 @@
         {% if hasRoles %}
           {% for role in roles %}
             <tr class="hover:bg-gray-50">
-              <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ role.label }} <span class="text-gray-400 font-mono text-xs">{{ role.name }}</span></td>
+              <td class="px-6 py-3 text-sm font-medium text-gray-900">{% if role.labelKey %}{{ role.labelKey | t }}{% else %}{{ role.label }}{% endif %} <span class="text-gray-400 font-mono text-xs">{{ role.name }}</span></td>
               <td class="px-6 py-3 text-sm">
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">{{ role.badge }}</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">{{ role.badgeKey | t }}</span>
               </td>
               <td class="px-6 py-3 text-sm text-gray-700">{{ role.permissionCount }}</td>
               <td class="px-6 py-3 text-right whitespace-nowrap">
-                <a href="{{ role.editHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">Edit</a>
+                <a href="{{ role.editHref }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800">{{ "view_strings.sections_roles.edit" | t }}</a>
                 {% if role.canDelete %}
-                  <form method="POST" action="{{ role.deleteAction }}" class="inline" data-confirm="Delete this role? It will be removed from any users that have it.">
-                    <button type="submit" class="ml-3 text-sm font-medium text-red-600 hover:text-red-700">Delete</button>
+                  <form method="POST" action="{{ role.deleteAction }}" class="inline" data-confirm="{{ "view_strings.sections_roles.delete_this_role_it_will_be_removed_from_any_users_that_have_it" | t }}">
+                    <button type="submit" class="ml-3 text-sm font-medium text-red-600 hover:text-red-700">{{ "view_strings.sections_roles.delete" | t }}</button>
                   </form>
                 {% endif %}
               </td>
             </tr>
           {% endfor %}
         {% else %}
-          <tr><td colspan="4" class="px-6 py-10 text-center text-gray-400">No roles.</td></tr>
+          <tr><td colspan="4" class="px-6 py-10 text-center text-gray-400">{{ "view_strings.sections_roles.no_roles" | t }}</td></tr>
         {% endif %}
       </tbody>
     </table>

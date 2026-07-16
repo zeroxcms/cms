@@ -8,7 +8,11 @@ export interface CreditSummaryRow {
   label: string;
   description: string;
   chargeLabel: string;
+  chargeKey: string;
+  chargeValue: string;
   effectiveLabel: string;
+  effectiveFree: boolean;
+  effectiveValue: number;
   manageHref: string;
 }
 
@@ -19,7 +23,11 @@ export interface LimitSummaryRow {
   label: string;
   description: string;
   scopeLabel: string;
+  scopeKey: string;
+  scopeValue: string;
   effectiveLabel: string;
+  effectiveUnlimited: boolean;
+  effectiveValue: number | null;
   manageHref: string;
 }
 

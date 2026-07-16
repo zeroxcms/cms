@@ -14,14 +14,18 @@ import { renderPage, userCan } from '../../utils/admin-render';
 import {
   APP_ICON_OPTIONS,
   SIDEBAR_MENU_ITEMS,
+  SYSTEM_TIMEZONE_OPTIONS,
   defaultPluginNavWeight,
   loadAppBrandingSettings,
   loadAdminHomeSettings,
   loadSidebarChromeSettings,
+  loadSystemTimezone,
+  normalizeSystemTimezone,
   pluginSidebarKey,
   saveAdminHomeSettings,
   saveAppBrandingSettings,
   saveSidebarMenuSettings,
+  saveSystemTimezone,
 } from '../../utils/settings';
 import {
   buildTranslationCatalog,
@@ -307,7 +311,11 @@ settingsRoutes.get('/settings/credits', async (c) => {
       label: credit.def.label,
       description: credit.def.description,
       chargeLabel: creditSummaryChargeLabel(credit),
+      chargeKey: credit.def.charge === 'page_create' ? 'credits.summary.on_create' : 'credits.summary.metered_per',
+      chargeValue: (credit.def.charge === 'page_create' ? credit.def.pageType : credit.def.unit) ?? '',
       effectiveLabel: credit.value === 0 ? 'Free' : `${credit.value} credits`,
+      effectiveFree: credit.value === 0,
+      effectiveValue: credit.value,
       manageHref: manageHref(plugin.binding, 'credits'),
     }));
   }))).flat().sort(bySummaryOrder);
@@ -322,7 +330,17 @@ settingsRoutes.get('/settings/credits', async (c) => {
       label: limit.def.label,
       description: limit.def.description,
       scopeLabel: limitSummaryScopeLabel(limit.def),
+      scopeKey: limit.def.scope === 'per_second'
+        ? 'credits.summary.per_second'
+        : limit.def.scope === 'per_parent'
+          ? 'credits.summary.per_parent_page'
+          : limit.def.scope === 'per_pointer'
+            ? 'credits.summary.per'
+            : 'credits.summary.total',
+      scopeValue: limit.def.scope === 'per_pointer' ? (limit.def.pointerKey ?? '') : '',
       effectiveLabel: limit.value === null ? 'Unlimited' : `${limit.value}`,
+      effectiveUnlimited: limit.value === null,
+      effectiveValue: limit.value,
       manageHref: manageHref(plugin.binding, 'limits'),
     }));
   }))).flat().sort(bySummaryOrder);
@@ -343,16 +361,19 @@ settingsRoutes.get('/settings/credits', async (c) => {
 
 settingsRoutes.get('/settings/system', async (c) => {
   const fallbackName = c.env.SITE_TITLE ?? '0xCMS';
-  const [sidebarSettings, branding, adminHome, pluginItems] = await Promise.all([
+  const [sidebarSettings, branding, adminHome, pluginItems, systemTimezone] = await Promise.all([
     loadSidebarChromeSettings(c.env),
     loadAppBrandingSettings(c.env, fallbackName),
     loadAdminHomeSettings(c.env),
     pluginNav(c.env),
+    loadSystemTimezone(c.env),
   ]);
   const menuOption = (item: typeof SIDEBAR_MENU_ITEMS[number]) => ({
     value: item.key,
     label: item.label,
     description: item.description,
+    labelKey: `nav.${item.key}`,
+    descriptionKey: `settings.menu.${item.key}_description`,
     checked: sidebarSettings.items[item.key].visible,
     locked: item.key === 'system',
     weight: sidebarSettings.items[item.key].weight,
@@ -363,6 +384,7 @@ settingsRoutes.get('/settings/system', async (c) => {
       label: item.label,
       href: item.href,
       groupLabel: item.group === 'settings' ? 'Settings' : 'Main',
+      groupKey: item.group === 'settings' ? 'settings.groups.settings' : 'settings.groups.main',
       key,
       formKey: encodeURIComponent(key),
       checked: !sidebarSettings.hiddenPluginKeys.has(key),
@@ -374,8 +396,16 @@ settingsRoutes.get('/settings/system', async (c) => {
     appName: branding.appName,
     appIcon: branding.appIcon,
     adminHomePath: adminHome.href,
+    systemTimezone,
+    timezoneOptions: [
+      ...(SYSTEM_TIMEZONE_OPTIONS.some((option) => option.value === systemTimezone)
+        ? []
+        : [{ value: systemTimezone, label: systemTimezone }]),
+      ...SYSTEM_TIMEZONE_OPTIONS,
+    ].map((option) => ({ ...option, selected: option.value === systemTimezone })),
     iconOptions: [...APP_ICON_OPTIONS].sort((a, b) => a.label.localeCompare(b.label)).map((option) => ({
       ...option,
+      labelKey: `settings.icons.${option.value}`,
       selected: option.value === branding.appIcon,
     })),
     settingsGroupWeight: sidebarSettings.settingsGroupWeight,
@@ -383,7 +413,8 @@ settingsRoutes.get('/settings/system', async (c) => {
     settingsOptions: SIDEBAR_MENU_ITEMS.filter((item) => item.group === 'settings').map(menuOption),
     options: SIDEBAR_MENU_ITEMS.map(menuOption),
     pluginOptions,
-    flash: c.req.query('flash') === 'saved' ? 'System settings saved' : '',
+    flashKey: c.req.query('flash') === 'saved' ? 'settings.system_saved' : '',
+    errorKey: c.req.query('error') === 'invalid-timezone' ? 'settings.timezone_invalid' : '',
   });
 });
 
@@ -391,6 +422,11 @@ settingsRoutes.post('/settings/menu', async (c) => c.redirect('/admin/settings/s
 
 settingsRoutes.post('/settings/system', async (c) => {
   const form = await c.req.formData();
+  const submittedTimezone = form.get('system_timezone');
+  const systemTimezone = submittedTimezone === null
+    ? await loadSystemTimezone(c.env)
+    : normalizeSystemTimezone(submittedTimezone);
+  if (!systemTimezone) return c.redirect('/admin/settings/system?error=invalid-timezone', 303);
   const pluginItems = await pluginNav(c.env);
   const visibleKeys = form.getAll('visible_items').map(String);
   const weights = Object.fromEntries(SIDEBAR_MENU_ITEMS.map((item) => [item.key, form.get(`weight_${item.key}`)]));
@@ -411,6 +447,7 @@ settingsRoutes.post('/settings/system', async (c) => {
     saveAdminHomeSettings(c.env, {
       href: form.get('admin_home_path'),
     }),
+    saveSystemTimezone(c.env, systemTimezone),
     saveSidebarMenuSettings(c.env, visibleKeys, weights, {
       settingsGroupWeight: form.get('settings_group_weight'),
       pluginWeights,

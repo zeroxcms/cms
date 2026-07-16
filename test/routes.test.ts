@@ -31,6 +31,7 @@ interface RouteCase {
 }
 
 interface RenderPayload {
+  catalogHref?: string;
   layoutData: Record<string, unknown>;
   bodyView: null | {
     viewPath: string;
@@ -248,6 +249,21 @@ describe('auth routes', () => {
     { name: 'POST /auth/refresh without token', method: 'POST', path: '/auth/refresh', expectedStatus: 401, json: { error: 'no_refresh_token' } },
   ])('$name', async (route) => {
     await expectRoute(route);
+  });
+
+  it('loads the selected UI locale catalog on the public login page', async () => {
+    const login = await fetchWorker('/auth/login', {
+      headers: { Cookie: 'cms_ui_locale=zh-hant' },
+    });
+    const payload = renderPayload(await login.text());
+
+    expect(payload.layoutData.uiLocale).toBe('zh-hant');
+    expect(payload.catalogHref).toBe('/auth/i18n/catalog/zh-hant');
+
+    const catalog = await fetchWorker('/auth/i18n/catalog/zh-hant');
+    expect(catalog.status).toBe(200);
+    expect((await catalog.json<Record<string, string>>())['view_strings.sections_login.sign_in_to_manage_your_content'])
+      .toBe('登入以管理您的內容');
   });
 
   it('GET /auth/callback exchanges a valid OAuth response, upserts the user, and creates a session', async () => {
@@ -923,6 +939,32 @@ describe('admin routes', () => {
     ]));
   });
 
+  it('persists the selected interface locale and serves its translated profile catalog', async () => {
+    const cookie = await authCookie();
+    const saved = await fetchWorker('/admin/profile/locale', {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form({ locale: 'zh-hant' }),
+    });
+
+    expect(saved.status).toBe(303);
+    expect(saved.headers.get('Location')).toBe('/admin/profile?flash=profile.language_saved');
+    expect(saved.headers.getSetCookie().join('\n')).toContain('cms_ui_locale=zh-hant');
+
+    const profile = await fetchWorker('/admin/profile', {
+      headers: { Cookie: `${cookie}; cms_ui_locale=zh-hant` },
+    });
+    const payload = renderPayload(await profile.text());
+    expect(payload.layoutData.uiLocale).toBe('zh-hant');
+    expect(payload.catalogHref).toBe('/admin/i18n/catalog/zh-hant');
+
+    const catalog = await fetchWorker('/admin/i18n/catalog/zh-hant', {
+      headers: { Cookie: `${cookie}; cms_ui_locale=zh-hant` },
+    });
+    expect(catalog.status).toBe(200);
+    expect((await catalog.json<Record<string, string>>())['profile.title']).toBe('個人資料');
+  });
+
   it('disconnects a linked OAuth identity from the profile page', async () => {
     await env.DB.prepare(
       `INSERT INTO user_oauth_identities (user_id, provider, provider_user_id, oauth_id)
@@ -1026,11 +1068,13 @@ describe('admin routes', () => {
       expect.objectContaining({
         id: 1,
         canDelete: false,
+        roles: [{ label: 'Admin', labelKey: 'roles.names.admin' }],
         identityProviders: [{ provider: 'eventuai', label: 'Eventuai' }],
       }),
       expect.objectContaining({
         id: 2,
         canDelete: true,
+        roles: [{ label: 'Editor', labelKey: 'roles.names.editor' }],
         identityProviders: [
           { provider: 'github', label: 'GitHub' },
           { provider: 'eventuai', label: 'Eventuai' },
@@ -1655,8 +1699,8 @@ describe('admin routes', () => {
     expect(liveData.pageCountLabel).toBe('Showing 1-1 of 1 live page');
     expect(JSON.stringify(liveData.pages)).toContain('About');
     expect(JSON.stringify(liveData.pages)).not.toContain('Draft Only');
-    expect(draftData.statusFilters).toContainEqual({ label: 'Draft', href: '/admin?status=draft', isActive: true });
-    expect(liveData.statusFilters).toContainEqual({ label: 'Live', href: '/admin?status=live', isActive: true });
+    expect(draftData.statusFilters).toContainEqual({ label: 'Draft', translationKey: 'pages.status.draft', href: '/admin?status=draft', isActive: true });
+    expect(liveData.statusFilters).toContainEqual({ label: 'Live', translationKey: 'pages.status.live', href: '/admin?status=live', isActive: true });
   });
 
   it('GET /admin?status=live shows published pages missing from drafts with a pull action', async () => {
@@ -1706,7 +1750,7 @@ describe('admin routes', () => {
     expect(home.headers.get('Location')).toBe('/admin/plugins/events/dashboard');
     expect(list.status).toBe(200);
     expect(data.statusFilters).toContainEqual({
-      label: 'Live', href: '/admin/pages/list?status=live', isActive: true,
+      label: 'Live', translationKey: 'pages.status.live', href: '/admin/pages/list?status=live', isActive: true,
     });
     expect(submission).toMatchObject({
       isDraftMissing: true,
@@ -2282,6 +2326,9 @@ describe('permission-aware admin UI', () => {
     expect(adminPayload.layoutData.canManageUsers).toBe(true);
     expect(adminPayload.layoutData.canManageRoles).toBe(true);
     expect(adminPayload.layoutData.canManageMenu).toBe(true);
+    expect(adminPayload.layoutData.userRoleItems).toEqual([
+      { label: 'admin', labelKey: 'roles.names.admin' },
+    ]);
     expect(adminPayload.layoutData.sidebarSettingsNav).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'Users & Credits' }),
       expect.objectContaining({ label: 'Roles' }),
@@ -2310,6 +2357,7 @@ describe('permission-aware admin UI', () => {
         ['app_name', 'Control Room'],
         ['app_icon', 'settings'],
         ['admin_home_path', '/admin/plugins/events/dashboard'],
+        ['system_timezone', '+0800'],
         ['visible_items', 'pages'],
         ['visible_items', 'trash'],
         ['weight_pages', '50'],
@@ -2331,6 +2379,7 @@ describe('permission-aware admin UI', () => {
     expect(dashboardPayload.layoutData.showSidebarMenu).toBe(true);
     expect(dashboardPayload.layoutData.siteTitle).toBe('Control Room');
     expect(dashboardPayload.layoutData.appIcon).toBe('settings');
+    expect(dashboardPayload.layoutData.systemTimezone).toBe('+0800');
     expect((dashboardPayload.layoutData.sidebarNav as Array<{ label: string }>).map((item) => item.label)).toEqual([
       'Trash',
       'Settings',
@@ -2347,6 +2396,11 @@ describe('permission-aware admin UI', () => {
     expect(settingsData.appName).toBe('Control Room');
     expect(settingsData.appIcon).toBe('settings');
     expect(settingsData.adminHomePath).toBe('/admin/plugins/events/dashboard');
+    expect(settingsData.systemTimezone).toBe('+0800');
+    expect(settingsData.timezoneOptions).toEqual(expect.arrayContaining([
+      { value: '+0800', label: 'UTC+08:00 (+0800)', selected: true },
+      expect.objectContaining({ value: '+0000', selected: false }),
+    ]));
     expect(settingsData.iconOptions).toEqual(expect.arrayContaining([
       expect.objectContaining({ value: 'settings', selected: true }),
       expect.objectContaining({ value: 'calendar' }),
@@ -2375,6 +2429,21 @@ describe('permission-aware admin UI', () => {
 
     const dashboard = await fetchWorker('/admin', { headers: { Cookie: await authCookie() } });
     expect(dashboard.status).toBe(200);
+  });
+
+  it('rejects an invalid system timezone without replacing the saved value', async () => {
+    const response = await fetchWorker('/admin/settings/system', {
+      method: 'POST',
+      body: form({ system_timezone: 'Not/A_Timezone' }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get('Location')).toBe('/admin/settings/system?error=invalid-timezone');
+    const data = bodyData(await (await fetchWorker('/admin/settings/system', {
+      headers: { Cookie: await authCookie() },
+    })).text());
+    expect(data.systemTimezone).toBe('+0000');
   });
 
   it('requires menu:manage for the system settings page', async () => {

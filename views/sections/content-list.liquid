@@ -1,23 +1,23 @@
 <div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <div class="flex items-center justify-between gap-4 mb-4">
     <div>
-      <h2 class="text-2xl font-bold text-gray-900">Content List</h2>
-      <p class="mt-1 text-sm text-gray-500">Media files in the bucket and the current pages that reference them. Unlinked files can be removed manually from the bucket.</p>
+      <h2 class="text-2xl font-bold text-gray-900">{{ "view_strings.sections_content_list.content_list" | t }}</h2>
+      <p class="mt-1 text-sm text-gray-500">{{ "view_strings.sections_content_list.media_files_in_the_bucket_and_the_current_pages_that_reference_them_unli" | t }}</p>
     </div>
   </div>
 
   {% unless bucketConfigured %}
-    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">The media bucket is not configured for this CMS.</div>
+    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">{{ "view_strings.sections_content_list.the_media_bucket_is_not_configured_for_this_cms" | t }}</div>
   {% else %}
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
       <table class="w-full min-w-[820px] text-left">
         <thead class="bg-gray-50 border-b border-gray-200">
           <tr>
-            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Media</th>
-            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Size</th>
-            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Uploaded</th>
-            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Linked pages</th>
-            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_content_list.media" | t }}</th>
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_content_list.size" | t }}</th>
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_content_list.uploaded" | t }}</th>
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_content_list.linked_pages" | t }}</th>
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">{{ "view_strings.sections_content_list.actions" | t }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -28,7 +28,7 @@
                   <a href="{{ item.mediaHref }}" target="_blank" rel="noopener" class="block max-w-md truncate font-mono text-sm text-indigo-600 hover:text-indigo-800" title="{{ item.key }}">{{ item.key }}</a>
                 </td>
                 <td class="px-6 py-3 text-sm text-gray-500">{{ item.size }}</td>
-                <td class="px-6 py-3 text-sm text-gray-500">{{ item.uploadedAt }}</td>
+                <td class="px-6 py-3 text-sm text-gray-500">{{ item.uploadedAt | l10n_date }}</td>
                 <td class="px-6 py-3">
                   {% if item.hasLinkedPages %}
                     <div class="flex flex-wrap gap-x-3 gap-y-1">
@@ -37,23 +37,23 @@
                       {% endfor %}
                     </div>
                   {% else %}
-                    <span class="inline-flex rounded border border-amber-600 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-400">No linked pages</span>
+                    <span class="inline-flex rounded border border-amber-600 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-400">{{ "view_strings.sections_content_list.no_linked_pages" | t }}</span>
                   {% endif %}
                 </td>
                 <td class="px-6 py-3 text-right">
-                  <form method="post" action="{{ deleteAction }}" class="inline" data-confirm="Delete this file? This cannot be undone and may break pages that reference it.">
+                  <form method="post" action="{{ deleteAction }}" class="inline" data-confirm="{{ "view_strings.sections_content_list.delete_this_file_this_cannot_be_undone_and_may_break_pages_that_referenc" | t }}">
                     <input type="hidden" name="key" value="{{ item.key }}">
-                    <button type="submit" title="Delete file" aria-label="Delete {{ item.key }}"
+                    <button type="submit" title="{{ "view_strings.sections_content_list.delete_file" | t }}" aria-label="{{ "view_strings.sections_content_list.delete_file" | t }}"
                             class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50 hover:text-red-700">
                       <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#trash-can"></use></svg>
-                      <span class="sr-only">Delete</span>
+                      <span class="sr-only">{{ "view_strings.sections_content_list.delete" | t }}</span>
                     </button>
                   </form>
                 </td>
               </tr>
             {% endfor %}
           {% else %}
-            <tr><td colspan="5" class="px-6 py-10 text-center text-gray-400">No media files in the bucket.</td></tr>
+            <tr><td colspan="5" class="px-6 py-10 text-center text-gray-400">{{ "view_strings.sections_content_list.no_media_files_in_the_bucket" | t }}</td></tr>
           {% endif %}
         </tbody>
       </table>
@@ -61,7 +61,7 @@
 
     {% if hasNextPage %}
       <div class="mt-4 flex justify-end">
-        <a href="{{ nextHref }}" class="inline-flex h-10 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">Next page</a>
+        <a href="{{ nextHref }}" class="inline-flex h-10 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">{{ "view_strings.sections_content_list.next_page" | t }}</a>
       </div>
     {% endif %}
   {% endunless %}

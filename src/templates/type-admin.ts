@@ -15,6 +15,8 @@ export interface TypeAdminCopy {
   title: string;
   /** 'Page Type' */
   singular: string;
+  /** Translation catalog namespace under `types`. */
+  translationKey: 'page_types' | 'block_types';
   /** List-page subtitle. */
   description: string;
   /** Form JSON template, e.g. '/templates/page-type-form.json'. */
@@ -51,10 +53,10 @@ export async function typeListPage(views: Fetcher, opts: BaseTemplateProps & {
   ];
 
   const body = await renderView(views, '/templates/type-list.json', {
-    title: copy.title,
-    description: copy.description,
+    titleKey: `types.${copy.translationKey}.title`,
+    descriptionKey: `types.${copy.translationKey}.description`,
     newHref: `${copy.routeBase}/new`,
-    newLabel: `New ${copy.singular}`,
+    newLabelKey: `types.${copy.translationKey}.new`,
     hasTypes: items.length > 0,
     types: items,
     canWrite,
@@ -96,6 +98,7 @@ export async function typeFormPage(views: Fetcher, opts: BaseTemplateProps & Typ
     isEdit,
     readOnly,
     heading,
+    headingKey: `types.${copy.translationKey}.${mode}_title`,
     action: isEdit ? `${copy.routeBase}/${id}` : copy.routeBase,
     deleteAction: isEdit ? `${copy.routeBase}/${id}/delete` : '',
     error: error ?? '',

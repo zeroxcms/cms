@@ -3,6 +3,24 @@ import type { Env } from '../types';
 export const SIDEBAR_MENU_SETTING_KEY = 'admin.sidebar_menu.hidden_items';
 export const APP_BRANDING_SETTING_KEY = 'admin.app_branding';
 export const ADMIN_HOME_SETTING_KEY = 'admin.home';
+export const SYSTEM_TIMEZONE_SETTING_KEY = 'admin.system_timezone';
+export const DEFAULT_SYSTEM_TIMEZONE = '+0000';
+
+const FIXED_OFFSET_MINUTES = [
+  ...Array.from({ length: 53 }, (_, index) => -720 + index * 30),
+  345, 525, 765, 825,
+].sort((a, b) => a - b);
+
+export const SYSTEM_TIMEZONE_OPTIONS = [...new Set(FIXED_OFFSET_MINUTES)].map((totalMinutes) => {
+  const sign = totalMinutes < 0 ? '-' : '+';
+  const absolute = Math.abs(totalMinutes);
+  const hours = String(Math.floor(absolute / 60)).padStart(2, '0');
+  const minutes = String(absolute % 60).padStart(2, '0');
+  return {
+    value: `${sign}${hours}${minutes}`,
+    label: `UTC${sign}${hours}:${minutes} (${sign}${hours}${minutes})`,
+  };
+});
 export const DEFAULT_SETTINGS_GROUP_WEIGHT = 30;
 export const DEFAULT_PLUGIN_NAV_WEIGHT = 35;
 export const DEFAULT_PLUGIN_SETTINGS_NAV_WEIGHT = 80;
@@ -86,6 +104,36 @@ export interface AppBrandingSettings {
 
 export interface AdminHomeSettings {
   href: string;
+}
+
+export function normalizeSystemTimezone(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const timeZone = value.trim().slice(0, 100);
+  if (!timeZone) return null;
+  const fixedOffset = /^([+-])(\d{2})(\d{2})$/.exec(timeZone);
+  if (fixedOffset) {
+    const totalMinutes = (fixedOffset[1] === '-' ? -1 : 1)
+      * (Number(fixedOffset[2]) * 60 + Number(fixedOffset[3]));
+    if (Number(fixedOffset[3]) < 60 && totalMinutes >= -720 && totalMinutes <= 840) return timeZone;
+    return null;
+  }
+  try {
+    new Intl.DateTimeFormat('en', { timeZone }).format(0);
+    return timeZone;
+  } catch {
+    return null;
+  }
+}
+
+export async function loadSystemTimezone(env: Env): Promise<string> {
+  return normalizeSystemTimezone(await getSetting(env, SYSTEM_TIMEZONE_SETTING_KEY)) ?? DEFAULT_SYSTEM_TIMEZONE;
+}
+
+export async function saveSystemTimezone(env: Env, value: unknown): Promise<string> {
+  const timeZone = normalizeSystemTimezone(value);
+  if (!timeZone) throw new Error('Invalid system timezone');
+  await saveSetting(env, SYSTEM_TIMEZONE_SETTING_KEY, timeZone);
+  return timeZone;
 }
 
 export interface SidebarChromeSettings {

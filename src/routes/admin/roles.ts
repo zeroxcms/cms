@@ -57,7 +57,9 @@ rolesRoutes.get('/roles', async (c) => {
     roles: roles.map((role) => ({
       name: role.name,
       label: role.label,
+      labelKey: role.builtin ? `roles.names.${role.name}` : '',
       badge: role.builtin ? (role.locked ? 'admin' : 'built-in') : 'custom',
+      badgeKey: role.builtin ? (role.locked ? 'roles.types.admin' : 'roles.types.builtin') : 'roles.types.custom',
       permissionCount: role.locked ? totalPermCount : role.permissionCount,
       editHref: `/admin/roles/${encodeURIComponent(role.name)}/edit`,
       deleteAction: `/admin/roles/${encodeURIComponent(role.name)}/delete`,

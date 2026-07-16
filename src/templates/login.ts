@@ -32,6 +32,9 @@ export async function loginPage(views: Fetcher, opts: {
   providers: string[];
   error?: string;
   viewRevision?: string;
+  uiLocale: string;
+  uiDirection: 'ltr' | 'rtl';
+  catalogHref: string;
 }): Promise<string> {
   const { siteTitle, providers, error } = opts;
   const revisionQuery = assetRevisionQuery(opts.viewRevision);
@@ -56,5 +59,14 @@ export async function loginPage(views: Fetcher, opts: {
     }),
   });
 
-  return layout(views, { title: 'Sign In', siteTitle, appIcon: opts.appIcon, body, viewRevision: opts.viewRevision });
+  return layout(views, {
+    title: 'Sign In',
+    siteTitle,
+    appIcon: opts.appIcon,
+    body,
+    viewRevision: opts.viewRevision,
+    uiLocale: opts.uiLocale,
+    uiDirection: opts.uiDirection,
+    catalogHref: opts.catalogHref,
+  });
 }

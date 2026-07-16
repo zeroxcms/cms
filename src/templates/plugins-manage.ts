@@ -37,10 +37,11 @@ export async function pluginsManagePage(views: Fetcher, opts: BaseTemplateProps 
       title: plugin.manifestName || plugin.label || plugin.manifestId || plugin.url,
       subtitle: plugin.manifestId ? `${plugin.manifestId}${plugin.version ? ` · v${plugin.version}` : ''}` : plugin.url,
       url: plugin.url,
+      enabled: plugin.enabled,
       status: plugin.status,
+      statusKey: `plugins.status.${plugin.status}`,
       statusClass: STATUS_BADGE[plugin.status],
       toggleAction: `/admin/plugins-manage/${plugin.id}/toggle`,
-      toggleLabel: plugin.enabled ? 'Disable' : 'Enable',
       editHref: `/admin/plugins-manage/${plugin.id}/edit`,
       deleteAction: `/admin/plugins-manage/${plugin.id}/delete`,
       hasAssets: !!plugin.hasAssets,
@@ -71,16 +72,16 @@ export async function pluginFormPage(views: Fetcher, opts: BaseTemplateProps & {
 }): Promise<string> {
   const { isNew, id, label, url, enabled, sortOrder, config, secret, flash, error } = opts;
   const heading = isNew ? 'Register Plugin' : 'Edit Plugin';
-  const flashMessage = flash === 'secret-generated'
-    ? 'Plugin registered. Copy the secret below onto the plugin Worker.'
+  const flashMessageKey = flash === 'secret-generated'
+    ? 'plugins.form.registered_flash'
     : flash === 'secret-rotated'
-      ? 'Secret rotated. Update the plugin Worker to the new value — the old one no longer works.'
+      ? 'plugins.form.rotated_flash'
       : '';
 
   const body = await renderView(views, '/templates/plugin-form.json', {
-    heading,
+    headingKey: isNew ? 'plugins.form.register_title' : 'plugins.form.edit_title',
     action: isNew ? '/admin/plugins-manage' : `/admin/plugins-manage/${id}`,
-    submitLabel: isNew ? 'Register' : 'Save',
+    submitLabelKey: isNew ? 'plugins.form.register' : 'common.save',
     label,
     url,
     enabled,
@@ -88,8 +89,8 @@ export async function pluginFormPage(views: Fetcher, opts: BaseTemplateProps & {
     config,
     hasError: !!error,
     error: error ?? '',
-    hasFlash: !!flashMessage,
-    flashMessage,
+    hasFlash: !!flashMessageKey,
+    flashMessageKey,
     showSecret: !isNew,
     secret: secret ?? '',
     usesSharedSecret: !secret,

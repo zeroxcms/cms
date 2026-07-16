@@ -74,9 +74,27 @@
     });
 
     target.registerFilter('l10n_date', function (value, options) {
-      const date = value instanceof Date ? value : new Date(value);
+      var input = value;
+      if (typeof input === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(input)) {
+        input = input.replace(' ', 'T') + 'Z';
+      }
+      let date = value instanceof Date ? value : new Date(input);
       if (Number.isNaN(date.getTime())) return String(value == null ? '' : value);
-      const format = options && typeof options === 'object' ? options : { dateStyle: 'medium' };
+      const format = options && typeof options === 'object'
+        ? { ...options }
+        : { dateStyle: 'medium', timeStyle: 'short' };
+      if (!format.timeZone) {
+        const configuredTimezone = payload.layoutData && payload.layoutData.systemTimezone || '+0000';
+        const fixedOffset = /^([+-])(\d{2})(\d{2})$/.exec(configuredTimezone);
+        if (fixedOffset) {
+          const offsetMinutes = (fixedOffset[1] === '-' ? -1 : 1)
+            * (Number(fixedOffset[2]) * 60 + Number(fixedOffset[3]));
+          date = new Date(date.getTime() + offsetMinutes * 60 * 1000);
+          format.timeZone = 'UTC';
+        } else {
+          format.timeZone = configuredTimezone;
+        }
+      }
       return new Intl.DateTimeFormat(payload.layoutData && payload.layoutData.uiLocale || 'en', format).format(date);
     });
   }

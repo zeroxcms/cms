@@ -1,9 +1,9 @@
 <div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <div class="flex items-center justify-between gap-4 mb-4">
     <div>
-      <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref }}">← Plugins</a>
+      <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref }}">{{ "view_strings.sections_plugin_credits.plugins" | t }}</a>
       <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel }} · Credits</h2>
-      <p class="mt-1 text-sm text-gray-500">Chargeable actions this plugin declares. Prices set here are deducted from the acting user's credit balance and logged in the credit ledger. Leave a value blank to use the plugin default; enter 0 to make an action free.</p>
+      <p class="mt-1 text-sm text-gray-500">{{ "view_strings.sections_plugin_credits.chargeable_actions_this_plugin_declares_prices_set_here_are_deducted_fro" | t }}</p>
     </div>
   </div>
 
@@ -13,7 +13,7 @@
 
   {% if unreachable %}
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-sm text-gray-500">
-      This plugin is not reachable right now, so its declared credit costs can't be listed.
+      {{ "view_strings.sections_plugin_credits.this_plugin_is_not_reachable_right_now_so_its_declared_credit_costs_can_" | t }}
     </div>
   {% else %}
     <form method="post" action="{{ saveAction }}">
@@ -21,10 +21,10 @@
         <table class="w-full min-w-[680px] text-left text-sm">
           <thead class="bg-gray-50 text-left text-xs uppercase text-gray-500">
             <tr>
-              <th class="px-4 py-2">Action</th>
-              <th class="px-4 py-2">Charged</th>
-              <th class="px-4 py-2">Effective price</th>
-              <th class="px-4 py-2">Configure</th>
+              <th class="px-4 py-2">{{ "view_strings.sections_plugin_credits.action" | t }}</th>
+              <th class="px-4 py-2">{{ "view_strings.sections_plugin_credits.charged" | t }}</th>
+              <th class="px-4 py-2">{{ "view_strings.sections_plugin_credits.effective_price" | t }}</th>
+              <th class="px-4 py-2">{{ "view_strings.sections_plugin_credits.configure" | t }}</th>
             </tr>
           </thead>
           <tbody>
@@ -42,14 +42,14 @@
                     <div class="text-xs text-gray-400 mt-0.5">Default: {{ credit.defaultLabel }}</div>
                   </td>
                   <td class="px-4 py-3">
-                    <input name="value_{{ credit.key }}" type="number" min="0" step="1" value="{{ credit.value }}" placeholder="Default"
+                    <input name="value_{{ credit.key }}" type="number" min="0" step="1" value="{{ credit.value }}" placeholder="{{ "view_strings.sections_plugin_credits.default" | t }}"
                            class="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                   </td>
                 </tr>
               {% endfor %}
             {% else %}
               <tr>
-                <td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500">This plugin declares no chargeable actions.</td>
+                <td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500">{{ "view_strings.sections_plugin_credits.this_plugin_declares_no_chargeable_actions" | t }}</td>
               </tr>
             {% endif %}
           </tbody>
@@ -57,7 +57,7 @@
       </div>
       {% if hasCredits %}
         <div class="mt-4">
-          <button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Save prices</button>
+          <button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-xs font-semibold text-white">{{ "view_strings.sections_plugin_credits.save_prices" | t }}</button>
         </div>
       {% endif %}
     </form>

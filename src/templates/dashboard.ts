@@ -24,6 +24,7 @@ interface DashboardPagination {
 
 interface DashboardStatusFilterLink {
   label: string;
+  translationKey?: string;
   href: string;
   isActive: boolean;
 }
@@ -79,6 +80,7 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
     flash,
     hasFlash: !!flash,
     returnPath,
+    pageTypeFilter: pageTypeFilter ?? '',
     pageTitle: pageTypeFilter ? `Pages: ${pageTypeFilter}` : 'Pages',
     showPageTypeColumn,
     privacyTable: !!opts.privacyTable,
@@ -96,6 +98,10 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
     hasExportHref: !!exportHref,
     pageCount,
     pageCountLabel,
+    paginatedCount: !!pagination && pageCount > 0,
+    paginationStart,
+    paginationEnd,
+    singularCount: pageCount === 1,
     hasPages: pages.length > 0,
     showPagination: !!pagination && pagination.totalPages > 1,
     currentPage: pagination?.currentPage ?? 1,

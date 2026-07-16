@@ -83,9 +83,9 @@ type DashboardPageRow = Page & { isDraftMissing?: boolean };
 
 function statusFilterLinks(routeBase: string, active: DashboardStatusFilter) {
   return [
-    { label: 'All', href: routeBase, isActive: active === '' },
-    { label: 'Draft', href: `${routeBase}?status=draft`, isActive: active === 'draft' },
-    { label: 'Live', href: `${routeBase}?status=live`, isActive: active === 'live' },
+    { label: 'All', translationKey: 'pages.status.all', href: routeBase, isActive: active === '' },
+    { label: 'Draft', translationKey: 'pages.status.draft', href: `${routeBase}?status=draft`, isActive: active === 'draft' },
+    { label: 'Live', translationKey: 'pages.status.live', href: `${routeBase}?status=live`, isActive: active === 'live' },
   ];
 }
 
