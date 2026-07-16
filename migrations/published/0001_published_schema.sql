@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS live_page_tags(
 
 CREATE INDEX IF NOT EXISTS idx_live_pages_page_type_name ON live_pages(page_type, name);
 CREATE INDEX IF NOT EXISTS idx_live_pages_page_type_slug ON live_pages(page_type, slug);
+CREATE INDEX IF NOT EXISTS idx_live_pages_page_type_page_id ON live_pages(page_type, page_id);
+CREATE INDEX IF NOT EXISTS idx_live_pages_page_type_created_at ON live_pages(page_type, created_at);
+CREATE INDEX IF NOT EXISTS idx_live_pages_created_at_uuid ON live_pages(created_at, uuid);
 CREATE INDEX IF NOT EXISTS idx_live_page_tags_page_id ON live_page_tags(page_id);
 CREATE INDEX IF NOT EXISTS idx_live_page_tags_tag_id ON live_page_tags(tag_id);
 

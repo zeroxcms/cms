@@ -520,15 +520,18 @@ always hold the permission, and it can be granted to any custom role under
 
 ## Database schema
 
-After all current migrations, a clean installation has **29 application
+The flattened initial migrations create **29 application
 D1 tables**: 27 in the private CMS database and 2 in the published database.
 Live page editing also uses 2 SQLite tables inside each page's Durable Object;
 these are not D1 tables.
 
-The counts below exclude D1/SQLite internal tables, temporary migration tables
-such as `tags_new` and `admin_jobs_new`, and `used_form_tokens`, which migration
-`0015_drop_used_form_tokens.sql` removes after moving that coordination state to
-Durable Object storage.
+The counts below exclude D1/SQLite internal tables and Durable Object storage.
+The migration history was flattened into one initial file per D1 database in
+July 2026. These baselines are intended for fresh databases. Before deploying
+the flattened history over an existing installation, ensure every migration
+from the previous history through `0016_i18n.sql` (and published migration
+`0003_submission_scan_index.sql`) has already been applied; Wrangler will not
+re-run a modified `0001` that the database has previously recorded.
 
 An upgraded deployment may show additional legacy `live_*` tables in `DB`;
 current CMS routes ignore those tables and use `PUBLISHED_DB` instead.

@@ -1210,8 +1210,8 @@ cmsApiRoutes.get('/pages', async (c) => {
   }
   if (pointerKey && pointerValues.length > 0) {
     // The JSON path is inlined as a literal (pointerKey is validated to
-    // [a-z0-9_-] above): SQLite only uses the expression indexes from
-    // migration 0011 when the indexed expression appears verbatim in the
+    // [a-z0-9_-] above): SQLite only uses the expression indexes from the
+    // initial schema when the indexed expression appears verbatim in the
     // query — a bound parameter would force a full scan.
     const pointerPath = `'$._pointers.${pointerKey}'`;
     if (pointerValues.length === 1) {
