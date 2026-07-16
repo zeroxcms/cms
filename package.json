@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "setup": "node scripts/install.mjs",
     "dev": "npm run build:css && wrangler dev --local",
     "build:css": "tailwindcss -i styles/admin.css -o views/assets/admin.css --minify",
     "deploy": "npm run build:css && wrangler deploy",
