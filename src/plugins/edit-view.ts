@@ -31,6 +31,7 @@ import { sanitizePluginHtmlFragment } from '../security/plugin-sanitize';
 import { isPluginClientViewResponse, pluginTenantId, readPluginClientViewData, setPluginAuthHeaders } from '../security/plugin-proxy';
 import { listApprovals } from '../utils/plugin-assets';
 import { pluginViewRevision, pluginWorkerRevision } from '../utils/view-revision';
+import { resolveUiLocale } from '../utils/i18n';
 
 /** Editor context the CMS sends to a plugin's `/__plugin/edit` endpoint. */
 export interface EditViewContext {
@@ -42,6 +43,10 @@ export interface EditViewContext {
   backHref: string;
   /** Active editing language. */
   language: string;
+  /** Signed-in user's CMS interface locale (added by the dispatcher). */
+  uiLocale?: string;
+  /** Text direction for uiLocale. */
+  uiDirection?: 'ltr' | 'rtl';
   /** The page type being edited/created (one of the plugin's declared editViews or newViews). */
   pageType: string;
   page: {
@@ -76,6 +81,10 @@ export interface ReadViewContext {
   backHref: string;
   /** Active display language. */
   language: string;
+  /** Signed-in user's CMS interface locale (added by the dispatcher). */
+  uiLocale?: string;
+  /** Text direction for uiLocale. */
+  uiDirection?: 'ltr' | 'rtl';
   /** The page type being viewed (one of the plugin's declared readViews). */
   pageType: string;
   page: EditViewContext['page'];
@@ -154,6 +163,8 @@ async function dispatchPluginView(
   }
 
   const user = c.get('user');
+  const uiLocale = await resolveUiLocale(c);
+  const localizedContext = { ...context, uiLocale: uiLocale.code, uiDirection: uiLocale.direction };
   const headers = new Headers({
     'content-type': 'application/json',
     'x-cms-user': JSON.stringify({ id: user.sub, email: user.email, name: user.name, role: user.role }),
@@ -165,7 +176,7 @@ async function dispatchPluginView(
     upstream = await plugin.fetcher.fetch(`${PLUGIN_ORIGIN}${PLUGIN_PREFIX}${endpoint}`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(context),
+      body: JSON.stringify(localizedContext),
     });
   } catch (error) {
     console.error(`Plugin ${plugin.manifest.id} ${label} fetch failed:`, error);

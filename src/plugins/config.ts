@@ -2,9 +2,8 @@
 // Effective CMS config = static base (cms-config.ts) merged with
 // content types contributed by active plugins.
 //
-// Plugins may only extend blueprint/blocks/blockLists/taxonomies/taxonomyLists.
-// languages/defaultLanguage stay site-level (base only), so
-// language-only call sites can keep importing the static cmsConfig.
+// Plugins extend content types; the database locale registry extends the
+// content-language list. `mis` remains the site-level default.
 // ============================================================
 
 import { cmsConfig } from '../cms-config';
@@ -13,17 +12,25 @@ import { getPlugins } from './registry';
 import { dbPageTypeToContentTypes, listDbPageTypes } from '../utils/page-type-store';
 import { dbBlockTypeToContentTypes, listDbBlockTypes } from '../utils/block-type-store';
 import type { Env, PluginContentTypes } from '../types';
+import { DEFAULT_CONTENT_LANGUAGE, localeRegistry } from '../utils/i18n';
 
 const CONFIG_TTL_MS = 60_000;
 let cached: { config: CmsConfig; expires: number } | null = null;
 
 function mergeContentTypes(base: CmsConfig, fragment: PluginContentTypes | undefined): void {
   if (!fragment) return;
-  Object.assign(base.blueprint, fragment.blueprint ?? {});
-  Object.assign(base.blocks, fragment.blocks ?? {});
-  Object.assign(base.blockLists, fragment.blockLists ?? {});
-  Object.assign(base.taxonomies, fragment.taxonomies ?? {});
-  Object.assign(base.taxonomyLists, fragment.taxonomyLists ?? {});
+  safeAssign(base.blueprint, fragment.blueprint);
+  safeAssign(base.blocks, fragment.blocks);
+  safeAssign(base.blockLists, fragment.blockLists);
+  safeAssign(base.taxonomies, fragment.taxonomies);
+  safeAssign(base.taxonomyLists, fragment.taxonomyLists);
+}
+
+function safeAssign<T>(target: Record<string, T>, source: Record<string, T> | undefined): void {
+  for (const [key, value] of Object.entries(source ?? {})) {
+    if (key === '__proto__' || key === 'prototype' || key === 'constructor') continue;
+    target[key] = value;
+  }
 }
 
 /**
@@ -37,15 +44,14 @@ export async function resolveCmsConfig(env: Env): Promise<CmsConfig> {
   if (cached && cached.expires > Date.now()) return cached.config;
 
   const plugins = await getPlugins(env);
-  const [dbPageTypes, dbBlockTypes] = env.DB
-    ? await Promise.all([listDbPageTypes(env.DB), listDbBlockTypes(env.DB)])
-    : [[], []];
-  if (plugins.length === 0 && dbPageTypes.length === 0 && dbBlockTypes.length === 0) return cmsConfig;
+  const [dbPageTypes, dbBlockTypes, registry] = env.DB
+    ? await Promise.all([listDbPageTypes(env.DB), listDbBlockTypes(env.DB), localeRegistry(env)])
+    : [[], [], { contentLanguages: cmsConfig.languages }];
 
   // Shallow-clone the mutable record fields so we never mutate the base.
   const merged: CmsConfig = {
-    defaultLanguage: cmsConfig.defaultLanguage,
-    languages: cmsConfig.languages,
+    defaultLanguage: DEFAULT_CONTENT_LANGUAGE,
+    languages: registry.contentLanguages.length ? registry.contentLanguages : cmsConfig.languages,
     blueprint: { ...cmsConfig.blueprint },
     blocks: { ...cmsConfig.blocks },
     blockLists: { ...cmsConfig.blockLists },

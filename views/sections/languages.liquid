@@ -1,0 +1,48 @@
+<div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
+  <div class="mb-4 flex items-center justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">{{ "i18n.languages.title" | t | escape }}</h1>
+      <p class="mt-1 text-sm text-gray-500">{{ "i18n.languages.description" | t | escape }}</p>
+    </div>
+    <a href="/admin/settings/translations" class="inline-flex h-10 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">{{ "i18n.translations.title" | t | escape }}</a>
+  </div>
+
+  {% if hasFlash %}<div class="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{{ flash | escape }}</div>{% endif %}
+  {% if hasError %}<div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{{ error | escape }}</div>{% endif %}
+
+  <details class="mb-5 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <summary class="cursor-pointer font-semibold text-gray-900">{{ "i18n.languages.add" | t | escape }}</summary>
+    <form action="/admin/settings/languages" method="post" class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <label class="text-sm font-medium text-gray-700">{{ "i18n.fields.code" | t | escape }}<input name="code" required placeholder="fr-ca" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"></label>
+      <label class="text-sm font-medium text-gray-700">{{ "i18n.fields.label" | t | escape }}<input name="label" required class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"></label>
+      <label class="text-sm font-medium text-gray-700">{{ "i18n.fields.direction" | t | escape }}<select name="direction" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"><option value="ltr">LTR</option><option value="rtl">RTL</option></select></label>
+      <label class="text-sm font-medium text-gray-700">{{ "i18n.fields.weight" | t | escape }}<input name="weight" type="number" value="100" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"></label>
+      <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" name="content_enabled" checked> {{ "i18n.fields.content_enabled" | t | escape }}</label>
+      <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" name="ui_enabled"> {{ "i18n.fields.ui_enabled" | t | escape }}</label>
+      <div class="sm:col-span-2 lg:col-span-4"><button class="inline-flex h-10 items-center rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">{{ "common.add" | t | escape }}</button></div>
+    </form>
+  </details>
+
+  <div class="space-y-4">
+    {% for locale in locales %}
+      <form action="{{ locale.updateAction | escape }}" method="post" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
+          <label class="text-sm font-medium text-gray-700">{{ "i18n.fields.code" | t | escape }}<input value="{{ locale.code | escape }}" disabled class="mt-1 block w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono"></label>
+          <label class="text-sm font-medium text-gray-700 lg:col-span-2">{{ "i18n.fields.label" | t | escape }}<input name="label" value="{{ locale.label | escape }}" required class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"></label>
+          <label class="text-sm font-medium text-gray-700">{{ "i18n.fields.direction" | t | escape }}<select name="direction" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"><option value="ltr" {% if locale.direction == 'ltr' %}selected{% endif %}>LTR</option><option value="rtl" {% if locale.direction == 'rtl' %}selected{% endif %}>RTL</option></select></label>
+          <label class="text-sm font-medium text-gray-700">{{ "i18n.fields.fallback" | t | escape }}<select name="fallback_code" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"><option value="">—</option>{% for option in locale.fallbackOptions %}<option value="{{ option.code | escape }}" {% if option.selected %}selected{% endif %}>{{ option.label | escape }}</option>{% endfor %}</select></label>
+          <label class="text-sm font-medium text-gray-700">{{ "i18n.fields.weight" | t | escape }}<input name="weight" type="number" value="{{ locale.weight }}" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"></label>
+        </div>
+        <div class="mt-4 flex flex-wrap items-center gap-4">
+          <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" name="content_enabled" {% if locale.contentEnabled %}checked{% endif %} {% if locale.protected %}disabled{% endif %}> {{ "i18n.fields.content_enabled" | t | escape }}</label>
+          <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" name="ui_enabled" {% if locale.uiEnabled %}checked{% endif %} {% if locale.protected %}disabled{% endif %}> {{ "i18n.fields.ui_enabled" | t | escape }}</label>
+          <span class="flex-1"></span>
+          <a href="{{ locale.translationsHref | escape }}" class="text-sm font-semibold text-indigo-600 hover:text-indigo-800">{{ "i18n.translations.manage" | t | escape }}</a>
+          <button class="inline-flex h-10 items-center rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700">{{ "common.save" | t | escape }}</button>
+          {% unless locale.builtin %}<button form="delete-{{ locale.code | escape }}" class="inline-flex h-10 items-center rounded-lg border border-red-300 px-4 text-sm font-semibold text-red-700 hover:bg-red-50">{{ "common.delete" | t | escape }}</button>{% endunless %}
+        </div>
+      </form>
+      {% unless locale.builtin %}<form id="delete-{{ locale.code | escape }}" action="{{ locale.deleteAction | escape }}" method="post" data-confirm="Delete this locale and its database translations?"></form>{% endunless %}
+    {% endfor %}
+  </div>
+</div>

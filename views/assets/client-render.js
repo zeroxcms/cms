@@ -8,6 +8,8 @@
   const templateCache = new Map();
   const templateSource = new Map();
   const pluginOutputCache = new Map();
+  let translations = {};
+  const missingTranslations = new Set();
   let activeViewBasePath = null;
   const engine = new liquidjs.Liquid({
     cache: true,
@@ -43,6 +45,38 @@
       },
     },
   });
+
+  engine.registerFilter('t', function (key) {
+    const normalized = String(key == null ? '' : key);
+    if (Object.prototype.hasOwnProperty.call(translations, normalized)) return translations[normalized];
+    if (!missingTranslations.has(normalized)) {
+      missingTranslations.add(normalized);
+      console.warn('Missing translation:', normalized);
+    }
+    return normalized;
+  });
+
+  engine.registerFilter('l10n_number', function (value, options) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return String(value == null ? '' : value);
+    const format = options && typeof options === 'object' ? options : {};
+    return new Intl.NumberFormat(payload.layoutData && payload.layoutData.uiLocale || 'en', format).format(number);
+  });
+
+  engine.registerFilter('l10n_date', function (value, options) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value == null ? '' : value);
+    const format = options && typeof options === 'object' ? options : { dateStyle: 'medium' };
+    return new Intl.DateTimeFormat(payload.layoutData && payload.layoutData.uiLocale || 'en', format).format(date);
+  });
+
+  async function loadTranslations() {
+    if (!payload.catalogHref) return;
+    const response = await fetch(payload.catalogHref, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error('Unable to load translation catalog');
+    const catalog = await response.json();
+    translations = catalog && typeof catalog === 'object' ? catalog : {};
+  }
 
   function normalizePath(path) {
     return path.startsWith('/') ? path : '/' + path;
@@ -100,6 +134,8 @@
     const assetRevisionQuery = firstPluginAssetQuery || viewRevisionQuery;
     return {
       nonce: payload.nonce,
+      uiLocale: payload.layoutData && payload.layoutData.uiLocale || 'en',
+      uiDirection: payload.layoutData && payload.layoutData.uiDirection || 'ltr',
       viewRevision: revision,
       viewRevisionQuery,
       assetRevisionQuery,
@@ -585,6 +621,7 @@
 
   async function main() {
     try {
+      await loadTranslations();
       const layoutData = { ...(payload.layoutData || {}) };
       if (payload.bodyView) {
         const body = await withViewBasePath(payload.bodyView.viewBasePath, async () => {

@@ -1,0 +1,8 @@
+{
+  "common": {"add":"Add","save":"Save","delete":"Delete","open":"Open"},
+  "i18n": {
+    "languages":{"title":"Languages","description":"Manage content languages and CMS interface locales stored in the database.","add":"Add language"},
+    "translations":{"title":"Translations","description":"Database values override bundled locale files. Missing values fall back to English, then to the translation key.","manage":"Manage translations","save":"Save translation","empty":"No database translation overrides for this locale."},
+    "fields":{"code":"Locale code","label":"Label","direction":"Direction","fallback":"Fallback","weight":"Weight","content_enabled":"Content language","ui_enabled":"CMS interface","locale":"Locale","key":"Translation key","value":"Translated value"}
+  }
+}

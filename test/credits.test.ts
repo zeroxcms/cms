@@ -60,7 +60,7 @@ let pluginUrl = '';
 
 async function registerPlugin(): Promise<string> {
   const url = `https://plugin-${crypto.randomUUID()}.local`;
-  await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Events', url).run();
+  await env.DB.prepare('INSERT INTO plugins (label, url, enabled, secret) VALUES (?, ?, 1, ?)').bind('Events', url, PLUGIN_SECRET).run();
   __injectPluginFetcher(url, {
     fetch: async (input: RequestInfo | URL): Promise<Response> => {
       const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;

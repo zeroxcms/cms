@@ -57,7 +57,7 @@ export function withSecurityHeaders(response: Response, cspNonce = ''): Response
 export function withSensitiveCacheHeaders(response: Response, request: Request): Response {
   const secured = new Response(response.body, response);
   const pathname = new URL(request.url).pathname;
-  if ((pathname.startsWith('/admin') || pathname.startsWith('/auth')) && !secured.headers.has('Cache-Control')) {
+  if ((pathname.startsWith('/admin') || pathname.startsWith('/auth') || pathname.startsWith('/__cms')) && !secured.headers.has('Cache-Control')) {
     secured.headers.set('Cache-Control', 'no-store');
     secured.headers.set('Pragma', 'no-cache');
   }

@@ -172,6 +172,62 @@ function decodeBase64UrlJson(value: string): Record<string, unknown> | null {
   }
 }
 
+function decodeBase64UrlBytes(value: string): Uint8Array {
+  const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+interface AppleJwk extends JsonWebKey { kid?: string; alg?: string; use?: string }
+let appleKeyCache: { keys: AppleJwk[]; expires: number } | null = null;
+
+async function appleSigningKeys(): Promise<AppleJwk[]> {
+  if (appleKeyCache && appleKeyCache.expires > Date.now()) return appleKeyCache.keys;
+  const response = await fetch('https://appleid.apple.com/auth/keys', {
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) return [];
+  const body = await response.json<{ keys?: unknown }>();
+  const keys = Array.isArray(body.keys)
+    ? body.keys.filter((key): key is AppleJwk => !!key && typeof key === 'object')
+    : [];
+  appleKeyCache = { keys, expires: Date.now() + 60 * 60 * 1000 };
+  return keys;
+}
+
+async function verifiedAppleIdToken(
+  idToken: string,
+  opts: { issuer: string; audience: string; nonce: string },
+): Promise<Record<string, unknown> | null> {
+  try {
+    const parts = idToken.split('.');
+    if (parts.length !== 3) return null;
+    const [encodedHeader, encodedClaims, encodedSignature] = parts;
+    const header = decodeBase64UrlJson(encodedHeader);
+    if (header?.alg !== 'RS256' || typeof header.kid !== 'string') return null;
+
+    const jwk = (await appleSigningKeys()).find((key) => key.kid === header.kid && (!key.alg || key.alg === 'RS256'));
+    if (!jwk) return null;
+    const key = await crypto.subtle.importKey(
+      'jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify'],
+    );
+    const valid = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5',
+      key,
+      decodeBase64UrlBytes(encodedSignature),
+      new TextEncoder().encode(`${encodedHeader}.${encodedClaims}`),
+    );
+    if (!valid) return null;
+
+    const claims = idTokenClaims(idToken, opts);
+    if (!claims || claims.nonce !== opts.nonce) return null;
+    return claims;
+  } catch {
+    return null;
+  }
+}
+
 function idTokenClaims(
   idToken: string,
   opts: { issuer?: string; audience: string },
@@ -189,7 +245,7 @@ function idTokenClaims(
     return null;
   }
   const exp = claims['exp'];
-  if (typeof exp === 'number' && exp < Math.floor(Date.now() / 1000)) return null;
+  if (typeof exp !== 'number' || exp < Math.floor(Date.now() / 1000)) return null;
   return claims;
 }
 
@@ -436,6 +492,9 @@ authRoutes.get('/start', async (c) => {
   if (providerConfig.responseMode) {
     params.set('response_mode', providerConfig.responseMode);
   }
+  if (providerConfig.userInfoSource === 'id_token') {
+    params.set('nonce', state);
+  }
 
   return c.redirect(`${providerConfig.authUrl}?${params.toString()}`);
 });
@@ -518,10 +577,16 @@ async function handleOAuthCallback(c: AppContext, params: OAuthCallbackParams): 
     if (!idToken) {
       return c.redirect('/auth/login?error=no_id_token');
     }
-    rawUser = idTokenClaims(idToken, {
-      issuer: providerConfig.idTokenIssuer,
-      audience: credentials.clientId,
-    });
+    rawUser = providerName === 'apple' && providerConfig.idTokenIssuer
+      ? await verifiedAppleIdToken(idToken, {
+        issuer: providerConfig.idTokenIssuer,
+        audience: credentials.clientId,
+        nonce: storedState,
+      })
+      : idTokenClaims(idToken, {
+        issuer: providerConfig.idTokenIssuer,
+        audience: credentials.clientId,
+      });
     if (!rawUser) {
       return c.redirect('/auth/login?error=invalid_id_token');
     }

@@ -15,6 +15,11 @@ export interface Lect {
   _tags?: Lect[];
 }
 
+// These names have special behaviour on ordinary JavaScript objects. Lect keys
+// can originate in stored JSON and plugin blueprints, so never copy them into
+// application-owned records where they could mutate or shadow prototypes.
+const UNSAFE_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
 export type LectItem = Lect;
 
 export interface FieldProps {
@@ -103,6 +108,7 @@ export function getBlueprintProps(configBlueprint: BlueprintEntry[]): BlueprintP
     }
 
     for (const [name, definitions] of Object.entries(entry)) {
+      if (!isSafeObjectKey(name)) continue;
       items.push(getItemProps(name, definitions));
     }
   }
@@ -134,6 +140,7 @@ export function blueprintToLect(
     }
 
     for (const [name, definitions] of Object.entries(entry)) {
+      if (!isSafeObjectKey(name)) continue;
       lect[name] = [blueprintItemToLect(definitions, defaultLanguage)];
     }
   }
@@ -249,6 +256,7 @@ export function getLectScalar(lect: Lect, rawName: string): string {
 }
 
 export function getLectPointer(lect: Lect, rawName: string): string {
+  if (!isSafeObjectKey(rawName)) return '';
   return scalarToString(lect._pointers?.[rawName] ?? '');
 }
 
@@ -267,6 +275,7 @@ export function getLectLocalizedValue(
 }
 
 export function getLectItems(lect: Lect, name: string): LectItem[] {
+  if (!isSafeObjectKey(name)) return [];
   const value = lect[name];
   return Array.isArray(value) ? value.filter(isPlainObject).map((item) => normalizePlainLect(item)) : [];
 }
@@ -308,6 +317,7 @@ function getItemProps(name: string, definitions: BlueprintEntry[]): ItemProps {
       continue;
     }
     for (const [nestedName, nestedDefinitions] of Object.entries(definition)) {
+      if (!isSafeObjectKey(nestedName)) continue;
       items.push(getItemProps(nestedName, nestedDefinitions));
     }
   }
@@ -334,6 +344,7 @@ function blueprintItemToLect(definitions: BlueprintEntry[], defaultLanguage: str
     }
 
     for (const [nestedName, nestedDefinitions] of Object.entries(definition)) {
+      if (!isSafeObjectKey(nestedName)) continue;
       item[nestedName] = [blueprintItemToLect(nestedDefinitions, defaultLanguage)];
     }
   }
@@ -358,6 +369,7 @@ function legacyStructuredToLect(value: LegacyStructuredLike): Lect {
   }
 
   for (const [key, items] of Object.entries(value.items ?? {})) {
+    if (!isSafeObjectKey(key)) continue;
     lect[key] = Array.isArray(items) ? items.map((item) => legacyStructuredToLect(item)) : [];
   }
 
@@ -373,6 +385,7 @@ function normalizePlainLect(value: Record<string, unknown>): Lect {
   const lect: Lect = {};
 
   for (const [key, entry] of Object.entries(value)) {
+    if (!isSafeObjectKey(key)) continue;
     if (key === '_pointers') {
       const pointers = normalizeScalarRecord(entry);
       if (Object.keys(pointers).length) lect._pointers = pointers;
@@ -416,6 +429,7 @@ function normalizePlainLect(value: Record<string, unknown>): Lect {
 function deepMergeLect(target: Lect, source: Lect): Lect {
   const result: Lect = { ...target };
   for (const [key, sourceValue] of Object.entries(source)) {
+    if (!isSafeObjectKey(key)) continue;
     const targetValue = result[key];
 
     if (Array.isArray(sourceValue)) {
@@ -444,6 +458,7 @@ function lectTokens(lect: Lect, language: string, defaultLanguage: string): Reco
   const tokens: Record<string, PrintToken> = {};
 
   for (const [key, value] of Object.entries(lect)) {
+    if (!isSafeObjectKey(key)) continue;
     if (key === '_blocks' || key === '_tags') continue;
 
     if (key === '_pointers') {
@@ -483,6 +498,7 @@ function lectTokens(lect: Lect, language: string, defaultLanguage: string): Reco
 function localizedObject(value: Record<string, unknown>, language: string, defaultLanguage: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
+    if (!isSafeObjectKey(key)) continue;
     if (isScalar(entry)) {
       result[key] = entry;
     } else if (isScalarRecord(entry)) {
@@ -512,6 +528,7 @@ function normalizeBlockLect(value: unknown, fallbackWeight: number): Lect {
 }
 
 function ensureItem(lect: Lect, name: string, index: number): LectItem {
+  if (!isSafeObjectKey(name)) return defaultLectItem();
   const items = Array.isArray(lect[name]) ? lect[name] as LectItem[] : [];
   lect[name] = items;
   items[index] = normalizeLect(items[index] ?? defaultLectItem());
@@ -530,12 +547,14 @@ function ensureNestedItem(
 }
 
 function setPointerValue(lect: Lect, rawName: string, value: LectScalar): void {
+  if (!isSafeObjectKey(rawName)) return;
   lect._pointers ||= {};
   lect._pointers[rawName] = value;
 }
 
 function setLocalizedValue(lect: Lect, rawName: string, language: string, value: LectScalar): void {
   const path = fieldPath(rawName);
+  if (!path.length || !isSafeObjectKey(language)) return;
   const parent = ensurePathParent(lect, path);
   const key = path[path.length - 1];
   const current = parent[key];
@@ -546,11 +565,13 @@ function setLocalizedValue(lect: Lect, rawName: string, language: string, value:
 
 function setScalarPath(lect: Lect, rawName: string, value: LectScalar): void {
   const path = fieldPath(rawName);
+  if (!path.length) return;
   const parent = ensurePathParent(lect, path);
   parent[path[path.length - 1]] = value;
 }
 
 function getPathValue(lect: Lect, path: string[]): LectValue | undefined {
+  if (!path.length) return undefined;
   let current: LectValue | undefined = lect;
   for (const key of path) {
     if (!isPlainObject(current)) return undefined;
@@ -576,7 +597,8 @@ function fieldName(raw: string, prefix = ''): string {
 }
 
 function fieldPath(raw: string): string[] {
-  return raw.split('__').filter(Boolean);
+  const path = raw.split('__').filter(Boolean);
+  return path.every(isSafeObjectKey) ? path : [];
 }
 
 function formEntries(form: FormLike): Array<[string, FormDataEntryValue]> {
@@ -597,6 +619,7 @@ function normalizeScalarRecord(value: unknown): Record<string, LectScalar> {
   if (!isPlainObject(value)) return {};
   const result: Record<string, LectScalar> = {};
   for (const [key, item] of Object.entries(value)) {
+    if (!isSafeObjectKey(key)) continue;
     result[key] = unknownToScalar(item);
   }
   return result;
@@ -626,6 +649,10 @@ function isScalarRecord(value: unknown): value is Record<string, LectScalar> {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isSafeObjectKey(key: string): boolean {
+  return !UNSAFE_OBJECT_KEYS.has(key);
 }
 
 function sortByWeight<T extends Lect>(items: T[]): T[] {

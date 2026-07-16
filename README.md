@@ -284,6 +284,27 @@ Adding a plugin is a `wrangler.toml` change plus a redeploy — there is no runt
 install. With no plugins configured (`PLUGINS` unset) the system is inert and adds
 no overhead.
 
+### Localized Liquid views
+
+Core and plugin Liquid views share the CMS translation catalog. Use a namespaced
+key and escape the translated text at its output context:
+
+```liquid
+{{ "plugin.events.guest_list" | t | escape }}
+```
+
+Bundled defaults live in `views/locales/<locale>.json`. Administrators can add
+supported content/UI locales and override or extend keys at **Settings →
+Languages → Translations**; database values win over bundled JSON. Missing keys
+fall back through the locale's configured fallback, then English, then render as
+the key itself. Plugin keys should use `plugin.<plugin-id>.*` to avoid collisions.
+
+The `language` value used by content remains separate from the signed-in user's
+`uiLocale`. `mis` is the protected default content language meaning “language
+unspecified” and cannot be enabled as a UI locale. Liquid views can also use
+`l10n_number` and `l10n_date`; `uiLocale` and `uiDirection` are available as
+render globals for locale-aware plugin behavior.
+
 ### How it works
 
 Each plugin Worker implements a small HTTP contract under the reserved
@@ -320,6 +341,8 @@ for backwards compatibility.
   "action": "/admin/pages/42",    // where the plugin's <form> must POST back
   "backHref": "/admin",
   "language": "en",
+  "uiLocale": "zh-hant",        // CMS controls; separate from content language
+  "uiDirection": "ltr",
   "pageType": "event",
   "page": { "id": 42, "name": "…", "slug": "…", "weight": 5,
             "start": null, "end": null, "timezone": "+0800",
@@ -459,36 +482,62 @@ always hold the permission, and it can be granted to any custom role under
 
 ## Database schema
 
-### CMS database (`DB`)
+After all current migrations, a clean installation has **29 application
+D1 tables**: 27 in the private CMS database and 2 in the published database.
+Live page editing also uses 2 SQLite tables inside each page's Durable Object;
+these are not D1 tables.
 
-| Table | Purpose |
-|-------|---------|
-| `draft_pages` | Draft page metadata (name, slug, type, dates, hierarchy) |
-| `trash_pages` | Soft-deleted page metadata |
-| `page_versions` | Versioned draft structured content per page |
-| `draft_page_tags` | Many-to-many draft page ↔ tag relationships |
-| `trash_page_tags` | Many-to-many trash page ↔ tag relationships |
-| `taxonomies` | Taxonomy definitions (groupings that tags belong to) |
-| `tags` | Shared tag reference table (terms within a taxonomy) |
-| `media_files` | Metadata for files uploaded to private R2 |
-| `credit_ledger` | Append-only log of every credit change (spends, grants, transfers) |
-| `shared_credits` | Single-row balance of the site-wide shared credit pool |
-| `shared_credit_ledger` | Append-only log of every shared-pool change, with the beneficiary user |
+The counts below exclude D1/SQLite internal tables, temporary migration tables
+such as `tags_new` and `admin_jobs_new`, and `used_form_tokens`, which migration
+`0015_drop_used_form_tokens.sql` removes after moving that coordination state to
+Durable Object storage.
 
-### Auth tables (`DB`)
+An upgraded deployment may show additional legacy `live_*` tables in `DB`;
+current CMS routes ignore those tables and use `PUBLISHED_DB` instead.
 
-| Table | Purpose |
-|-------|---------|
-| `users` | OAuth user profiles + role assignment + credit balance |
-| `user_oauth_identities` | Linked OAuth provider identities for each user |
-| `sessions` | Hashed refresh-token JTIs for revocation |
+### CMS database (`DB`) — 27 tables
 
-### Published database (`PUBLISHED_DB`)
+The private schema is divided into five feature categories:
+
+- **Content (13)**
+  - Page lifecycle: `draft_pages`, `page_versions`, `trash_pages`, `trash_page_versions`
+  - Classification: `taxonomies`, `tags`, `draft_page_tags`, `trash_page_tags`
+  - Content model and media: `page_types`, `block_types`, `media_files`
+  - Localization: `locales`, `locale_messages`
+- **Identity and access (5)**
+  - `users`, `user_oauth_identities`, `sessions`, `roles`, `role_permissions`
+- **Credits (3)**
+  - `credit_ledger`, `shared_credits`, `shared_credit_ledger`
+- **Plugin (5)**
+  - `plugins`, `plugin_asset_approvals`, `plugin_page_type_approvals`, `settings`, `admin_jobs`
+- **Compliance (1)**
+  - `audit_log`
+
+`admin_jobs` is grouped with Plugin because it coordinates long-running plugin
+admin actions, although it also runs advanced-search bulk actions. The general
+`settings` table is grouped there because it stores runtime CMS and plugin
+configuration.
+
+### Published database (`PUBLISHED_DB`) — 2 tables
 
 | Table | Purpose |
 |-------|---------|
 | `live_pages` | Published page metadata and structured `lect` content |
 | `live_page_tags` | Published page ↔ tag relationships |
+
+Keeping public content in this separate database allows a public Worker to read
+published pages without receiving access to users, sessions, drafts, trash,
+plugin configuration, or other private CMS state.
+
+### Live editing Durable Object — 2 tables per page object
+
+| Table | Purpose |
+|-------|---------|
+| `crdt_ops` | Unsaved per-user field operations that form the live collaborative editing overlay; cleared after a save |
+| `presence` | Currently connected editors and their last-seen/last-active state |
+
+These tables are created by `PageSyncDO` in Durable Object SQLite storage, not
+by the D1 migration directories.
 
 ### Publish / un-publish flow
 

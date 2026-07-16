@@ -75,9 +75,13 @@ export function slugify(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-export function languageFromRequest(c: { req: { query: (name: string) => string | undefined } }, form?: FormData): string {
-  const requested = str(form?.get('_language')) || c.req.query('language') || cmsConfig.defaultLanguage;
-  return cmsConfig.languages.includes(requested) ? requested : cmsConfig.defaultLanguage;
+export function languageFromRequest(
+  c: { req: { query: (name: string) => string | undefined } },
+  form?: FormData,
+  config: Pick<typeof cmsConfig, 'languages' | 'defaultLanguage'> = cmsConfig,
+): string {
+  const requested = str(form?.get('_language')) || c.req.query('language') || config.defaultLanguage;
+  return config.languages.includes(requested) ? requested : config.defaultLanguage;
 }
 
 export function safeAdminReturnPath(path: FormValue, fallback = '/admin'): string {

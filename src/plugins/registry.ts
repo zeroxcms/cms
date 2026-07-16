@@ -18,6 +18,7 @@ export const PLUGIN_ORIGIN = 'https://plugin.local';
 
 // Manifests rarely change between deploys; cache per isolate with a short TTL.
 const MANIFEST_TTL_MS = 60_000;
+const MAX_MANIFEST_BYTES = 256 * 1024;
 const manifestCache = new Map<string, { manifest: PluginManifest; expires: number }>();
 
 // The enabled-plugins list also changes rarely; cache it so we don't hit D1 on
@@ -79,13 +80,77 @@ async function loadManifest(url: string, fetcher: Fetcher): Promise<PluginManife
       console.error(`Plugin ${url} manifest returned ${response.status}`);
       return null;
     }
-    const manifest = (await response.json()) as PluginManifest;
+    const declaredLength = Number(response.headers.get('content-length') ?? 0);
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_MANIFEST_BYTES) {
+      console.error(`Plugin ${url} manifest exceeds ${MAX_MANIFEST_BYTES} bytes`);
+      return null;
+    }
+    const text = await readLimitedText(response, MAX_MANIFEST_BYTES);
+    const candidate = JSON.parse(text) as unknown;
+    if (!isPluginManifest(candidate)) {
+      console.error(`Plugin ${url} returned an invalid manifest`);
+      return null;
+    }
+    const manifest = candidate;
     manifestCache.set(url, { manifest, expires: Date.now() + MANIFEST_TTL_MS });
     return manifest;
   } catch (error) {
     console.error(`Plugin ${url} manifest fetch failed:`, error);
     return null;
   }
+}
+
+async function readLimitedText(response: Response, limit: number): Promise<string> {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel('manifest too large');
+      throw new Error(`manifest exceeds ${limit} bytes`);
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+function isPluginManifest(value: unknown): value is PluginManifest {
+  if (!isRecord(value)) return false;
+  if (typeof value.id !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(value.id)) return false;
+  if (typeof value.name !== 'string' || !value.name.trim() || value.name.length > 200) return false;
+  if (typeof value.version !== 'string' || !value.version.trim() || value.version.length > 100) return false;
+
+  const arrayFields = [
+    'hooks', 'autoPublishTypes', 'nav', 'fieldTypes', 'editViews', 'newViews',
+    'readViews', 'permissions', 'assets', 'limits', 'credits',
+  ];
+  if (arrayFields.some((key) => value[key] !== undefined && !Array.isArray(value[key]))) return false;
+
+  if (value.contentTypes !== undefined) {
+    if (!isRecord(value.contentTypes)) return false;
+    const contentTypes = value.contentTypes;
+    for (const key of ['blueprint', 'blocks', 'blockLists', 'publishLect', 'taxonomies', 'taxonomyLists']) {
+      if (contentTypes[key] !== undefined && !isRecord(contentTypes[key])) return false;
+    }
+    for (const key of ['readTypes', 'writeTypes']) {
+      if (contentTypes[key] !== undefined && !Array.isArray(contentTypes[key])) return false;
+    }
+  }
+  return true;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 /** Resolves every active plugin (enabled row + manifest reachable). */
@@ -96,10 +161,11 @@ export async function getPlugins(env: Env): Promise<ResolvedPlugin[]> {
       const fetcher = fetcherForUrl(record.url);
       const manifest = await loadManifest(record.url, fetcher);
       if (!manifest) return null;
-      // Prefer the plugin's own secret; fall back to the shared env secret so a
-      // pre-migration row (NULL secret) keeps working until it's rotated.
-      const secret = record.secret || env.PLUGIN_SECRET || '';
-      return { binding: record.url, fetcher, manifest, secret, label: record.label || '' };
+      // Legacy rows may keep the env fallback for outbound CMS → plugin calls,
+      // but inbound /__cms authentication is deliberately per-plugin only.
+      const apiSecret = record.secret || '';
+      const secret = apiSecret || env.PLUGIN_SECRET || '';
+      return { binding: record.url, fetcher, manifest, secret, apiSecret, label: record.label || '' };
     }),
   );
   return resolved.filter((plugin): plugin is ResolvedPlugin => plugin !== null);

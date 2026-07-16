@@ -138,6 +138,25 @@ export function requirePermission(permission: Permission | string) {
   });
 }
 
+/** Requires at least one of the supplied capabilities. This is used for read
+ * surfaces that support several legitimate operator roles (for example, trash
+ * may be viewed by a content reader, restorer, or purger). */
+export function requireAnyPermission(...permissions: Array<Permission | string>) {
+  return createMiddleware<{ Bindings: Env; Variables: Variables }>(async (c, next) => {
+    const user = c.get('user');
+    if (splitRoles(user.role).includes('admin')) return next();
+    const map = await resolveRolePermissions(c.env);
+    const effective = effectivePermissions(map, user.role);
+    if (!permissions.some((permission) => effective.has(permission as Permission))) {
+      if (wantsJsonResponse(c.req.raw)) {
+        return jsonError({ success: false, error: 'Insufficient permissions' }, 403, 'insufficient-permissions');
+      }
+      return c.text('Forbidden: insufficient permissions', 403);
+    }
+    return next();
+  });
+}
+
 /** Admin-role gate for routes that should not be delegated to custom capabilities. */
 export const requireAdmin = createMiddleware<{
   Bindings: Env;

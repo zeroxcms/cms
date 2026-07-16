@@ -1,7 +1,7 @@
 import { env, exports } from 'cloudflare:workers';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resolveCmsConfig, clearConfigCache } from '../src/plugins/config';
-import { clearManifestCache, __injectPluginFetcher, __clearInjectedFetchers } from '../src/plugins/registry';
+import { clearManifestCache, getPlugins, __injectPluginFetcher, __clearInjectedFetchers } from '../src/plugins/registry';
 import { deliverHook } from '../src/plugins/hooks';
 import { viewsFor } from '../src/plugins/views';
 import { cmsConfig } from '../src/cms-config';
@@ -100,6 +100,11 @@ beforeEach(async () => {
 });
 
 describe('resolveCmsConfig', () => {
+  it('rejects malformed manifests', async () => {
+    const invalidEnv = await envWith(makePlugin({ id: '__proto__', name: 'Invalid', version: '1' }));
+    expect(await getPlugins(invalidEnv)).toEqual([]);
+  });
+
   it('merges plugin blueprints into the base config', async () => {
     const config = await resolveCmsConfig(await envWith(makePlugin(EVENTS_MANIFEST)));
     expect(config.blueprint.event).toEqual(['@date', 'venue']);

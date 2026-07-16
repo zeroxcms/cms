@@ -77,6 +77,9 @@ export interface BaseTemplateProps extends NavFlags {
   /** Signed single-use form token page part; the layout's submit guard stamps
    *  it (plus a per-form suffix) into POST forms as `_cms_once`. */
   cmsOnce?: string;
+  uiLocale: string;
+  uiDirection: 'ltr' | 'rtl';
+  catalogHref: string;
   canManageUsers: boolean;
   canManageRoles: boolean;
   canManagePlugins: boolean;
@@ -121,6 +124,9 @@ export async function adminLayout(
     pluginSettingsNav: base.pluginSettingsNav,
     viewRevision: base.viewRevision,
     cmsOnce: base.cmsOnce,
+    uiLocale: base.uiLocale,
+    uiDirection: base.uiDirection,
+    catalogHref: base.catalogHref,
     approvedPluginAssets: opts.approvedPluginAssets,
     editorSync: opts.editorSync ?? false,
   });
@@ -156,6 +162,9 @@ export interface LayoutOptions extends NavFlags {
   viewRevision?: string;
   /** Signed single-use form token page part (see BaseTemplateProps.cmsOnce). */
   cmsOnce?: string;
+  uiLocale?: string;
+  uiDirection?: 'ltr' | 'rtl';
+  catalogHref?: string;
   /** Admin-approved plugin assets available to the current page's plugin (if any). */
   approvedPluginAssets?: ApprovedPluginAssets;
   /** Load the CMS-owned live editor presence/sync script for plugin edit views. */
@@ -206,6 +215,8 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     assetRevisionQuery: revisionQuery,
     iconHrefPrefix: `/assets/icons.svg${revisionQuery}`,
     nonce,
+    uiLocale: opts.uiLocale || 'en',
+    uiDirection: opts.uiDirection || 'ltr',
   };
   const payload = {
     nonce,
@@ -215,11 +226,12 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     layoutData,
     bodyView: isClientView(opts.body) ? opts.body : null,
     approvedPluginAssets: opts.approvedPluginAssets ?? {},
+    catalogHref: opts.catalogHref || '',
   };
 
   void views;
   return `<!DOCTYPE html>
-<html lang="en" class="h-full overflow-x-hidden bg-gray-50">
+<html lang="${escHtml(opts.uiLocale || 'en')}" dir="${escHtml(opts.uiDirection || 'ltr')}" class="h-full overflow-x-hidden bg-gray-50">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">

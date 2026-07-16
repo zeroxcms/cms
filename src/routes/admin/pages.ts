@@ -63,7 +63,7 @@ import {
 } from '../../publish';
 import type { PublishOutcome } from '../../publish';
 import { draftLectProjector } from '../../publish/projection';
-import { dashboardPagination, importExportHrefs, renderPage } from '../../utils/admin-render';
+import { dashboardPagination, importExportHrefs, renderPage, userCan } from '../../utils/admin-render';
 import { loadAdminHomeSettings } from '../../utils/settings';
 import { requirePermission } from '../../middleware/auth';
 import type { AppContext } from '../../utils/context';
@@ -449,14 +449,18 @@ pagesRoutes.get('/', async (c) => {
     return c.redirect(adminHome.href);
   }
 
+  if (!(await userCan(c, 'content:read'))) {
+    return c.text('Forbidden: insufficient permissions', 403);
+  }
+
   return renderAllPagesList(c, '/admin');
 });
 
 // The configurable /admin home may point at a plugin dashboard. Keep this
 // permanent page-list URL available for navigation and deep links.
-pagesRoutes.get('/pages/list', (c) => renderAllPagesList(c, '/admin/pages/list'));
+pagesRoutes.get('/pages/list', requirePermission('content:read'), (c) => renderAllPagesList(c, '/admin/pages/list'));
 
-pagesRoutes.get('/pages/list/:pageType', async (c) => {
+pagesRoutes.get('/pages/list/:pageType', requirePermission('content:read'), async (c) => {
   const pageType = c.req.param('pageType');
   const flash = c.req.query('flash') ?? '';
   const search = c.req.query('search')?.trim() ?? '';
@@ -496,13 +500,13 @@ pagesRoutes.get('/pages/list/:pageType', async (c) => {
   });
 });
 
-pagesRoutes.get('/pages/search/:pageType', async (c) => {
+pagesRoutes.get('/pages/search/:pageType', requirePermission('content:read'), async (c) => {
   const pageType = c.req.param('pageType');
   const search = c.req.query('search') ?? '';
   return c.redirect(`/admin/advanced-search/${encodeURIComponent(pageType)}?operator=AND&pagesize=20&sort=updated_at&order=DESC&search1=${encodeURIComponent(search)}&path1=`);
 });
 
-pagesRoutes.get('/pages/create_by_type/:pageType', async (c) => {
+pagesRoutes.get('/pages/create_by_type/:pageType', requirePermission('content:write'), async (c) => {
   const pageType = c.req.param('pageType');
   return c.redirect(`/admin/pages/new?page_type=${encodeURIComponent(pageType)}`);
 });
@@ -510,11 +514,11 @@ pagesRoutes.get('/pages/create_by_type/:pageType', async (c) => {
 pagesRoutes.post('/pages/new_post/:pageType', requirePermission('content:write'), async (c) => {
   const pageType = c.req.param('pageType');
   const form = await c.req.formData();
-  const language = languageFromRequest(c, form);
+  const config = await resolveCmsConfig(c.env);
+  const language = languageFromRequest(c, form, config);
   const creator = userIdFromContext(c);
   const name = str(form.get('name')) || `Untitled ${pageType.replace(/[_-]/g, ' ')}`;
   const slug = await ensureUniqueDraftSlug(c.env.DB, str(form.get('slug')) || slugify(name));
-  const config = await resolveCmsConfig(c.env);
   const lect = stringifyLect(
     withDraftMetadata(
       lectFromForm(
@@ -578,10 +582,10 @@ pagesRoutes.post('/pages/new_post/:pageType', requirePermission('content:write')
 
 // ── New page form ─────────────────────────────────────────────────────────────
 
-pagesRoutes.get('/pages/new', async (c) => {
+pagesRoutes.get('/pages/new', requirePermission('content:write'), async (c) => {
   const pageType = c.req.query('page_type') || 'default';
-  const language = languageFromRequest(c);
   const config = await resolveCmsConfig(c.env);
+  const language = languageFromRequest(c, undefined, config);
   const lect = blueprintToLect(pageType, config.blueprint, config.defaultLanguage);
   const backHref = safeAdminReturnPath(c.req.query('return_to'));
 
@@ -624,12 +628,12 @@ pagesRoutes.get('/pages/new', async (c) => {
 
 pagesRoutes.post('/pages', requirePermission('content:write'), async (c) => {
   const form = await c.req.formData();
-  const language = languageFromRequest(c, form);
+  const config = await resolveCmsConfig(c.env);
+  const language = languageFromRequest(c, form, config);
 
   const name = str(form.get('name'));
   const slug = str(form.get('slug'));
   const errors = validatePageBasics(name, slug);
-  const config = await resolveCmsConfig(c.env);
   const backHref = safeAdminReturnPath(form.get('return_to'));
 
   // Plugin-declared quotas bind the admin editor too — otherwise a "max
@@ -820,7 +824,8 @@ pagesRoutes.post('/pages/batch-weight', requirePermission('content:write'), asyn
 
 pagesRoutes.get('/pages/:id/read', requirePermission('content:read'), async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
-  const language = languageFromRequest(c);
+  const config = await resolveCmsConfig(c.env);
+  const language = languageFromRequest(c, undefined, config);
   const requestedVersionId = parseInt(c.req.query('version') ?? '', 10);
   const backHref = safeAdminReturnPath(c.req.query('return_to'));
 
@@ -829,7 +834,6 @@ pagesRoutes.get('/pages/:id/read', requirePermission('content:read'), async (c) 
 
   const data = await editorPageData(c, page, page.page_id, requestedVersionId);
   const pageType = page.page_type ?? 'default';
-  const config = await resolveCmsConfig(c.env);
   const lect = lectForPage(config, pageType, data.version?.lect ?? page.lect);
 
   // A plugin that owns this page type's read view renders it (unless ?native=1).
@@ -873,9 +877,10 @@ pagesRoutes.get('/pages/:id/read', requirePermission('content:read'), async (c) 
 
 // ── Edit page form ────────────────────────────────────────────────────────────
 
-pagesRoutes.get('/pages/:id/edit', async (c) => {
+pagesRoutes.get('/pages/:id/edit', requirePermission('content:read'), async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
-  const language = languageFromRequest(c);
+  const config = await resolveCmsConfig(c.env);
+  const language = languageFromRequest(c, undefined, config);
   const requestedVersionId = parseInt(c.req.query('version') ?? '', 10);
   const flash = c.req.query('flash') ?? '';
   const backHref = safeAdminReturnPath(c.req.query('return_to'));
@@ -885,7 +890,6 @@ pagesRoutes.get('/pages/:id/edit', async (c) => {
 
   const data = await editorPageData(c, page, page.page_id, requestedVersionId);
   const pageType = page.page_type ?? 'default';
-  const config = await resolveCmsConfig(c.env);
   const lect = lectForPage(config, pageType, data.version?.lect ?? page.lect);
 
   const pluginView = await maybePluginEditView(c, {
@@ -952,7 +956,8 @@ pagesRoutes.post('/pages/:id/weight', requirePermission('content:write'), async 
 pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => {
   const pageId = parseInt(c.req.param('id'), 10);
   const form = await c.req.formData();
-  const language = languageFromRequest(c, form);
+  const config = await resolveCmsConfig(c.env);
+  const language = languageFromRequest(c, form, config);
   const action = str(form.get('action'));
   const backHref = safeAdminReturnPath(form.get('return_to'));
 
@@ -983,7 +988,6 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
     return c.redirect(`/admin/pages/${pageId}/edit?flash=Versions+cleaned`);
   }
 
-  const config = await resolveCmsConfig(c.env);
 
   if (action.startsWith('revert:')) {
     const versionId = parseInt(action.split(':')[1], 10);

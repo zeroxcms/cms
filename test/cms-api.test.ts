@@ -35,7 +35,7 @@ let savedSecret: unknown;
 
 async function registerPlugin(manifest: Record<string, unknown> = MANIFEST): Promise<void> {
   const url = `https://plugin-${crypto.randomUUID()}.local`;
-  await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Events', url).run();
+  await env.DB.prepare('INSERT INTO plugins (label, url, enabled, secret) VALUES (?, ?, 1, ?)').bind('Events', url, PLUGIN_SECRET).run();
   __injectPluginFetcher(url, {
     fetch: async (input: RequestInfo | URL): Promise<Response> => {
       const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -83,6 +83,15 @@ afterEach(() => {
 });
 
 describe('Plugin API auth + scoping', () => {
+  it('does not accept the legacy environment secret for a plugin without its own secret', async () => {
+    await env.DB.prepare('UPDATE plugins SET secret = NULL').run();
+    clearManifestCache();
+
+    const res = await cmsApi('POST', '/__cms/pages', { page_type: 'guest' });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: 'plugin_api_unavailable' });
+  });
+
   it('rejects a wrong shared secret', async () => {
     const res = await cmsApi('POST', '/__cms/pages', { page_type: 'guest' }, { 'x-plugin-secret': 'wrong' });
     expect(res.status).toBe(403);
@@ -128,7 +137,7 @@ describe('Plugin API auth + scoping', () => {
         readTypes: ['mail_list'],
       },
     };
-    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Check-in', url).run();
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled, secret) VALUES (?, ?, 1, ?)').bind('Check-in', url, PLUGIN_SECRET).run();
     __injectPluginFetcher(url, {
       fetch: async (input: RequestInfo | URL): Promise<Response> => {
         const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -168,7 +177,7 @@ describe('Plugin API auth + scoping', () => {
         writeTypes: ['*'],
       },
     };
-    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Importer', url).run();
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled, secret) VALUES (?, ?, 1, ?)').bind('Importer', url, PLUGIN_SECRET).run();
     __injectPluginFetcher(url, {
       fetch: async (input: RequestInfo | URL): Promise<Response> => {
         const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -208,7 +217,7 @@ describe('Plugin API auth + scoping', () => {
         readTypes: ['*'],
       },
     };
-    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Reader', url).run();
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled, secret) VALUES (?, ?, 1, ?)').bind('Reader', url, PLUGIN_SECRET).run();
     __injectPluginFetcher(url, {
       fetch: async (input: RequestInfo | URL): Promise<Response> => {
         const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;

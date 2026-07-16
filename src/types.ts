@@ -193,7 +193,8 @@ export interface PluginRecord {
   enabled: number;
   config: string | null;
   sort_order: number;
-  /** Per-plugin shared secret. Null = fall back to the env PLUGIN_SECRET. */
+  /** Per-plugin shared secret. Legacy null rows may use the env fallback only
+   *  for outbound CMS → plugin calls; inbound /__cms access stays disabled. */
   secret: string | null;
 }
 
@@ -469,8 +470,12 @@ export interface ResolvedPlugin {
   binding: string;
   fetcher: Fetcher;
   manifest: PluginManifest;
-  /** Effective shared secret for this plugin (its own, or the env fallback). Empty when neither is set. */
+  /** Effective secret for outbound CMS → plugin calls (own secret, or the
+   *  legacy env fallback). Empty when neither is set. */
   secret: string;
+  /** Dedicated secret accepted for inbound plugin → CMS API calls. Empty for
+   *  legacy rows so one shared env secret cannot impersonate every plugin. */
+  apiSecret: string;
   /** Admin-entered display label from the plugin row (Plugins → edit → Label). Empty when unset. */
   label?: string;
 }

@@ -151,6 +151,21 @@ describe('lect utilities', () => {
     expect(merged.items).toEqual([{ _weight: 0, name: { en: 'New' }, extra: 'keep' }]);
   });
 
+  it('drops prototype-mutating keys from stored lect JSON and merges', () => {
+    const parsed = safeParseLect('{"safe":"ok","__proto__":{"polluted":"yes"},"constructor":{"prototype":{"polluted":"yes"}},"_pointers":{"parent":"1","__proto__":"bad"}}');
+    const merged = mergeLects(
+      parsed,
+      JSON.parse('{"nested":{"safe":"yes","__proto__":{"polluted":"yes"}}}') as never,
+    );
+
+    expect(parsed.safe).toBe('ok');
+    expect(parsed._pointers).toEqual({ parent: '1' });
+    expect(Object.hasOwn(parsed, '__proto__')).toBe(false);
+    expect(Object.hasOwn(parsed, 'constructor')).toBe(false);
+    expect(merged.nested).toEqual({ safe: 'yes' });
+    expect(({} as { polluted?: string }).polluted).toBeUndefined();
+  });
+
   it('localizes values, applies default-language fallback, and sorts by weight for rendering', () => {
     const printable = lectToPrint({
       title: { en: 'English title' },
@@ -258,6 +273,10 @@ describe('security utilities', () => {
       new Response('ok'),
       new Request('https://cms.example.com/admin'),
     );
+    const cmsApi = withSensitiveCacheHeaders(
+      new Response('ok'),
+      new Request('https://cms.example.com/__cms/pages'),
+    );
     const asset = withSensitiveCacheHeaders(
       new Response('ok', { headers: { 'Cache-Control': 'public, max-age=86400' } }),
       new Request('https://cms.example.com/assets/admin.css'),
@@ -265,6 +284,7 @@ describe('security utilities', () => {
 
     expect(admin.headers.get('Cache-Control')).toBe('no-store');
     expect(admin.headers.get('Pragma')).toBe('no-cache');
+    expect(cmsApi.headers.get('Cache-Control')).toBe('no-store');
     expect(asset.headers.get('Cache-Control')).toBe('public, max-age=86400');
   });
 });

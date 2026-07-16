@@ -172,7 +172,8 @@ tagsRoutes.post('/tags/batch-weight', requirePermission('tag:write'), async (c) 
 
 tagsRoutes.post('/tags', requirePermission('tag:write'), async (c) => {
   const form = await c.req.formData();
-  const language = languageFromRequest(c, form);
+  const config = await resolveCmsConfig(c.env);
+  const language = languageFromRequest(c, form, config);
   const name = str(form.get('name'));
   const slug = str(form.get('slug')) || slugify(name);
   const weight = num(form.get('weight'), 5);
@@ -199,7 +200,8 @@ tagsRoutes.get('/tags/:id/edit', async (c) => {
 tagsRoutes.post('/tags/:id', requirePermission('tag:write'), async (c) => {
   const id = parseInt(c.req.param('id'), 10);
   const form = await c.req.formData();
-  const language = languageFromRequest(c, form);
+  const config = await resolveCmsConfig(c.env);
+  const language = languageFromRequest(c, form, config);
   const name = str(form.get('name'));
   const slug = str(form.get('slug')) || slugify(name);
   const weight = num(form.get('weight'), 5);
@@ -306,11 +308,12 @@ async function tagTaxonomyOptions(c: AppContext): Promise<TagTaxonomyOption[]> {
 }
 
 async function tagForm(c: AppContext, tag?: Tag) {
-  const language = languageFromRequest(c);
-  const [taxonomies, tags] = await Promise.all([
+  const [taxonomies, tags, config] = await Promise.all([
     tagTaxonomyOptions(c),
     listTags(c.env.DB),
+    resolveCmsConfig(c.env),
   ]);
+  const language = languageFromRequest(c, undefined, config);
   const lect = safeParseLect(tag?.lect);
   const rawTranslatedName = getLectLocalizedValue(lect, 'name', language);
   const translatedName = language === cmsConfig.defaultLanguage ? rawTranslatedName || tag?.name || '' : rawTranslatedName;
@@ -319,7 +322,7 @@ async function tagForm(c: AppContext, tag?: Tag) {
   return renderPage(c, tagFormPage, {
     tag,
     language,
-    languages: cmsConfig.languages,
+    languages: config.languages,
     translatedName,
     translatedPlaceholder,
     taxonomies,

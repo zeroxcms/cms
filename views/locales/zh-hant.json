@@ -1,0 +1,1 @@
+{"common":{"add":"新增","save":"儲存","delete":"刪除","open":"開啟"},"i18n":{"languages":{"title":"語言","description":"管理資料庫中的內容語言及 CMS 介面語言。","add":"新增語言"},"translations":{"title":"翻譯","description":"資料庫翻譯會覆蓋內置語言檔。","manage":"管理翻譯","save":"儲存翻譯","empty":"此語言沒有資料庫翻譯。"}}}

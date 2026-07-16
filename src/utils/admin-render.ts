@@ -43,6 +43,7 @@ import {
 export type { BaseTemplateProps } from '../templates/layout';
 import type { BaseTemplateProps, SidebarNavItem } from '../templates/layout';
 import { withActiveSidebarItems } from './sidebar';
+import { resolveUiLocale } from './i18n';
 
 /** The signed-in user's effective permission set (built-in defaults + DB overrides). */
 export async function userPermissions(c: AppContext): Promise<Set<Permission>> {
@@ -64,7 +65,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
   const user = c.get('user');
   const userRoles = user.role.split(',').map((role) => role.trim()).filter(Boolean);
   const fallbackSiteTitle = c.env.SITE_TITLE ?? '0xCMS';
-  const [userAvatar, navItems, permissions, branding, userCredits, sharedCredits, cmsOnce] = await Promise.all([
+  const [userAvatar, navItems, permissions, branding, userCredits, sharedCredits, cmsOnce, uiLocale] = await Promise.all([
     fetchUserAvatar(c.env.DB, userIdFromContext(c)),
     pluginNav(c.env),
     userPermissions(c),
@@ -72,6 +73,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     getCreditBalance(c.env, userIdFromContext(c)),
     getSharedCreditBalance(c.env),
     mintFormOnceToken(c.env.JWT_SECRET),
+    resolveUiLocale(c),
   ]);
   const sidebarSettings = await loadSidebarChromeSettings(c.env);
   const menuSettings = sidebarSettings.items;
@@ -87,6 +89,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     if (key === 'roles') return permissions.has('roles:manage');
     if (key === 'plugins') return permissions.has('plugin:manage');
     if (key === 'credits') return permissions.has('plugin:manage');
+    if (key === 'languages') return permissions.has('menu:manage');
     if (key === 'system') return permissions.has('menu:manage');
     return true;
   };
@@ -168,6 +171,9 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     pluginSettingsNav: settingsNav,
     viewRevision: viewRevision(c.env),
     cmsOnce,
+    uiLocale: uiLocale.code,
+    uiDirection: uiLocale.direction,
+    catalogHref: `/admin/i18n/catalog/${encodeURIComponent(uiLocale.code)}`,
     canManageUsers: permissions.has('users:manage'),
     canManageRoles: permissions.has('roles:manage'),
     canManagePlugins: permissions.has('plugin:manage'),

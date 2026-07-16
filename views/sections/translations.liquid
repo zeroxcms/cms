@@ -1,0 +1,16 @@
+<div class="px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
+  <div class="mb-4 flex items-center justify-between gap-4">
+    <div><h1 class="text-2xl font-bold text-gray-900">{{ "i18n.translations.title" | t | escape }}</h1><p class="mt-1 text-sm text-gray-500">{{ "i18n.translations.description" | t | escape }}</p></div>
+    <a href="/admin/settings/languages" class="inline-flex h-10 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">{{ "i18n.languages.title" | t | escape }}</a>
+  </div>
+  {% if hasFlash %}<div class="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{{ flash | escape }}</div>{% endif %}
+  {% if hasError %}<div class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{{ error | escape }}</div>{% endif %}
+  <form method="get" action="/admin/settings/translations" class="mb-5 flex max-w-md items-end gap-3"><label class="flex-1 text-sm font-medium text-gray-700">{{ "i18n.fields.locale" | t | escape }}<select name="locale" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2">{% for option in localeOptions %}<option value="{{ option.code | escape }}" {% if option.selected %}selected{% endif %}>{{ option.label | escape }} ({{ option.code | escape }})</option>{% endfor %}</select></label><button class="h-10 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold">{{ "common.open" | t | escape }}</button></form>
+  <form action="/admin/settings/translations" method="post" class="mb-5 grid grid-cols-1 gap-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm sm:grid-cols-2">
+    <input type="hidden" name="locale" value="{{ localeCode | escape }}">
+    <label class="text-sm font-medium text-gray-700">{{ "i18n.fields.key" | t | escape }}<input name="key" required placeholder="plugin.example.label" class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 font-mono"></label>
+    <label class="text-sm font-medium text-gray-700">{{ "i18n.fields.value" | t | escape }}<input name="value" required class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"></label>
+    <div class="sm:col-span-2"><button class="h-10 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white">{{ "i18n.translations.save" | t | escape }}</button></div>
+  </form>
+  <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm"><table class="w-full min-w-[720px] text-left text-sm"><thead class="border-b border-gray-200 bg-gray-50"><tr><th class="px-4 py-3">{{ "i18n.fields.key" | t | escape }}</th><th class="px-4 py-3">{{ "i18n.fields.value" | t | escape }}</th><th class="px-4 py-3"></th></tr></thead><tbody class="divide-y divide-gray-100">{% if hasMessages %}{% for message in messages %}<tr><td class="px-4 py-3 font-mono text-xs">{{ message.key | escape }}</td><td class="px-4 py-3">{{ message.value | escape }}</td><td class="px-4 py-3 text-right"><form action="{{ message.deleteAction | escape }}" method="post"><button class="font-semibold text-red-600">{{ "common.delete" | t | escape }}</button></form></td></tr>{% endfor %}{% else %}<tr><td colspan="3" class="px-4 py-10 text-center text-gray-500">{{ "i18n.translations.empty" | t | escape }}</td></tr>{% endif %}</tbody></table></div>
+</div>

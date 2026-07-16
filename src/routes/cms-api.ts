@@ -11,13 +11,13 @@
 // Transport & trust:
 //   - Mounted at the reserved /__cms prefix, OUTSIDE the /admin auth stack
 //     (there is no signed-in user — this is server-to-server).
-//   - Authenticated by the shared PLUGIN_SECRET (x-plugin-secret header), the
-//     same secret the CMS forwards to plugins for hooks/admin/publish.
+//   - Authenticated by the calling plugin row's dedicated secret
+//     (x-plugin-secret header). The legacy env PLUGIN_SECRET is never accepted
+//     inbound because it would let one compromised plugin impersonate another.
 //   - The caller names itself via x-plugin-id; writes are scoped to that
 //     plugin's manifest blueprint page types plus explicit, admin-approved
-//     `writeTypes`. Because every plugin shares one PLUGIN_SECRET, this scoping
-//     is a guardrail among co-operating trusted plugins, not a hard boundary —
-//     only register trusted plugin URLs.
+//     `writeTypes`. Each plugin has its own credential and can be independently
+//     rotated/revoked; only register trusted plugin URLs.
 //   - The global cross-origin mutation guard is bypassed for /__cms (see
 //     index.ts): server-to-server callers send no Origin, and PLUGIN_SECRET is
 //     the real authenticator here.
@@ -188,7 +188,7 @@ interface PreparedCreate {
 // ── Auth + scoping ────────────────────────────────────────────────────────────
 
 /**
- * Verifies the shared secret and resolves the calling plugin so writes can be
+ * Verifies the plugin's dedicated secret and resolves the caller so writes can be
  * scoped to the page types it owns. Returns a Response (to short-circuit) on
  * any failure, otherwise the resolved plugin + its allowed page types.
  */
@@ -202,11 +202,11 @@ async function authenticatePlugin(c: AppContext): Promise<PluginAuth | Response>
   const plugin = await pluginById(c.env, pluginId);
   if (!plugin) return c.json({ error: 'unknown_plugin' }, 403);
 
-  if (!plugin.secret) {
+  if (!plugin.apiSecret) {
     console.error(`Plugin ${pluginId} called the write-back API but has no secret configured`);
     return c.json({ error: 'plugin_api_unavailable' }, 503);
   }
-  if (!timingSafeEqualStr(c.req.header('x-plugin-secret') ?? '', plugin.secret)) {
+  if (!timingSafeEqualStr(c.req.header('x-plugin-secret') ?? '', plugin.apiSecret)) {
     return c.json({ error: 'forbidden' }, 403);
   }
 

@@ -7,6 +7,7 @@ import { allRoleOptions } from '../../utils/role-store';
 import { countCreditLedger, donateSharedCredits, getSharedCreditBalance, listCreditLedger, transferCredits } from '../../utils/credits';
 import { creditLedgerRowForView } from '../../templates/users';
 import { logAudit } from '../../utils/audit';
+import { localeRegistry, resolveUiLocale, setUiLocaleCookie } from '../../utils/i18n';
 
 const CREDIT_TRANSFER_ACTION = '/admin/profile/credits/transfer';
 const SHARED_DONATE_ACTION = '/admin/profile/credits/shared';
@@ -72,7 +73,7 @@ profileRoutes.get('/profile', async (c) => {
   const flash = c.req.query('flash') ?? '';
   const error = c.req.query('error') ?? '';
   const requestedCreditPage = positivePage(c.req.query('credit_page'));
-  const [user, identityRows, roleOptions, creditLedgerTotal] = await Promise.all([
+  const [user, identityRows, roleOptions, creditLedgerTotal, registry, currentUiLocale] = await Promise.all([
     c.env.DB.prepare('SELECT id, oauth_id, email, name, avatar_url, role, credits FROM users WHERE id = ?')
       .bind(userId)
       .first<User>(),
@@ -86,6 +87,8 @@ profileRoutes.get('/profile', async (c) => {
       .all<OAuthIdentityRow>(),
     allRoleOptions(c.env),
     countCreditLedger(c.env, userId),
+    localeRegistry(c.env),
+    resolveUiLocale(c),
   ]);
   if (!user) return c.notFound();
   const creditPageCount = Math.max(1, Math.ceil(creditLedgerTotal / CREDIT_LEDGER_PAGE_SIZE));
@@ -153,7 +156,24 @@ profileRoutes.get('/profile', async (c) => {
       hasNext: creditPage < creditPageCount,
       nextHref: profileCreditPageHref(creditPage + 1),
     },
+    uiLocaleOptions: registry.uiLocales.map((locale) => ({
+      code: locale.code,
+      label: locale.label,
+      selected: locale.code === currentUiLocale.code,
+    })),
+    uiLocaleAction: '/admin/profile/locale',
   });
+});
+
+profileRoutes.post('/profile/locale', async (c) => {
+  const form = await c.req.formData();
+  const requested = String(form.get('locale') ?? '');
+  const { uiLocales } = await localeRegistry(c.env);
+  if (!uiLocales.some((locale) => locale.code === requested)) {
+    return c.redirect('/admin/profile?error=Interface+language+is+not+enabled', 303);
+  }
+  setUiLocaleCookie(c, requested);
+  return c.redirect('/admin/profile?flash=Interface+language+saved', 303);
 });
 
 // Send credits to another user. Recipients are looked up by email and must be

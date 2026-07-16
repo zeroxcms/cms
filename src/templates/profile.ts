@@ -46,6 +46,8 @@ export async function profilePage(views: Fetcher, opts: BaseTemplateProps & {
   sharedDonateAction: string;
   creditLedger: UserCreditLedgerRow[];
   creditLedgerPagination: ProfileCreditLedgerPagination;
+  uiLocaleOptions: Array<{ code: string; label: string; selected: boolean }>;
+  uiLocaleAction: string;
 }): Promise<string> {
   const body = await renderView(views, '/templates/profile.json', {
     name: opts.name,
@@ -70,6 +72,8 @@ export async function profilePage(views: Fetcher, opts: BaseTemplateProps & {
     creditLedger: opts.creditLedger,
     creditLedgerPagination: opts.creditLedgerPagination,
     showCreditLedgerPagination: opts.creditLedgerPagination.pageCount > 1,
+    uiLocaleOptions: opts.uiLocaleOptions,
+    uiLocaleAction: opts.uiLocaleAction,
   });
   return adminLayout(views, opts, { title: 'Profile', body });
 }

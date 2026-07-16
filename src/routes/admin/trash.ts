@@ -7,13 +7,13 @@ import { restoreTrashedPages } from '../../utils/admin-queries';
 import { dashboardPagination, renderPage, userCan } from '../../utils/admin-render';
 import { dashboardPageNumber, dashboardPageSize } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
-import { requirePermission } from '../../middleware/auth';
+import { requireAnyPermission, requirePermission } from '../../middleware/auth';
 
 export const trashRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // ── Trash list ────────────────────────────────────────────────────────────────
 
-trashRoutes.get('/trash', async (c) => {
+trashRoutes.get('/trash', requireAnyPermission('content:read', 'trash:restore', 'trash:purge'), async (c) => {
   const flash = c.req.query('flash') ?? '';
   const pageSize = dashboardPageSize(c.req.query('pagesize'));
   const requestedPage = dashboardPageNumber(c.req.query('page'));

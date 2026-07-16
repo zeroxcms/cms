@@ -76,6 +76,18 @@ function hasAdminRole(role: string): boolean {
   return role.split(',').map((r) => r.trim()).includes('admin');
 }
 
+/** A delegated user manager may only manage/assign roles whose effective
+ * permissions are a subset of their own. This prevents users:manage from
+ * becoming an implicit path to the locked admin role or other stronger roles. */
+async function canManageRoleValue(c: AppContext, role: string): Promise<boolean> {
+  if (splitRoles(c.get('user').role).includes('admin')) return true;
+  if (hasAdminRole(role)) return false;
+  const map = await resolveRolePermissions(c.env);
+  const actorPermissions = effectivePermissions(map, c.get('user').role);
+  const targetPermissions = effectivePermissions(map, role);
+  return [...targetPermissions].every((permission) => actorPermissions.has(permission));
+}
+
 function providerFromOAuthId(oauthId: string): string {
   const index = oauthId.indexOf(':');
   return index === -1 ? 'legacy' : oauthId.slice(0, index);
@@ -227,6 +239,10 @@ usersRoutes.post('/users/:id', requirePermission('users:manage'), async (c) => {
   const selected = [...new Set(form.getAll('roles').map(String).filter((role) => valid.has(role)))];
   const nextRole = selected.length ? selected.join(',') : 'viewer';
 
+  if (!(await canManageRoleValue(c, user.role)) || !(await canManageRoleValue(c, nextRole))) {
+    return c.text('Forbidden: cannot assign or modify a more privileged role', 403);
+  }
+
   // Lockout guard: never let the last admin lose the admin role.
   const losesAdmin = user.role.split(',').map((r) => r.trim()).includes('admin') && !selected.includes('admin');
   if (losesAdmin) {
@@ -255,6 +271,10 @@ usersRoutes.post('/users/:id/delete', requirePermission('users:manage'), async (
     .bind(id)
     .first<Pick<User, 'id' | 'email' | 'role'>>();
   if (!user) return c.notFound();
+
+  if (!(await canManageRoleValue(c, user.role))) {
+    return c.text('Forbidden: cannot remove a more privileged user', 403);
+  }
 
   if (hasAdminRole(user.role)) {
     const otherAdmins = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE id != ? AND (',' || replace(role, ' ', '') || ',') LIKE '%,admin,%'")

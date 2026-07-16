@@ -2,6 +2,7 @@
 // import-export plugin; renderAdvancedSearch links there when it's installed.)
 
 import { Hono } from 'hono';
+import { requirePermission } from '../../middleware/auth';
 import { resolveCmsConfig } from '../../plugins/config';
 import type { Env, Permission, Variables } from '../../types';
 import {
@@ -22,11 +23,11 @@ import {
 
 export const searchRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-searchRoutes.get('/advanced-search', (c) => renderAdvancedSearch(c));
+searchRoutes.get('/advanced-search', requirePermission('content:read'), (c) => renderAdvancedSearch(c));
 
 searchRoutes.post('/advanced-search/bulk', (c) => bulkAdvancedSearch(c));
 
-searchRoutes.get('/advanced-search/:pageType', (c) => {
+searchRoutes.get('/advanced-search/:pageType', requirePermission('content:read'), (c) => {
   const pageType = c.req.param('pageType');
   return renderAdvancedSearch(c, pageType, false);
 });

@@ -9,7 +9,7 @@ import { slugify, str } from '../../utils/forms';
 import { logAudit } from '../../utils/audit';
 import { requirePermission } from '../../middleware/auth';
 import { renderPage } from '../../utils/admin-render';
-import { clearRolePermissionsCache } from '../../utils/roles';
+import { clearRolePermissionsCache, effectivePermissions, resolveRolePermissions, splitRoles } from '../../utils/roles';
 import { allPluginPermissions } from '../../plugins/registry';
 import {
   createCustomRole,
@@ -18,11 +18,18 @@ import {
   listRolesForAdmin,
   saveRolePermissions,
 } from '../../utils/role-store';
+import type { AppContext } from '../../utils/context';
 
 export const rolesRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 rolesRoutes.use('/roles', requirePermission('roles:manage'));
 rolesRoutes.use('/roles/*', requirePermission('roles:manage'));
+
+async function canManagePermissions(c: AppContext, permissions: Iterable<string>): Promise<boolean> {
+  if (splitRoles(c.get('user').role).includes('admin')) return true;
+  const actorPermissions = effectivePermissions(await resolveRolePermissions(c.env), c.get('user').role);
+  return [...permissions].every((permission) => actorPermissions.has(permission as Permission));
+}
 
 async function buildPermissionOptions(env: Env, granted: Set<Permission | string>): Promise<Array<{ value: string; label: string; checked: boolean }>> {
   const pluginPerms = await allPluginPermissions(env);
@@ -118,7 +125,17 @@ rolesRoutes.post('/roles/:name', async (c) => {
 
   const form = await c.req.formData();
   const label = role.builtin ? role.label : (str(form.get('label')) || role.label);
-  const permissions = form.getAll('permissions').map(String);
+  const permissions = [...new Set(form.getAll('permissions').map(String))];
+  const assignable = new Set<string>([
+    ...PERMISSIONS,
+    ...(await allPluginPermissions(c.env)).map((permission) => permission.value),
+  ]);
+  if (permissions.some((permission) => !assignable.has(permission))) {
+    return c.text('Invalid permission', 400);
+  }
+  if (!(await canManagePermissions(c, role.permissions)) || !(await canManagePermissions(c, permissions))) {
+    return c.text('Forbidden: cannot grant or modify permissions beyond your own', 403);
+  }
 
   await saveRolePermissions(c.env, name, label, permissions);
   clearRolePermissionsCache();
@@ -128,6 +145,11 @@ rolesRoutes.post('/roles/:name', async (c) => {
 
 rolesRoutes.post('/roles/:name/delete', async (c) => {
   const name = c.req.param('name');
+  const role = await getRoleForEdit(c.env, name);
+  if (!role) return c.notFound();
+  if (!(await canManagePermissions(c, role.permissions))) {
+    return c.text('Forbidden: cannot remove a more privileged role', 403);
+  }
   await deleteCustomRole(c.env, name);
   clearRolePermissionsCache();
   logAudit(c, 'role.delete', 'role', name);

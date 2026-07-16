@@ -415,19 +415,30 @@ describe('auth routes', () => {
     const stateCookie = cookieValue(start.headers.get('Set-Cookie'), 'oauth_state');
 
     expect(location.searchParams.get('response_mode')).toBe('form_post');
+    expect(location.searchParams.get('nonce')).toBe(state);
+
+    const keyPair = await crypto.subtle.generateKey(
+      { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+      true,
+      ['sign', 'verify'],
+    );
+    const publicJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+    const idToken = await signedIdToken({
+      iss: 'https://appleid.apple.com',
+      aud: 'test.apple.client',
+      exp: Math.floor(Date.now() / 1000) + 600,
+      nonce: state,
+      sub: 'apple-user',
+      email: 'apple@example.com',
+    }, keyPair.privateKey, 'test-apple-key');
 
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url === 'https://appleid.apple.com/auth/token') {
-        return Response.json({
-          id_token: fakeIdToken({
-            iss: 'https://appleid.apple.com',
-            aud: 'test.apple.client',
-            exp: Math.floor(Date.now() / 1000) + 600,
-            sub: 'apple-user',
-            email: 'apple@example.com',
-          }),
-        });
+        return Response.json({ id_token: idToken });
+      }
+      if (url === 'https://appleid.apple.com/auth/keys') {
+        return Response.json({ keys: [{ ...publicJwk, kid: 'test-apple-key', alg: 'RS256', use: 'sig' }] });
       }
       return new Response('Unexpected fetch', { status: 500 });
     }));
@@ -2099,6 +2110,64 @@ describe('capability enforcement', () => {
     expect(await response.json()).toEqual({ success: false, error: 'Insufficient permissions' });
   });
 
+  it('requires content:read for draft page lists and search', async () => {
+    await env.DB.prepare('INSERT INTO roles (name, label, builtin) VALUES (?, ?, 0)').bind('tagger', 'Tagger').run();
+    await env.DB.prepare('INSERT INTO role_permissions (role, permission) VALUES (?, ?)').bind('tagger', 'tag:write').run();
+    clearRolePermissionsCache();
+
+    const cookie = await authCookie('tagger');
+    const [pages, search, trash, tags] = await Promise.all([
+      fetchWorker('/admin/pages/list', { headers: { Cookie: cookie } }),
+      fetchWorker('/admin/advanced-search', { headers: { Cookie: cookie } }),
+      fetchWorker('/admin/trash', { headers: { Cookie: cookie } }),
+      fetchWorker('/admin/tags', { headers: { Cookie: cookie } }),
+    ]);
+
+    expect(pages.status).toBe(403);
+    expect(search.status).toBe(403);
+    expect(trash.status).toBe(403);
+    expect(tags.status).toBe(200);
+  });
+
+  it('prevents a delegated user manager from assigning itself a more privileged role', async () => {
+    await env.DB.prepare('INSERT INTO roles (name, label, builtin) VALUES (?, ?, 0)').bind('user-manager', 'User Manager').run();
+    await env.DB.prepare('INSERT INTO role_permissions (role, permission) VALUES (?, ?)').bind('user-manager', 'users:manage').run();
+    await env.DB.prepare(
+      'INSERT INTO users (id, oauth_id, email, name, avatar_url, role) VALUES (?, ?, ?, ?, ?, ?)',
+    ).bind(3, 'eventuai:manager', 'manager@example.com', 'Manager', '', 'user-manager').run();
+    clearRolePermissionsCache();
+
+    const response = await fetchWorker('/admin/users/3', {
+      method: 'POST',
+      body: form({ roles: 'admin' }),
+      headers: { Cookie: `access_token=${await signTestToken({ sub: '3', email: 'manager@example.com', role: 'user-manager' })}` },
+    });
+
+    expect(response.status).toBe(403);
+    const user = await env.DB.prepare('SELECT role FROM users WHERE id = 3').first<{ role: string }>();
+    expect(user?.role).toBe('user-manager');
+  });
+
+  it('prevents a delegated role manager from granting permissions it does not hold', async () => {
+    await env.DB.prepare('INSERT INTO roles (name, label, builtin) VALUES (?, ?, 0)').bind('role-manager', 'Role Manager').run();
+    await env.DB.prepare('INSERT INTO role_permissions (role, permission) VALUES (?, ?)').bind('role-manager', 'roles:manage').run();
+    await env.DB.prepare(
+      'INSERT INTO users (id, oauth_id, email, name, avatar_url, role) VALUES (?, ?, ?, ?, ?, ?)',
+    ).bind(3, 'eventuai:role-manager', 'roles@example.com', 'Role Manager', '', 'role-manager').run();
+    clearRolePermissionsCache();
+
+    const response = await fetchWorker('/admin/roles/role-manager', {
+      method: 'POST',
+      body: form({ permissions: 'users:manage' }),
+      headers: { Cookie: `access_token=${await signTestToken({ sub: '3', email: 'roles@example.com', role: 'role-manager' })}` },
+    });
+
+    expect(response.status).toBe(403);
+    const grants = await env.DB.prepare('SELECT permission FROM role_permissions WHERE role = ?')
+      .bind('role-manager').all<{ permission: string }>();
+    expect(grants.results.map((row) => row.permission)).toEqual(['roles:manage']);
+  });
+
   it('requires content permissions and an existing page for sync and presence', async () => {
     const readPresence = await fetchWorker('/admin/api/presence/999999', {
       headers: { Cookie: await authCookie() },
@@ -2625,12 +2694,17 @@ function cookieValue(header: string | null, name: string): string {
   return match?.[1] ?? '';
 }
 
-function fakeIdToken(payload: Record<string, unknown>): string {
+async function signedIdToken(payload: Record<string, unknown>, key: CryptoKey, kid: string): Promise<string> {
   const encode = (value: Record<string, unknown>) => btoa(JSON.stringify(value))
     .replace(/=/g, '')
     .replace(/\+/g, '-')
     .replace(/\//g, '_');
-  return `${encode({ alg: 'RS256', typ: 'JWT' })}.${encode(payload)}.signature`;
+  const signingInput = `${encode({ alg: 'RS256', typ: 'JWT', kid })}.${encode(payload)}`;
+  const signature = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput)));
+  let binary = '';
+  for (const byte of signature) binary += String.fromCharCode(byte);
+  const encodedSignature = btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return `${signingInput}.${encodedSignature}`;
 }
 
 /** Runs the full PKCE flow against a mocked eventuai provider and returns the callback response. */
