@@ -190,6 +190,20 @@ export async function buildTranslationCatalog(
   return catalog;
 }
 
+/** Looks up a UI string in the merged catalog, falling back to the given English text. */
+export type UiTranslator = (key: string, fallback: string) => string;
+
+/**
+ * Server-side counterpart of the client `| t` filter, for templates that build
+ * HTML strings in the Worker (e.g. the read-only page view) instead of
+ * rendering Liquid client-side.
+ */
+export async function uiTranslator(c: Context<any>): Promise<UiTranslator> {
+  const locale = await resolveUiLocale(c);
+  const catalog = await buildTranslationCatalog(c.env, locale.code);
+  return (key, fallback) => catalog[key] ?? fallback;
+}
+
 async function bundledPluginCatalog(plugins: Fetcher[], code: string): Promise<Record<string, string>> {
   const catalogs = await Promise.all(plugins.map(async (plugin) => {
     try {

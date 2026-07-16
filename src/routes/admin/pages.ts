@@ -47,6 +47,7 @@ import {
 import {
   editorTaxonomy,
   ensureUniqueDraftSlug,
+  fetchEditorUsers,
   fetchUserName,
   listDashboardDraftPages,
   listDashboardDraftPageUuids,
@@ -64,6 +65,7 @@ import {
 import type { PublishOutcome } from '../../publish';
 import { draftLectProjector } from '../../publish/projection';
 import { dashboardPagination, importExportHrefs, renderPage, userCan } from '../../utils/admin-render';
+import { uiTranslator } from '../../utils/i18n';
 import { loadAdminHomeSettings } from '../../utils/settings';
 import { requirePermission } from '../../middleware/auth';
 import type { AppContext } from '../../utils/context';
@@ -875,6 +877,7 @@ pagesRoutes.get('/pages/:id/read', requirePermission('content:read'), async (c) 
     selectedTagIds: data.selectedTagIds,
     backHref,
     structured: structuredEditorProps(config, language, lect, pageType, data.versions),
+    t: await uiTranslator(c),
   });
 });
 
@@ -918,15 +921,17 @@ pagesRoutes.get('/pages/:id/edit', requirePermission('content:read'), async (c) 
   });
   if (pluginView) return pluginView;
 
-  const [creatorName, modifierName] = await Promise.all([
+  const [creatorName, modifierName, editorUsers] = await Promise.all([
     fetchUserName(c.env.DB, page.creator),
     fetchUserName(c.env.DB, num(lect._modifier, 0)),
+    fetchEditorUsers(c.env.DB, page.editors),
   ]);
 
   return renderPage(c, editorPage, {
     page: { ...page, lect: stringifyLect(lect) },
     creatorName: creatorName ?? undefined,
     modifierName: modifierName ?? undefined,
+    editorUsers,
     version: data.version ?? undefined,
     isVersionPreview: Number.isFinite(requestedVersionId) && !!data.version,
     liveVersionId: data.liveVersionId,
@@ -1030,8 +1035,12 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
     });
     if (pluginView) return pluginView;
 
+    // Keep the editors the user picked in the form (not the stored row) so a
+    // validation error doesn't silently revert their selection.
+    const formEditors = editorsFromForm(form);
     return renderPage(c, editorPage, {
-      page,
+      page: { ...page, editors: formEditors },
+      editorUsers: await fetchEditorUsers(c.env.DB, formEditors),
       version: data.version ?? undefined,
       liveVersionId: data.liveVersionId,
       isPublished: data.isPublished,

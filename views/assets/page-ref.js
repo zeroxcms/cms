@@ -54,7 +54,7 @@
       if (!items.length) {
         var empty = document.createElement('p');
         empty.className = 'px-3 py-2 text-xs text-gray-400';
-        empty.textContent = 'No matching pages';
+        empty.textContent = root.getAttribute('data-page-ref-empty-text') || 'No matching pages';
         results.appendChild(empty);
       } else {
         items.forEach(function (item) {

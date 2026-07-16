@@ -3,7 +3,7 @@
     <a href="{{ backHref }}" class="shrink-0 text-gray-400 hover:text-gray-600 transition-colors">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#arrow-left"></use></svg>
     </a>
-    <h2 class="min-w-0 break-words text-2xl font-bold text-gray-900">{{ pageTitle }}</h2>
+    <h2 class="min-w-0 break-words text-2xl font-bold text-gray-900">{% if isEdit %}{{ "view_strings.sections_editor.edit_prefix" | t }}{{ page.name }}{% else %}{{ "view_strings.sections_editor.new_page" | t }}{% endif %}</h2>
     {% if isEdit %}
       <a href="{{ readHref }}"
          title="{{ "view_strings.sections_editor.read_only_view" | t }}"
@@ -19,6 +19,9 @@
         <div id="presence-avatars" class="flex items-center gap-1"></div>
         <div id="sync-indicator"
              title=""
+             data-title-connected="{{ "view_strings.sections_editor.sync_active" | t }}"
+             data-title-connecting="{{ "view_strings.sections_editor.sync_connecting" | t }}"
+             data-title-disconnected="{{ "view_strings.sections_editor.sync_disconnected" | t }}"
              style="width:8px;height:8px;border-radius:50%;background:#9ca3af;flex-shrink:0;transition:background .4s,opacity .4s;display:none"></div>
       </div>
     {% endif %}
@@ -47,7 +50,7 @@
     {% if isVersionPreview %}
       <button type="submit" name="action" value="{{ selectedVersion.restoreAction }}" class="sr-only" tabindex="-1" aria-hidden="true">{{ "view_strings.sections_editor.restore_version" | t }}</button>
     {% else %}
-      <button type="submit" class="sr-only" tabindex="-1" aria-hidden="true">{{ saveLabel }}</button>
+      <button type="submit" class="sr-only" tabindex="-1" aria-hidden="true">{% if isEdit %}{{ "view_strings.sections_editor.save_changes" | t }}{% else %}{{ "view_strings.sections_editor.create_page" | t }}{% endif %}</button>
     {% endif %}
     <div class="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
 <div class="flex min-w-0 flex-col gap-3 border-b border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 bg-gray-100">
@@ -169,21 +172,40 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
       <div class="flex min-w-0 flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:px-5">
         <div class="flex shrink-0 items-center gap-2 text-gray-500">
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#user-group"></use></svg>
-          <label for="editors" class="sr-only">{{ "view_strings.sections_editor.editor_user_ids" | t }}</label>
-          <span class="sr-only">{{ "view_strings.sections_editor.editors" | t }}</span>
+          <label for="editors_search" class="sr-only">{{ "view_strings.sections_editor.editors" | t }}</label>
         </div>
-        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-          {% if page.hasEditorChips %}
-            {% for editor in page.editorChips %}
-              <span class="inline-flex max-w-full items-center rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                {{ editor }}
-              </span>
-            {% endfor %}
-          {% endif %}
-          <input type="text" id="editors" name="editors"
-                 value="{{ page.editors }}"
-                 placeholder="12,34,56"
-                 class="min-w-[9rem] flex-1 border-b border-transparent bg-transparent p-0 text-xs text-gray-600 focus:border-indigo-500 focus:outline-none">
+        <div class="relative flex min-w-0 flex-1 flex-wrap items-center gap-1.5" data-editors-combobox>
+          <input type="hidden" id="editors" name="editors" value="{{ page.editors }}">
+          {% for editor in page.editorChips %}
+            <span class="inline-flex max-w-full items-center gap-1 rounded bg-blue-100 py-0.5 pl-2 pr-1 text-xs font-medium text-blue-700" data-editor-chip data-editor-id="{{ editor.id }}">
+              <span class="truncate">{{ editor.name }}</span>
+              <button type="button" class="shrink-0 rounded p-0.5 text-blue-400 hover:bg-blue-200 hover:text-blue-700" data-editor-remove aria-label="{{ "view_strings.sections_editor.remove_editor" | t }}">
+                <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#x"></use></svg>
+              </button>
+            </span>
+          {% endfor %}
+          <input type="text" id="editors_search"
+                 placeholder="{{ "view_strings.sections_editor.search_users" | t }}"
+                 autocomplete="off"
+                 role="combobox"
+                 aria-expanded="false"
+                 aria-autocomplete="list"
+                 aria-controls="editors_results"
+                 class="min-w-[9rem] flex-1 border-b border-transparent bg-transparent p-0 text-xs text-gray-600 focus:border-indigo-500 focus:outline-none"
+                 data-editors-search>
+          <div id="editors_results"
+               class="absolute left-0 top-full z-20 mt-1 hidden w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+               data-editors-results>
+            <p class="hidden px-3 py-2 text-xs text-gray-400" data-editors-empty>{{ "view_strings.sections_editor.no_matching_users" | t }}</p>
+          </div>
+          <template data-editor-chip-template>
+            <span class="inline-flex max-w-full items-center gap-1 rounded bg-blue-100 py-0.5 pl-2 pr-1 text-xs font-medium text-blue-700" data-editor-chip>
+              <span class="truncate"></span>
+              <button type="button" class="shrink-0 rounded p-0.5 text-blue-400 hover:bg-blue-200 hover:text-blue-700" data-editor-remove aria-label="{{ "view_strings.sections_editor.remove_editor" | t }}">
+                <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#x"></use></svg>
+              </button>
+            </span>
+          </template>
         </div>
       </div>
 
@@ -227,16 +249,52 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
             <div class="min-w-0 space-y-2">
               <p class="min-w-0 break-words text-xs font-semibold uppercase tracking-wide text-gray-400">{{ group.name }}</p>
               {% if group.hasTags %}
-                <div class="flex flex-wrap gap-3">
+                <label for="tags_search_{{ group.slug }}" class="sr-only">{{ "view_strings.sections_editor.search_tags" | t }}</label>
+                <div class="relative flex min-w-0 flex-wrap items-center gap-1.5" data-tags-combobox>
                   {% for tag in group.tags %}
-                    <label for="tag_{{ tag.id }}" class="flex min-w-0 items-center gap-2 cursor-pointer">
-                      <input id="tag_{{ tag.id }}" type="checkbox" name="tag_ids" value="{{ tag.id }}"
-                             {% if tag.checked %}checked{% endif %}
-                             class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
-                      <span class="min-w-0 break-words text-sm text-gray-700">{{ tag.name }}</span>
-                    </label>
+                    {% if tag.checked %}
+                      <span class="inline-flex max-w-full items-center gap-1 rounded bg-indigo-100 py-0.5 pl-2 pr-1 text-xs font-medium text-indigo-700" data-tag-chip data-tag-id="{{ tag.id }}">
+                        <input type="hidden" name="tag_ids" value="{{ tag.id }}">
+                        <span class="truncate">{{ tag.name }}</span>
+                        <button type="button" class="shrink-0 rounded p-0.5 text-indigo-400 hover:bg-indigo-200 hover:text-indigo-700" data-tag-remove aria-label="{{ "view_strings.sections_editor.remove_tag" | t }}">
+                          <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#x"></use></svg>
+                        </button>
+                      </span>
+                    {% endif %}
                   {% endfor %}
+                  <input type="text" id="tags_search_{{ group.slug }}"
+                         placeholder="{{ "view_strings.sections_editor.search_tags" | t }}"
+                         autocomplete="off"
+                         role="combobox"
+                         aria-expanded="false"
+                         aria-autocomplete="list"
+                         aria-controls="tags_results_{{ group.slug }}"
+                         class="min-w-[9rem] flex-1 border-b border-transparent bg-transparent p-0 text-xs text-gray-600 focus:border-indigo-500 focus:outline-none"
+                         data-tags-search>
+                  <div id="tags_results_{{ group.slug }}"
+                       class="absolute left-0 top-full z-20 mt-1 hidden max-h-56 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+                       data-tags-results>
+                    {% for tag in group.tags %}
+                      <button type="button"
+                              class="block w-full truncate px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50{% if tag.checked %} hidden{% endif %}"
+                              data-tag-option
+                              data-tag-id="{{ tag.id }}"
+                              data-tag-name="{{ tag.name }}">{{ tag.name }}</button>
+                    {% endfor %}
+                    <p class="hidden px-3 py-2 text-xs text-gray-400" data-tags-empty>{{ "view_strings.sections_editor.no_matching_tags" | t }}</p>
+                  </div>
+                  <template data-tag-chip-template>
+                    <span class="inline-flex max-w-full items-center gap-1 rounded bg-indigo-100 py-0.5 pl-2 pr-1 text-xs font-medium text-indigo-700" data-tag-chip>
+                      <input type="hidden" name="tag_ids" value="">
+                      <span class="truncate"></span>
+                      <button type="button" class="shrink-0 rounded p-0.5 text-indigo-400 hover:bg-indigo-200 hover:text-indigo-700" data-tag-remove aria-label="{{ "view_strings.sections_editor.remove_tag" | t }}">
+                        <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#x"></use></svg>
+                      </button>
+                    </span>
+                  </template>
                 </div>
+              {% else %}
+                <a href="/admin/tags/new" class="text-xs text-indigo-600 hover:text-indigo-500">{{ "view_strings.sections_editor.no_tags_in_taxonomy" | t }}</a>
               {% endif %}
             </div>
           {% endfor %}
@@ -248,7 +306,7 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
       <div class="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
         <div class="mb-3 flex min-w-0 items-center justify-between gap-3">
           <p class="text-sm font-semibold text-gray-700">{{ "view_strings.sections_editor.versions" | t }}</p>
-          <button type="submit" name="action" value="delete-versions" formnovalidate data-clean-versions-button title="{{ "view_strings.sections_editor.clean_all_versions_2" | t }}" aria-label="{{ "view_strings.sections_editor.clean_all_versions_2" | t }}"
+          <button type="submit" name="action" value="delete-versions" formnovalidate data-clean-versions-button data-confirm-message="{{ "view_strings.sections_editor.clean_versions_confirm" | t }}" title="{{ "view_strings.sections_editor.clean_all_versions_2" | t }}" aria-label="{{ "view_strings.sections_editor.clean_all_versions_2" | t }}"
                   class="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 hover:bg-red-50">
             {{ "view_strings.sections_editor.clean_all_versions" | t }}
           </button>
@@ -266,7 +324,7 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
                   <span class="ml-1 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-green-700">{{ "view_strings.sections_editor.live" | t }}</span>
                 {% endif %}
               </a>
-              <button type="submit" name="action" value="{{ version.removeAction }}" formnovalidate data-version-delete-button title="{{ "view_strings.sections_editor.remove_version" | t }}" aria-label="{{ "view_strings.sections_editor.remove_version" | t }}"
+              <button type="submit" name="action" value="{{ version.removeAction }}" formnovalidate data-version-delete-button data-confirm-message="{{ "view_strings.sections_editor.remove_version_confirm" | t }}" title="{{ "view_strings.sections_editor.remove_version" | t }}" aria-label="{{ "view_strings.sections_editor.remove_version" | t }}"
                       class="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 hover:bg-red-50">
                 {{ "view_strings.sections_editor.remove" | t }}
               </button>
@@ -307,7 +365,7 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
       {% else %}
         <button type="submit"
                 class="w-full px-6 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm sm:w-auto">
-          {{ saveLabel }}
+          {% if isEdit %}{{ "view_strings.sections_editor.save_changes" | t }}{% else %}{{ "view_strings.sections_editor.create_page" | t }}{% endif %}
         </button>
         {% if isEdit %}
           {% unless isPublished %}
@@ -319,7 +377,7 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
                   class="w-full px-6 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-sm sm:w-auto">{{ "view_strings.sections_editor.re_publish" | t }}</button>
           {% endif %}
           {% if isPublished %}
-          <button type="submit" formaction="{{ unpublishAction }}" formnovalidate data-unpublish-button
+          <button type="submit" formaction="{{ unpublishAction }}" formnovalidate data-unpublish-button data-confirm-message="{{ "view_strings.sections_editor.unpublish_page_confirm" | t }}"
                   class="w-full px-6 py-2 bg-yellow-600 text-white text-sm font-semibold rounded-lg hover:bg-yellow-700 transition-colors shadow-sm sm:w-auto">{{ "view_strings.sections_editor.un_publish" | t }}</button>
           {% endif %}
         {% endif %}
@@ -328,7 +386,7 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
         {{ "view_strings.sections_editor.cancel" | t }}
       </a>
       {% if isEdit %}
-        <button type="submit" formaction="{{ deleteAction }}" formnovalidate data-delete-button
+        <button type="submit" formaction="{{ deleteAction }}" formnovalidate data-delete-button data-confirm-message="{{ "view_strings.sections_editor.delete_page_confirm" | t }}"
                 class="w-full px-6 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-colors shadow-sm sm:ml-auto sm:w-auto">
           {{ "view_strings.sections_editor.delete" | t }}
         </button>
@@ -344,7 +402,8 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
   const deleteButton = document.querySelector('[data-delete-button]');
   if (deleteButton) {
     deleteButton.addEventListener('click', (event) => {
-      const message = 'Delete this page?\n\nIt will be unpublished from all sites and moved to trash. You can restore it later from Trash.';
+      const message = deleteButton.getAttribute('data-confirm-message')
+        || 'Delete this page?\n\nIt will be unpublished from all sites and moved to trash. You can restore it later from Trash.';
       if (!confirm(message)) event.preventDefault();
     });
   }
@@ -352,13 +411,15 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
   const unpublishButton = document.querySelector('[data-unpublish-button]');
   if (unpublishButton) {
     unpublishButton.addEventListener('click', (event) => {
-      if (!confirm('Un-publish this page?')) event.preventDefault();
+      const message = unpublishButton.getAttribute('data-confirm-message') || 'Un-publish this page?';
+      if (!confirm(message)) event.preventDefault();
     });
   }
 
   document.querySelectorAll('[data-version-delete-button]').forEach((button) => {
     button.addEventListener('click', (event) => {
-      const message = 'Remove this saved version?\n\nThis cannot be undone.';
+      const message = button.getAttribute('data-confirm-message')
+        || 'Remove this saved version?\n\nThis cannot be undone.';
       if (!confirm(message)) event.preventDefault();
     });
   });
@@ -366,7 +427,8 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
   const cleanVersionsButton = document.querySelector('[data-clean-versions-button]');
   if (cleanVersionsButton) {
     cleanVersionsButton.addEventListener('click', (event) => {
-      const message = 'Clean all saved versions for this page?\n\nThis cannot be undone.';
+      const message = cleanVersionsButton.getAttribute('data-confirm-message')
+        || 'Clean all saved versions for this page?\n\nThis cannot be undone.';
       if (!confirm(message)) event.preventDefault();
     });
   }
@@ -481,6 +543,206 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
       if (!parentCombobox.contains(event.target)) closeParentResults();
     });
   }
+
+  // Editors combobox: search users by name, confirmed users become removable
+  // chips; the hidden #editors input carries the comma-separated user ids.
+  const editorsCombobox = document.querySelector('[data-editors-combobox]');
+  if (editorsCombobox) {
+    const editorsHidden = document.getElementById('editors');
+    const editorsSearch = editorsCombobox.querySelector('[data-editors-search]');
+    const editorsResults = editorsCombobox.querySelector('[data-editors-results]');
+    const editorsEmpty = editorsCombobox.querySelector('[data-editors-empty]');
+    const editorChipTemplate = editorsCombobox.querySelector('[data-editor-chip-template]');
+    let editorsSearchRequest = 0;
+
+    function editorIds() {
+      return editorsHidden.value.split(',').map((id) => id.trim()).filter(Boolean);
+    }
+
+    function bindEditorChip(chip) {
+      chip.querySelector('[data-editor-remove]').addEventListener('click', () => {
+        editorsHidden.value = editorIds().filter((id) => id !== chip.dataset.editorId).join(',');
+        chip.remove();
+      });
+    }
+
+    function addEditorChip(user) {
+      const id = String(user.id);
+      if (editorIds().includes(id)) return;
+      editorsHidden.value = editorIds().concat(id).join(',');
+      const chip = editorChipTemplate.content.firstElementChild.cloneNode(true);
+      chip.dataset.editorId = id;
+      chip.children[0].textContent = user.name;
+      bindEditorChip(chip);
+      editorsCombobox.insertBefore(chip, editorsSearch);
+    }
+
+    function renderEditorOptions(users) {
+      editorsResults.querySelectorAll('[data-editor-option]').forEach((option) => option.remove());
+      const selected = new Set(editorIds());
+      const candidates = users.filter((user) => !selected.has(String(user.id)));
+      candidates.forEach((user) => {
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.className = 'block w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50';
+        option.dataset.editorOption = '';
+        option.innerHTML = '<span class="block truncate font-medium"></span><span class="block truncate text-[11px] text-gray-400"></span>';
+        option.children[0].textContent = user.name;
+        option.children[1].textContent = user.email;
+        option.addEventListener('click', () => {
+          addEditorChip(user);
+          editorsSearch.value = '';
+          editorsSearch.focus();
+          loadEditorOptions();
+        });
+        editorsResults.insertBefore(option, editorsEmpty);
+      });
+      editorsEmpty.classList.toggle('hidden', candidates.length > 0);
+    }
+
+    async function loadEditorOptions() {
+      const requestId = ++editorsSearchRequest;
+      const params = new URLSearchParams();
+      const query = editorsSearch.value.trim();
+      if (query) params.set('q', query);
+      try {
+        const response = await fetch(`/admin/api/users?${params.toString()}`);
+        if (!response.ok || requestId !== editorsSearchRequest) return;
+        renderEditorOptions(await response.json());
+      } catch (_error) {
+        if (requestId === editorsSearchRequest) renderEditorOptions([]);
+      }
+    }
+
+    async function openEditorsResults() {
+      editorsResults.classList.remove('hidden');
+      editorsSearch.setAttribute('aria-expanded', 'true');
+      await loadEditorOptions();
+    }
+
+    function closeEditorsResults() {
+      editorsResults.classList.add('hidden');
+      editorsSearch.setAttribute('aria-expanded', 'false');
+    }
+
+    editorsSearch.addEventListener('focus', openEditorsResults);
+    editorsSearch.addEventListener('input', openEditorsResults);
+    editorsSearch.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeEditorsResults();
+        return;
+      }
+      // Backspace in an empty search removes the last chip.
+      if (event.key === 'Backspace' && !editorsSearch.value) {
+        const chips = editorsCombobox.querySelectorAll('[data-editor-chip]');
+        if (chips.length) chips[chips.length - 1].querySelector('[data-editor-remove]').click();
+        return;
+      }
+      if (event.key !== 'Enter') return;
+      // Enter confirms the first match instead of submitting the form.
+      event.preventDefault();
+      const firstOption = editorsResults.querySelector('[data-editor-option]');
+      if (firstOption) firstOption.click();
+    });
+    editorsCombobox.querySelectorAll('[data-editor-chip]').forEach(bindEditorChip);
+    document.addEventListener('click', (event) => {
+      if (!editorsCombobox.contains(event.target)) closeEditorsResults();
+    });
+  }
+
+  // Tag comboboxes (one per taxonomy group): options are pre-rendered
+  // server-side and filtered client-side; assigned tags become removable chips
+  // whose hidden inputs carry the tag_ids the form posts.
+  document.querySelectorAll('[data-tags-combobox]').forEach((combobox) => {
+    const search = combobox.querySelector('[data-tags-search]');
+    const results = combobox.querySelector('[data-tags-results]');
+    const empty = combobox.querySelector('[data-tags-empty]');
+    const chipTemplate = combobox.querySelector('[data-tag-chip-template]');
+
+    function optionFor(id) {
+      return results.querySelector('[data-tag-option][data-tag-id="' + id + '"]');
+    }
+
+    function bindTagChip(chip) {
+      chip.querySelector('[data-tag-remove]').addEventListener('click', () => {
+        const option = optionFor(chip.dataset.tagId);
+        if (option) option.classList.remove('hidden');
+        chip.remove();
+        filterOptions();
+      });
+    }
+
+    function addTagChip(option) {
+      const chip = chipTemplate.content.firstElementChild.cloneNode(true);
+      chip.dataset.tagId = option.dataset.tagId;
+      chip.querySelector('input').value = option.dataset.tagId;
+      chip.querySelector('span').textContent = option.dataset.tagName;
+      bindTagChip(chip);
+      combobox.insertBefore(chip, search);
+      option.classList.add('hidden');
+    }
+
+    function visibleOptions() {
+      return [...results.querySelectorAll('[data-tag-option]:not(.hidden)')];
+    }
+
+    function filterOptions() {
+      const query = search.value.trim().toLowerCase();
+      let matches = 0;
+      results.querySelectorAll('[data-tag-option]').forEach((option) => {
+        // Chips stay hidden in the list even when they match the query.
+        const assigned = combobox.querySelector('[data-tag-chip][data-tag-id="' + option.dataset.tagId + '"]');
+        const visible = !assigned && option.dataset.tagName.toLowerCase().includes(query);
+        option.classList.toggle('hidden', !visible);
+        if (visible) matches += 1;
+      });
+      empty.classList.toggle('hidden', matches > 0);
+    }
+
+    function openResults() {
+      filterOptions();
+      results.classList.remove('hidden');
+      search.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeResults() {
+      results.classList.add('hidden');
+      search.setAttribute('aria-expanded', 'false');
+    }
+
+    results.querySelectorAll('[data-tag-option]').forEach((option) => {
+      option.addEventListener('click', () => {
+        addTagChip(option);
+        search.value = '';
+        search.focus();
+        filterOptions();
+      });
+    });
+
+    search.addEventListener('focus', openResults);
+    search.addEventListener('input', openResults);
+    search.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeResults();
+        return;
+      }
+      // Backspace in an empty search removes the last chip.
+      if (event.key === 'Backspace' && !search.value) {
+        const chips = combobox.querySelectorAll('[data-tag-chip]');
+        if (chips.length) chips[chips.length - 1].querySelector('[data-tag-remove]').click();
+        return;
+      }
+      if (event.key !== 'Enter') return;
+      // Enter confirms the first match instead of submitting the form.
+      event.preventDefault();
+      const firstOption = visibleOptions()[0];
+      if (firstOption) firstOption.click();
+    });
+    combobox.querySelectorAll('[data-tag-chip]').forEach(bindTagChip);
+    document.addEventListener('click', (event) => {
+      if (!combobox.contains(event.target)) closeResults();
+    });
+  });
 
   const editorScrollKey = 'cms-editor-scroll:' + window.location.pathname;
   const savedEditorScroll = window.sessionStorage.getItem(editorScrollKey);
@@ -697,15 +959,15 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
     } else if (status === 'connected') {
       indicator.style.display = '';
       indicator.style.background = '#10b981';
-      indicator.title = 'Live sync active';
+      indicator.title = indicator.getAttribute('data-title-connected') || 'Live sync active';
     } else if (status === 'connecting') {
       indicator.style.display = '';
       indicator.style.background = '#f59e0b';
-      indicator.title = 'Connecting…';
+      indicator.title = indicator.getAttribute('data-title-connecting') || 'Connecting…';
     } else {
       indicator.style.display = '';
       indicator.style.background = '#9ca3af';
-      indicator.title = 'Sync disconnected — changes still save normally';
+      indicator.title = indicator.getAttribute('data-title-disconnected') || 'Sync disconnected — changes still save normally';
     }
   }
 

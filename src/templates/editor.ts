@@ -541,6 +541,9 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
   page?: Page;
   creatorName?: string;
   modifierName?: string;
+  /** Resolved display names for the page's `editors` ids (for the editors
+   *  combobox chips); unresolved ids fall back to the raw id. */
+  editorUsers?: Array<{ id: number; name: string }>;
   version?: PageVersion;
   isVersionPreview?: boolean;
   liveVersionId?: number;
@@ -601,7 +604,13 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
   const pageType = (structured ? getLectScalar(structured.lect, '_type') : '') || page?.page_type || defaultPageType || 'default';
   const structuredModel = structured ? renderStructuredEditor(structured) : null;
   const versionHrefBase = page ? `/admin/pages/${page.id}/edit` : action;
-  const pageEditorChips = editorChips(page?.editors);
+  const pageEditorChips = opts.editorUsers
+    ?? editorChips(page?.editors).map((id) => ({ id, name: `#${id}` }));
+  // The DB `taxonomies` table only holds runtime-created taxonomies; config-
+  // and plugin-defined ones live in the resolved CmsConfig, so merge both
+  // (DB rows win on slug) — otherwise the taxonomy setup shown on the
+  // page-type form never surfaces in the editor.
+  const allTaxonomies = mergeTaxonomies(taxonomies, structured?.config.taxonomies);
   const parentOptions = parentPages
     .filter((parent) => parent.id !== page?.id)
     .map((parent) => ({
@@ -645,7 +654,6 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
           currentHref: page ? `/admin/pages/${page.id}/edit` : action,
         }
       : undefined,
-    saveLabel: isEdit ? 'Save Changes' : 'Create Page',
     errors,
     hasErrors: errors.length > 0,
     flash,
@@ -683,11 +691,11 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
     structuredModel,
     ...editorTagGroups(
       tags,
-      taxonomies,
+      allTaxonomies,
       selectedTagIds,
       // Show only the taxonomies checked for this page type; when the page type
       // has none checked, fall back to showing every taxonomy.
-      structured?.config.taxonomyLists[pageType] ?? taxonomies.map((taxonomy) => taxonomy.slug),
+      structured?.config.taxonomyLists[pageType] ?? allTaxonomies.map((taxonomy) => taxonomy.slug),
     ),
     versions,
     hasVersions: versions.length > 0,
@@ -698,9 +706,21 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
   return adminLayout(views, opts, { title: pageTitle, body });
 }
 
+/** Merges config/plugin taxonomy definitions with DB rows; DB wins on slug. */
+function mergeTaxonomies(
+  dbTaxonomies: Taxonomy[],
+  configTaxonomies: Record<string, string> | undefined,
+): Array<Pick<Taxonomy, 'name' | 'slug'>> {
+  const bySlug = new Map<string, Pick<Taxonomy, 'name' | 'slug'>>(
+    Object.entries(configTaxonomies ?? {}).map(([slug, name]) => [slug, { slug, name }]),
+  );
+  for (const taxonomy of dbTaxonomies) bySlug.set(taxonomy.slug, taxonomy);
+  return [...bySlug.values()].sort((a, b) => a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug));
+}
+
 function editorTagGroups(
   tags: Tag[],
-  taxonomies: Taxonomy[],
+  taxonomies: Array<Pick<Taxonomy, 'name' | 'slug'>>,
   selectedTagIds: number[],
   taxonomySlugs: string[],
 ) {

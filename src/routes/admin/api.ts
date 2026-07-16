@@ -50,6 +50,38 @@ apiRoutes.get('/api/parent-pages', requirePermission('content:read'), async (c) 
   })));
 });
 
+// Users for the editors combobox on the page editor. `q` filters by name or
+// email; without it, returns the most recently active users. Requires
+// content:write (not just read) since it enumerates user names/emails and only
+// users who can save the form need it.
+apiRoutes.get('/api/users', requirePermission('content:write'), async (c) => {
+  const query = c.req.query('q')?.trim() ?? '';
+  const params: unknown[] = [];
+  let whereSql = '';
+
+  if (query) {
+    const term = `%${query.replaceAll(' ', '%')}%`;
+    whereSql = 'WHERE (name LIKE ? OR email LIKE ?)';
+    params.push(term, term);
+  }
+
+  const users = await c.env.DB.prepare(
+    `SELECT id, name, email
+     FROM users
+     ${whereSql}
+     ORDER BY updated_at DESC, name ASC
+     LIMIT 20`,
+  )
+    .bind(...params)
+    .all<{ id: number; name: string | null; email: string | null }>();
+
+  return c.json(users.results.map((user) => ({
+    id: user.id,
+    name: user.name?.trim() || user.email || `#${user.id}`,
+    email: user.email ?? '',
+  })));
+});
+
 // Pages of a given type, for the page-reference field's search combobox
 // (views/snippets/pagefield/page/basic.liquid). `q` filters by name/slug; `id`
 // resolves a single page (used to label the current selection). With neither,

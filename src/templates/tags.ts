@@ -55,7 +55,9 @@ export async function tagFormPage(views: Fetcher, opts: BaseTemplateProps & {
   } = opts;
   const body = await renderView(views, '/templates/tag-form.json', {
     isEdit: !!tag,
-    heading: tag ? 'Edit Tag' : 'New Tag',
+    headingKey: tag
+      ? 'view_strings.sections_tag_form.edit_tag'
+      : 'view_strings.sections_tag_form.new_tag',
     action: tag ? `/admin/tags/${tag.id}` : '/admin/tags',
     name: tag?.name ?? '',
     slug: tag?.slug ?? '',

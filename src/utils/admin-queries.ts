@@ -33,6 +33,32 @@ export async function fetchUserName(db: D1DatabaseClient, userId: number | null 
 }
 
 /**
+ * Resolves a page's comma-separated `editors` id string to display chips for
+ * the editors combobox. Ids without a matching user keep the raw id as their
+ * label so they remain visible and removable.
+ */
+export async function fetchEditorUsers(
+  db: D1DatabaseClient,
+  editors: string | null | undefined,
+): Promise<Array<{ id: number; name: string }>> {
+  const ids = Array.from(new Set(
+    (editors ?? '')
+      .split(',')
+      .map((id) => parseInt(id.trim(), 10))
+      .filter((id) => Number.isFinite(id) && id > 0),
+  ));
+  if (!ids.length) return [];
+
+  const rows = await db.prepare(
+    `SELECT id, name, email FROM users WHERE id IN (${ids.map(() => '?').join(',')})`,
+  )
+    .bind(...ids)
+    .all<{ id: number; name: string | null; email: string | null }>();
+  const names = new Map(rows.results.map((row) => [row.id, row.name?.trim() || row.email || '']));
+  return ids.map((id) => ({ id, name: names.get(id) || `#${id}` }));
+}
+
+/**
  * Returns a draft-page slug guaranteed not to collide with another draft page,
  * appending `-2`, `-3`, … to the desired slug until it is free. Pass the page's
  * own id as `excludeId` on update so it doesn't collide with itself.
