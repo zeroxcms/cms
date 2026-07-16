@@ -3,9 +3,9 @@ Content management system on Workers
 
 ## Features
 
-- **OAuth 2.1** login via Eventuai, GitHub, or Google with PKCE (Proof Key for Code Exchange)
+- **OAuth 2.1** login via Eventuai, GitHub, Google, Microsoft, or Apple with PKCE (Proof Key for Code Exchange); Apple ID tokens are signature- and nonce-verified
 - **Dual JWT** security – short-lived access tokens (15 min) + rotatable refresh tokens (7 days) stored as httpOnly cookies; refresh tokens are hashed and stored in D1 for revocation
-- **Role-based access** – users with `admin`, `editor`, or `moderator` in their comma-separated role list can access the CMS; other users are redirected to the login page
+- **Capability-based access** – routes enforce granular permissions resolved from built-in or custom roles; delegated user/role managers cannot grant authority they do not already hold
 - **Separated D1 content stores** – the CMS database keeps auth, sessions, draft, trash, taxonomy, and media metadata; the published database keeps only live content for public reads
 - **Page versioning** – every save creates a new `page_versions` row; `draft_pages.current_page_version_id` points to the active version
 - **Private R2 media uploads** – picture fields upload to a private R2 bucket and are served back through the Worker at `/media/...`
@@ -248,7 +248,9 @@ npm run deploy
 ## Plugins
 
 The CMS can be extended with **plugins**, each of which is a separate Cloudflare
-Worker bound to the CMS as a [service binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/).
+Worker registered at runtime by HTTPS URL. Registration, enable/disable,
+credential rotation, delegated page-type scopes, assets, quotas, and credits are
+managed under **Admin → Plugins** without redeploying the CMS.
 A plugin can add six things:
 
 - **Lifecycle hooks** – run on page `create`/`update`/`publish`/`unpublish`/`delete`
@@ -280,9 +282,7 @@ A plugin can add six things:
   calls are awaited and failures surface in the editor. See
   [Publish targets](#publish-targets).
 
-Adding a plugin is a `wrangler.toml` change plus a redeploy — there is no runtime
-install. With no plugins configured (`PLUGINS` unset) the system is inert and adds
-no overhead.
+With no plugins registered, the system is inert and adds no plugin traffic.
 
 ### Localized Liquid views
 
@@ -309,9 +309,12 @@ render globals for locale-aware plugin behavior.
 
 Each plugin Worker implements a small HTTP contract under the reserved
 `/__plugin` prefix (`/manifest`, `/views/*`, `/admin/*`, `/edit`, `/hooks/<event>`).
-The CMS discovers plugins from the comma-separated `PLUGINS` var (binding names),
-fetches and caches their manifests, forwards the signed-in user plus a shared
-`PLUGIN_SECRET` on every call, and merges their contributions into the editor.
+The CMS discovers enabled plugins from its `plugins` table, fetches and validates
+their manifests (including a 256 KiB response limit), forwards the signed-in user
+plus that plugin's dedicated secret on outbound calls, and merges approved
+contributions into the editor. The reverse `/__cms` API requires `x-plugin-id`
+and the matching plugin row's own `x-plugin-secret`; the legacy environment
+`PLUGIN_SECRET` is never accepted for inbound authentication.
 
 ### Plugin edit views
 
@@ -422,20 +425,55 @@ served on the CMS origin.
 
 1. Build/deploy the plugin Worker (see [`examples/plugin-events`](examples/plugin-events)
    for a complete reference implementing all six capabilities).
-2. Bind it in `wrangler.toml` and list its binding name in `PLUGINS`:
-   ```toml
-   [[services]]
-   binding = "PLUGIN_EVENTS"
-   service = "cms-plugin-events"
+2. Open **Admin → Plugins → Register plugin**, enter its public HTTPS base URL,
+   and leave it disabled until you have reviewed its manifest and code.
+3. Copy the generated dedicated secret from the plugin edit screen and store it
+   on the plugin Worker with `wrangler secret put PLUGIN_SECRET`.
+4. Enable the plugin and explicitly approve only the assets and delegated
+   `readTypes`/`writeTypes` it needs.
 
-   [vars]
-   PLUGINS = "PLUGIN_EVENTS"
-   ```
-3. Share the secret with both Workers: `wrangler secret put PLUGIN_SECRET`.
-4. Redeploy the CMS.
+> **Trust boundary:** plugin Workers receive scoped content and signed-in user
+> context. Approved plugin JavaScript and proxied plugin pages execute on the
+> CMS origin, so an enabled plugin is trusted application code, not a sandboxed
+> third party. Review its source, pin approved asset hashes, grant least
+> privilege, and rotate/revoke its dedicated secret if compromised.
 
-> **Trust:** plugin Workers receive page content and the signed-in user. Only
-> bind plugins you trust.
+### Plugin write-back authentication
+
+Server-to-server calls from a plugin to `/__cms/*` must send:
+
+```http
+x-plugin-id: events
+x-plugin-secret: <that plugin's dedicated secret>
+```
+
+Owned blueprint types are writable. Manifest `readTypes` and `writeTypes` stay
+inert until an administrator approves them, including wildcard `"*"` requests.
+Responses under `/__cms` use `Cache-Control: no-store`. Existing plugin rows
+whose `secret` is `NULL` must be rotated in the admin before they can call this
+API; they fail closed with `503 plugin_api_unavailable`.
+
+---
+
+## Security model and release checklist
+
+- Keep `JWT_SECRET` and OAuth client secrets in Cloudflare secrets (or
+  `.dev.vars` locally), never in `wrangler.toml` or source control. Cloudflare
+  account, zone, route, D1, R2, and OAuth client IDs are identifiers, not bearer
+  credentials.
+- Set `CANONICAL_ORIGIN` and use HTTPS. Configure `ALLOWED_EMAIL_DOMAINS` when
+  the CMS is not intended to allow open viewer registration.
+- Access JWTs are intentionally short-lived (15 minutes). Refresh sessions can
+  be revoked immediately, but an already-issued access token can retain its
+  embedded role until it expires; use a shorter TTL or a per-request session /
+  authorization-version check for deployments that require immediate demotion.
+- Plugin URL validation rejects obvious private-address literals, but it is not
+  a complete DNS-rebinding defense. Only users with `plugin:manage` should
+  register audited plugin origins.
+- Run `npm test`, `npm run type-check`, and `npm audit` before release. The July
+  2026 security review covered OAuth, sessions, RBAC, cross-origin mutations,
+  plugins, uploads/media, rendering/CSP, structured JSON, publishing, and
+  dependencies; it is not a substitute for an independent penetration test.
 
 ---
 
@@ -577,7 +615,7 @@ PUBLISH_TARGETS = "d1,r2"
 
 **Plugin targets** are not listed in `PUBLISH_TARGETS`; any plugin whose
 manifest declares `publishTarget: true` automatically receives publish traffic
-(requires `PLUGIN_SECRET`). Two ready-to-deploy plugins:
+using that registration's dedicated secret. Two ready-to-deploy plugins:
 
 - [`plugin-publish-ipfs`](https://github.com/zeroxcms/plugin-publish-ipfs) — pins
   each published page to IPFS via the Pinata API, tracks `uuid → CID` in KV so
@@ -615,7 +653,9 @@ are write-only.
 │   ├── index.ts       # Hono app entry point
 │   ├── types.ts       # Shared TypeScript types & Env bindings
 │   ├── middleware/
-│   │   └── auth.ts    # Dual-JWT auth + editor-role guard
+│   │   ├── auth.ts    # Dual-JWT auth + capability guard
+│   │   └── rate-limit.ts
+│   ├── plugins/       # Registry, hooks, proxy views, and config validation
 │   ├── publish/
 │   │   ├── adapter.ts # PublishAdapter contract + snapshot types
 │   │   ├── d1.ts      # D1 target (published database, default)
@@ -624,16 +664,21 @@ are write-only.
 │   │   └── index.ts   # Registry: resolves targets, fans out publishes
 │   ├── routes/
 │   │   ├── auth.ts    # OAuth 2.1 login / callback / logout / refresh
-│   │   └── admin.ts   # Protected CMS admin UI routes
-│   ├── templates/
-│   │   ├── layout.ts  # Shared HTML wrapper (Tailwind CDN)
-│   │   ├── login.ts   # Login page
-│   │   ├── dashboard.ts # Pages list with publish status
-│   │   └── editor.ts  # Create / edit page form
+│   │   ├── cms-api.ts # Authenticated plugin-facing /__cms API
+│   │   ├── media.ts   # Private R2 media delivery
+│   │   └── admin/     # Capability-protected admin route modules
+│   ├── security/      # JWT, cookies, sessions, HTTP, media, plugin proxy
+│   ├── templates/     # Server renderers for Liquid section data
 │   └── utils/
-│       ├── jwt.ts     # HS256 sign / verify using Web Crypto API
 │       ├── lect.ts    # Structured content helpers
 │       └── pkce.ts    # PKCE code verifier / challenge helpers
+├── views/
+│   ├── layout/        # Liquid layout
+│   ├── sections/      # Admin UI Liquid sections
+│   ├── templates/     # Section composition maps
+│   └── assets/        # Compiled Tailwind CSS and browser scripts
+├── styles/
+│   └── admin.css      # Tailwind source stylesheet
 ├── package.json
 ├── tsconfig.json
 └── wrangler.toml

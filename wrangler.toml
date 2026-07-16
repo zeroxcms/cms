@@ -89,16 +89,12 @@ namespace_id = "1002"
 simple = { limit = 30, period = 60 }
 
 # ── Plugins (optional) ────────────────────────────────────────────────────────
-# Each plugin is a separate Worker bound as a service binding. List the binding
-# names in the PLUGINS var below, then redeploy. See examples/plugin-events.
-# [[services]]
-# binding = "PLUGIN_EVENTS"
-# service = "cms-plugin-events"
+# Register plugin Workers by HTTPS URL under Admin → Plugins. Each row receives
+# a dedicated secret that must also be stored on that plugin Worker. No service
+# binding or CMS redeploy is required. See examples/plugin-events.
 
 [vars]
-# Comma-separated plugin service-binding names, e.g. "PLUGIN_EVENTS,PLUGIN_SEO".
-# Leave unset to disable the plugin system entirely (zero overhead).
-# PLUGINS = "PLUGIN_EVENTS"
+# PLUGINS is a deprecated service-binding-era setting and is intentionally unset.
 # Comma-separated built-in publish targets: "d1" (published D1 database) and/or
 # "r2" (static JSON in PUBLISH_BUCKET). Defaults to "d1" when unset. Plugin
 # publish targets are discovered from plugin manifests (publishTarget: true)
@@ -128,4 +124,4 @@ DEFAULT_TIMEZONE = "+0800"
 # wrangler secret put EVENTUAI_CLIENT_SECRET
 # wrangler secret put GITHUB_CLIENT_SECRET
 # wrangler secret put GOOGLE_CLIENT_SECRET
-# wrangler secret put PLUGIN_SECRET   # shared with each plugin Worker
+# wrangler secret put PLUGIN_SECRET   # optional outbound-only fallback for legacy plugin rows

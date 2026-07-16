@@ -2,12 +2,16 @@
 # .dev.vars is gitignored and never committed
 
 JWT_SECRET=replace-with-a-random-32-byte-hex-string
-# Shared secret the CMS forwards to every plugin Worker (x-plugin-secret header).
-# Use the SAME value here and on each plugin Worker. Generate: openssl rand -hex 32
-PLUGIN_SECRET=replace-with-a-random-32-byte-hex-string
+# Plugin registrations receive separate secrets in Admin -> Plugins. Do not use
+# one shared secret across plugins. PLUGIN_SECRET is only an optional outbound
+# fallback for legacy rows whose dedicated database secret has not been rotated;
+# /__cms never accepts it for inbound authentication.
+# PLUGIN_SECRET=replace-only-while-migrating-a-legacy-plugin
 CANONICAL_ORIGIN=http://localhost:8787
 OAUTH_REDIRECT_URI=http://localhost:8787/auth/callback
 # Add a line per provider you enable:
 EVENTUAI_CLIENT_SECRET=your-eventuai-client-secret
 # GITHUB_CLIENT_SECRET=your-github-client-secret
 # GOOGLE_CLIENT_SECRET=your-google-client-secret
+# MICROSOFT_CLIENT_SECRET=your-microsoft-client-secret
+# APPLE_CLIENT_SECRET=your-apple-client-secret

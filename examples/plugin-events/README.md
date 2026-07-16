@@ -1,7 +1,7 @@
 # cms-plugin-events
 
-Reference plugin for the Worker CMS. It is a standalone Cloudflare Worker that the
-CMS calls over a [service binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/).
+Reference plugin for the Worker CMS. It is a standalone Cloudflare Worker that
+the CMS calls over HTTPS after runtime URL registration.
 It demonstrates all five plugin extension points in one small file
 (`src/index.ts`):
 
@@ -28,8 +28,10 @@ A plugin is any Worker that answers these requests under the reserved
 | `POST /__plugin/publish/remove` | Receives `{ uuid }` when a page is unpublished or deleted. |
 | `POST /__plugin/publish/remove-tag` | Receives `{ tagId }` when a tag is deleted (optional — 404 is ignored). |
 
-Hook, publish, and admin calls carry an `x-plugin-secret` header equal to the
-CMS `PLUGIN_SECRET`, so the plugin can verify the request came from the CMS.
+Hook, publish, and admin calls carry an `x-plugin-secret` header containing this
+plugin registration's dedicated secret, so the plugin can verify the request
+came from the CMS. Treat `x-cms-user` as trusted only after verifying that
+secret.
 
 Hooks are fire-and-forget notifications; **publish calls are awaited** and a
 non-2xx response is reported in the CMS editor as a failed publish target.
@@ -39,22 +41,23 @@ non-2xx response is reported in the CMS editor as a failed publish target.
 ```bash
 cd examples/plugin-events
 npm install
-npx wrangler secret put PLUGIN_SECRET   # same value as the CMS PLUGIN_SECRET
 npx wrangler deploy
 ```
 
-Then, in the CMS `wrangler.toml`:
+In the CMS, open **Admin → Plugins → Register plugin**, paste the deployed Worker
+URL, review the discovered manifest, and copy its generated secret. Store that
+secret on the plugin and redeploy it:
 
-```toml
-[[services]]
-binding = "PLUGIN_EVENTS"
-service = "cms-plugin-events"
-
-[vars]
-PLUGINS = "PLUGIN_EVENTS"
+```bash
+cd examples/plugin-events
+npx wrangler secret put PLUGIN_SECRET
+npx wrangler deploy
 ```
 
-Set the matching secret on the CMS too: `wrangler secret put PLUGIN_SECRET`.
-Redeploy the CMS. The **Events** nav item appears, the `event` page type becomes
-available in the editor, and publishing fires this plugin's `publish` hook
-(visible in `wrangler tail cms-plugin-events`).
+Then enable the registration. No CMS service binding or redeploy is required. The **Events** nav
+item appears, the `event` page type becomes available in the editor, and
+publishing fires this plugin's `publish` hook (visible in
+`wrangler tail cms-plugin-events`).
+
+Only install plugins you trust: plugin admin HTML is proxied onto the CMS origin,
+and explicitly approved JS/CSS assets run with same-origin authority.

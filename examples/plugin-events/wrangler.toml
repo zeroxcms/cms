@@ -2,6 +2,6 @@ name = "cms-plugin-events"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
 
-# The CMS forwards this secret on every hook/admin call. Set it to the same
-# value as the CMS's PLUGIN_SECRET:
+# After registering this Worker's URL in Admin -> Plugins, copy that
+# registration's dedicated secret here:
 #   wrangler secret put PLUGIN_SECRET

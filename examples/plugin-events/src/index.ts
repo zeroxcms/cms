@@ -13,12 +13,12 @@
 //   - publish target  : receives full page snapshots on publish —
 //     swap the log lines for an IPFS pin, webhook, search index, …
 //
-// Bind it into the CMS as a service binding and list its binding name
-// in the CMS `PLUGINS` var. See README.md.
+// Deploy it, register its HTTPS URL in Admin -> Plugins, then copy that
+// registration's dedicated secret to this Worker. See README.md.
 // ============================================================
 
 interface PluginEnv {
-  /** Shared secret the CMS forwards on every call (set via `wrangler secret put`). */
+  /** This registration's dedicated secret (set via `wrangler secret put`). */
   PLUGIN_SECRET?: string;
 }
 
@@ -102,14 +102,15 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // Defense in depth: hooks, publish, and admin require the shared secret.
-    // Manifest and view files are harmless to serve, and the binding is private anyway.
+    // Hooks, publish, and user-context views fail closed unless this plugin's
+    // dedicated secret is configured and matches the CMS request header.
+    // The manifest and static view files are intentionally public discovery assets.
     const secretRequired = path.startsWith('/__plugin/hooks/')
       || path.startsWith('/__plugin/publish/')
       || path.startsWith('/__plugin/admin')
       || path === '/__plugin/edit'
       || path === '/__plugin/read';
-    if (secretRequired && env.PLUGIN_SECRET && request.headers.get('x-plugin-secret') !== env.PLUGIN_SECRET) {
+    if (secretRequired && (!env.PLUGIN_SECRET || request.headers.get('x-plugin-secret') !== env.PLUGIN_SECRET)) {
       return new Response('forbidden', { status: 403 });
     }
 
