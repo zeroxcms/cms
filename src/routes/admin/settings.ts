@@ -40,6 +40,7 @@ export const settingsRoutes = new Hono<{ Bindings: Env; Variables: Variables }>(
 settingsRoutes.use('/settings/system', requirePermission('menu:manage'));
 settingsRoutes.use('/settings/menu', requirePermission('menu:manage'));
 settingsRoutes.use('/settings/content', requirePermission('menu:manage'));
+settingsRoutes.use('/settings/content/*', requirePermission('menu:manage'));
 // The credit summary is a read-only view any admin user may see; editing the
 // prices happens under /plugins-manage/* which stays gated by plugin:manage.
 // So no per-route permission here — editorGuard already limits it to signed-in
@@ -251,6 +252,17 @@ settingsRoutes.get('/settings/content', async (c) => {
   return renderPage(c, contentListPage, { bucketConfigured: true, media, nextHref });
 });
 
+settingsRoutes.post('/settings/content/delete', async (c) => {
+  if (!c.env.MEDIA_BUCKET) return c.notFound();
+  const key = String((await c.req.formData()).get('key') ?? '');
+  if (!key) return c.notFound();
+
+  await c.env.MEDIA_BUCKET.delete(key);
+  await c.env.DB.prepare('DELETE FROM media_files WHERE key = ?').bind(key).run();
+  logAudit(c, 'media.delete', 'media', key);
+  return c.redirect('/admin/settings/content', 303);
+});
+
 function creditSummaryChargeLabel(credit: EffectiveCredit): string {
   return credit.def.charge === 'page_create'
     ? `On create: ${credit.def.pageType}`
@@ -355,13 +367,14 @@ settingsRoutes.get('/settings/system', async (c) => {
       formKey: encodeURIComponent(key),
       checked: !sidebarSettings.hiddenPluginKeys.has(key),
       weight: sidebarSettings.pluginWeights[key] ?? defaultPluginNavWeight(item.group),
+      icon: sidebarSettings.pluginIcons[key] ?? 'beaker',
     };
   });
   return renderPage(c, systemSettingsPage, {
     appName: branding.appName,
     appIcon: branding.appIcon,
     adminHomePath: adminHome.href,
-    iconOptions: APP_ICON_OPTIONS.map((option) => ({
+    iconOptions: [...APP_ICON_OPTIONS].sort((a, b) => a.label.localeCompare(b.label)).map((option) => ({
       ...option,
       selected: option.value === branding.appIcon,
     })),
@@ -385,6 +398,10 @@ settingsRoutes.post('/settings/system', async (c) => {
     const key = pluginSidebarKey(item);
     return [key, form.get(`plugin_weight_${encodeURIComponent(key)}`)];
   }));
+  const pluginIcons = Object.fromEntries(pluginItems.map((item) => {
+    const key = pluginSidebarKey(item);
+    return [key, form.get(`plugin_icon_${encodeURIComponent(key)}`)];
+  }));
   const pluginVisibleKeys = form.getAll('plugin_visible_items').map(String);
   await Promise.all([
     saveAppBrandingSettings(c.env, {
@@ -397,6 +414,7 @@ settingsRoutes.post('/settings/system', async (c) => {
     saveSidebarMenuSettings(c.env, visibleKeys, weights, {
       settingsGroupWeight: form.get('settings_group_weight'),
       pluginWeights,
+      pluginIcons,
       pluginVisibleKeys,
     }),
   ]);

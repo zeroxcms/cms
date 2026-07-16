@@ -157,6 +157,7 @@
               <th class="w-28 px-3 py-2 font-semibold">Group</th>
               <th class="w-24 px-3 py-2 font-semibold">Visible</th>
               <th class="w-28 px-3 py-2 font-semibold">Weight</th>
+              <th class="w-36 px-3 py-2 font-semibold">Icon</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-200 text-sm">
@@ -181,6 +182,14 @@
                          value="{{ option.weight | escape }}"
                          aria-label="{{ option.label | escape }} weight"
                          class="block w-20 rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                </td>
+                <td class="px-3 py-3">
+                  <select name="plugin_icon_{{ option.formKey | escape }}" aria-label="{{ option.label | escape }} icon"
+                          class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                    {% for icon in iconOptions %}
+                      <option value="{{ icon.value | escape }}"{% if option.icon == icon.value %} selected{% endif %}>{{ icon.label | escape }}</option>
+                    {% endfor %}
+                  </select>
                 </td>
               </tr>
             {% endfor %}

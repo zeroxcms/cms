@@ -18,6 +18,7 @@ export interface SystemSettingsPluginOption {
   formKey: string;
   checked: boolean;
   weight: number;
+  icon: string;
 }
 
 export interface SystemSettingsIconOption {

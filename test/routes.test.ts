@@ -713,6 +713,7 @@ describe('admin routes', () => {
     { name: 'GET /admin/pages/:id/read (missing page)', path: '/admin/pages/99999/read', authenticated: true, expectedStatus: 404 },
     { name: 'POST /admin/pages/:id/weight', method: 'POST', path: '/admin/pages/101/weight', body: form({ weight: '9', return_to: '/admin/pages/list/default' }), authenticated: true, expectedStatus: 302, location: '/admin/pages/list/default?flash=Draft+weight+updated' },
     { name: 'POST /admin/pages/:id', method: 'POST', path: '/admin/pages/101', body: form({ name: 'About Updated', slug: 'about-updated', page_type: 'default', weight: '3' }), authenticated: true, expectedStatus: 302, location: '/admin/pages/101/edit?language=mis&flash=Page+updated+successfully' },
+    { name: 'POST /admin/pages/:id (publish from editor)', method: 'POST', path: '/admin/pages/101', body: form({ name: 'About', slug: 'about', page_type: 'default', weight: '3', action: 'publish' }), authenticated: true, expectedStatus: 302, location: '/admin/pages/101/edit?language=mis&flash=Page+published+successfully' },
     { name: 'POST /admin/pages/:id/publish', method: 'POST', path: '/admin/pages/101/publish', authenticated: true, expectedStatus: 302, location: '/admin?flash=Page+published+successfully' },
     { name: 'POST /admin/pages/pull/:uuid', method: 'POST', path: '/admin/pages/pull/page-uuid-101', authenticated: true, expectedStatus: 302, location: '/admin/pages/101/edit?flash=Draft+already+exists' },
     { name: 'POST /admin/pages/:id/unpublish', method: 'POST', path: '/admin/pages/101/unpublish', authenticated: true, expectedStatus: 302, location: '/admin?flash=Page+unpublished' },
@@ -1184,6 +1185,24 @@ describe('admin routes', () => {
     )
       .bind('page-uuid-101')
       .first<{ tag_id: number }>()).toEqual({ tag_id: 302 });
+
+    const editor = bodyData(await (await fetchWorker('/admin/pages/101/edit', {
+      headers: { Cookie: await authCookie() },
+    })).text());
+    expect(editor).toMatchObject({
+      isPublished: true,
+      isLiveSynced: true,
+      page: expect.objectContaining({ creatorName: 'Admin User', hasCreator: true }),
+      unpublishAction: '/admin/pages/101/unpublish?return_to=%2Fadmin%2Fpages%2F101%2Fedit',
+    });
+
+    await env.DB.prepare('UPDATE draft_pages SET lect = ? WHERE id = ?')
+      .bind(JSON.stringify({ _type: 'default', name: { mis: 'Updated draft' } }), 101)
+      .run();
+    const changedEditor = bodyData(await (await fetchWorker('/admin/pages/101/edit', {
+      headers: { Cookie: await authCookie() },
+    })).text());
+    expect(changedEditor).toMatchObject({ isPublished: true, isLiveSynced: false });
   });
 
   it.each(['event', 'guest', 'mail_list', 'edm'])('saving an already-published %s page republishes its new version', async (pageType) => {
@@ -2330,7 +2349,11 @@ describe('permission-aware admin UI', () => {
     expect(settingsData.adminHomePath).toBe('/admin/plugins/events/dashboard');
     expect(settingsData.iconOptions).toEqual(expect.arrayContaining([
       expect.objectContaining({ value: 'settings', selected: true }),
+      expect.objectContaining({ value: 'calendar' }),
+      expect.objectContaining({ value: 'contact-card' }),
+      expect.objectContaining({ value: 'mail-check' }),
     ]));
+    expect(settingsData.iconOptions).toHaveLength(48);
     expect(settingsData.options).toEqual(expect.arrayContaining([
       expect.objectContaining({ value: 'pages', checked: true, weight: 50 }),
       expect.objectContaining({ value: 'tags', checked: false }),
@@ -2413,8 +2436,32 @@ describe('permission-aware admin UI', () => {
     }
   });
 
+  it('deletes a media file from the bucket and its metadata record', async () => {
+    const key = 'content-list-delete-test/remove-me.png';
+    await env.MEDIA_BUCKET.put(key, pngBytes());
+    await env.DB.prepare('INSERT INTO media_files (key, url, filename, content_type, size) VALUES (?, ?, ?, ?, ?)')
+      .bind(key, `/media/${key}`, 'remove-me.png', 'image/png', 10)
+      .run();
+
+    const response = await fetchWorker('/admin/settings/content/delete', {
+      method: 'POST',
+      body: form({ key }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get('Location')).toBe('/admin/settings/content');
+    expect(await env.MEDIA_BUCKET.get(key)).toBeNull();
+    expect(await env.DB.prepare('SELECT key FROM media_files WHERE key = ?').bind(key).first()).toBeNull();
+  });
+
   it('requires menu:manage for the content list', async () => {
     expect((await fetchWorker('/admin/settings/content', { headers: { Cookie: await authCookie('editor') } })).status).toBe(403);
+    expect((await fetchWorker('/admin/settings/content/delete', {
+      method: 'POST',
+      body: form({ key: 'anything.png' }),
+      headers: { Cookie: await authCookie('editor') },
+    })).status).toBe(403);
   });
 
   it('renders page types read-only for users without pagetype:write', async () => {

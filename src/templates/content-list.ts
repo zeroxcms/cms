@@ -28,6 +28,7 @@ export async function contentListPage(views: Fetcher, opts: BaseTemplateProps & 
     })),
     hasNextPage: !!opts.nextHref,
     nextHref: opts.nextHref,
+    deleteAction: '/admin/settings/content/delete',
   });
 
   return adminLayout(views, opts, { title: 'Content List', body });

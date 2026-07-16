@@ -539,10 +539,13 @@ function renderLectDiff(draftJson: string, versionJson: string): string {
 
 export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
   page?: Page;
+  creatorName?: string;
   modifierName?: string;
   version?: PageVersion;
   isVersionPreview?: boolean;
   liveVersionId?: number;
+  isPublished?: boolean;
+  isLiveSynced?: boolean;
   parentPages: Page[];
   tags: Tag[];
   taxonomies: Taxonomy[];
@@ -572,10 +575,13 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
     userAvatar,
     currentUserId,
     page,
+    creatorName,
     modifierName,
     version,
     isVersionPreview = false,
     liveVersionId,
+    isPublished = false,
+    isLiveSynced = false,
     parentPages,
     tags,
     taxonomies,
@@ -624,8 +630,11 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
     action,
     backHref,
     deleteAction: page ? `/admin/pages/${page.id}/delete` : '',
+    unpublishAction: page ? `/admin/pages/${page.id}/unpublish?return_to=${encodeURIComponent(`/admin/pages/${page.id}/edit`)}` : '',
     readHref: page ? `/admin/pages/${page.id}/read` : '',
     isEdit,
+    isPublished,
+    isLiveSynced,
     isVersionPreview: !!selectedVersion,
     selectedVersion: selectedVersion
       ? {
@@ -649,6 +658,8 @@ export async function editorPage(views: Fetcher, opts: BaseTemplateProps & {
       end: page?.end ? page.end.replace(' ', 'T').slice(0, 16) : '',
       timezone: page?.timezone ?? defaultTimezone,
       creator: page?.creator ?? '',
+      creatorName: creatorName ?? '',
+      hasCreator: !!creatorName,
       editors: page?.editors ?? '',
       editorChips: pageEditorChips,
       hasEditorChips: pageEditorChips.length > 0,

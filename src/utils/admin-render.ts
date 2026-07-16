@@ -128,7 +128,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
       item: {
         label: item.label,
         href: item.href,
-        icon: 'beaker',
+        icon: sidebarSettings.pluginIcons[key] ?? 'beaker',
       },
       weight: sidebarSettings.pluginWeights[key] ?? defaultPluginNavWeight(item.group),
       index: SIDEBAR_MENU_ITEMS.length + index,

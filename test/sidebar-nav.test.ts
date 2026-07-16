@@ -49,7 +49,7 @@ describe('sidebar active route state', () => {
 
   it('activates the Credit Summary item in Settings', () => {
     const main = [item('Settings', '', { icon: 'settings', isSettingsGroup: true })];
-    const settings = [item('Credit Summary', '/admin/settings/credits', { icon: 'tag' })];
+    const settings = [item('Credit Summary', '/admin/settings/credits', { icon: 'coins' })];
     const result = withActiveSidebarItems('/admin/settings/credits', main, settings);
 
     expect(result.sidebarNav[0].isActive).toBe(true);

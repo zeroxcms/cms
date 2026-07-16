@@ -1366,7 +1366,7 @@ describe('plugin admin proxy', () => {
     const settingsData = bodyData(await settingsResponse.text());
     expect(settingsData.settingsGroupWeight).toBe(5);
     expect(settingsData.pluginOptions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'Events', groupLabel: 'Main', checked: true, weight: 1 }),
+      expect.objectContaining({ label: 'Events', groupLabel: 'Main', checked: true, weight: 1, icon: 'beaker' }),
       expect.objectContaining({ label: 'Mail Settings', groupLabel: 'Settings', checked: true, weight: 1 }),
     ]));
 
@@ -1388,6 +1388,7 @@ describe('plugin admin proxy', () => {
         ['settings_group_weight', '5'],
         [`plugin_weight_${encodeURIComponent(mainPluginKey)}`, '1'],
         [`plugin_weight_${encodeURIComponent(settingsPluginKey)}`, '1'],
+        [`plugin_icon_${encodeURIComponent(mainPluginKey)}`, 'document'],
         ['plugin_visible_items', mainPluginKey],
       ]),
     }));
@@ -1398,7 +1399,7 @@ describe('plugin admin proxy', () => {
     }));
     const afterPayload = renderPayload(await afterHide.text());
     expect(afterPayload.layoutData.sidebarNav).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'Events', href: '/admin/plugins/events/dashboard' }),
+      expect.objectContaining({ label: 'Events', href: '/admin/plugins/events/dashboard', icon: 'document' }),
     ]));
     expect(afterPayload.layoutData.sidebarSettingsNav).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'Mail Settings' }),

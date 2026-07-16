@@ -378,6 +378,9 @@ async function editorPageData(
     liveVersionId: versions.results.find(
       (candidate) => lectsMatch(projectDraft({ page_type: page.page_type, lect: candidate.lect }), liveLect),
     )?.id,
+    isPublished: liveLect !== null,
+    isLiveSynced: liveLect !== null
+      && lectsMatch(projectDraft({ page_type: page.page_type, lect: page.lect }), liveLect),
     selectedTagIds: pageTags.results.map((pt) => pt.tag_id),
   };
 }
@@ -915,14 +918,20 @@ pagesRoutes.get('/pages/:id/edit', requirePermission('content:read'), async (c) 
   });
   if (pluginView) return pluginView;
 
-  const modifierName = await fetchUserName(c.env.DB, num(lect._modifier, 0));
+  const [creatorName, modifierName] = await Promise.all([
+    fetchUserName(c.env.DB, page.creator),
+    fetchUserName(c.env.DB, num(lect._modifier, 0)),
+  ]);
 
   return renderPage(c, editorPage, {
     page: { ...page, lect: stringifyLect(lect) },
+    creatorName: creatorName ?? undefined,
     modifierName: modifierName ?? undefined,
     version: data.version ?? undefined,
     isVersionPreview: Number.isFinite(requestedVersionId) && !!data.version,
     liveVersionId: data.liveVersionId,
+    isPublished: data.isPublished,
+    isLiveSynced: data.isLiveSynced,
     parentPages: data.parentPages,
     tags: data.taxonomy.tags,
     taxonomies: data.taxonomy.taxonomies,
@@ -1025,6 +1034,8 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
       page,
       version: data.version ?? undefined,
       liveVersionId: data.liveVersionId,
+      isPublished: data.isPublished,
+      isLiveSynced: data.isLiveSynced,
       parentPages: data.parentPages,
       tags: data.taxonomy.tags,
       taxonomies: data.taxonomy.taxonomies,
@@ -1086,6 +1097,12 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
 
   await setDraftPageTags(c.env.DB, pageId, form.getAll('tag_ids'), true);
 
+  // Preserve where the editor returns to (e.g. a plugin dashboard) across saves,
+  // so the back arrow / Cancel button still point there after a save reload.
+  const returnToParam = backHref !== '/admin' ? `&return_to=${encodeURIComponent(backHref)}` : '';
+  // Keep the built-in-editor override across the post-save reload.
+  const nativeParam = preferNativeEditor(c) ? '&native=1' : '';
+
   const autoRepublish = action !== 'publish'
     && await pluginAutoPublishesPageType(c.env, pageTypeVal)
     && !!await c.env.PUBLISHED_DB.prepare('SELECT 1 FROM live_pages WHERE uuid = ?')
@@ -1096,14 +1113,10 @@ pagesRoutes.post('/pages/:id', requirePermission('content:write'), async (c) => 
     const outcome = await publishPageToTargets(c.env, pageId);
     if (!outcome) return c.notFound();
     if (!outcome.refused) dispatchHook(c, 'publish', { id: pageId, uuid: page.uuid, page_type: pageTypeVal, name, slug: uniqueSlug });
-    if (action === 'publish') return c.redirect(`/admin?flash=${publishFlash(outcome)}`);
+    if (action === 'publish') {
+      return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}&flash=${publishFlash(outcome)}${returnToParam}${nativeParam}`);
+    }
   }
-
-  // Preserve where the editor returns to (e.g. a plugin dashboard) across saves,
-  // so the back arrow / Cancel button still point there after a save reload.
-  const returnToParam = backHref !== '/admin' ? `&return_to=${encodeURIComponent(backHref)}` : '';
-  // Keep the built-in-editor override across the post-save reload.
-  const nativeParam = preferNativeEditor(c) ? '&native=1' : '';
 
   if (isStructuredEditorAction(action)) {
     return c.redirect(`/admin/pages/${pageId}/edit?language=${encodeURIComponent(language)}${returnToParam}${nativeParam}`);

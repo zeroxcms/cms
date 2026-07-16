@@ -276,11 +276,22 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
       </div>
     {% endif %}
 
-      {% if page.hasModifier %}
-      <div class="flex min-w-0 items-center gap-2">
-        <svg class="h-4 w-4 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#edit-square"></use></svg>
-        <span class="text-xs text-gray-500">Last modified by</span>
-        <span class="min-w-0 truncate text-xs font-medium text-gray-700">{{ page.modifierName | escape }}</span>
+      {% if page.hasCreator or page.hasModifier %}
+      <div class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+        {% if page.hasCreator %}
+        <div class="flex min-w-0 items-center gap-2">
+          <svg class="h-4 w-4 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#edit-square"></use></svg>
+          <span class="text-xs text-gray-500">Created by</span>
+          <span class="min-w-0 truncate text-xs font-medium text-gray-700">{{ page.creatorName | escape }}</span>
+        </div>
+        {% endif %}
+        {% if page.hasModifier %}
+        <div class="flex min-w-0 items-center gap-2">
+          <svg class="h-4 w-4 shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix | escape }}#edit-square"></use></svg>
+          <span class="text-xs text-gray-500">Last modified by</span>
+          <span class="min-w-0 truncate text-xs font-medium text-gray-700">{{ page.modifierName | escape }}</span>
+        </div>
+        {% endif %}
       </div>
       {% endif %}
 
@@ -299,8 +310,18 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
           {{ saveLabel | escape }}
         </button>
         {% if isEdit %}
+          {% unless isPublished %}
           <button type="submit" name="action" value="publish"
                   class="w-full px-6 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-sm sm:w-auto">Publish</button>
+          {% endunless %}
+          {% if isPublished and isLiveSynced == false %}
+          <button type="submit" name="action" value="publish"
+                  class="w-full px-6 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-sm sm:w-auto">Re-publish</button>
+          {% endif %}
+          {% if isPublished %}
+          <button type="submit" formaction="{{ unpublishAction | escape }}" formnovalidate data-unpublish-button
+                  class="w-full px-6 py-2 bg-yellow-600 text-white text-sm font-semibold rounded-lg hover:bg-yellow-700 transition-colors shadow-sm sm:w-auto">Un-publish</button>
+          {% endif %}
         {% endif %}
       {% endif %}
       <a href="{{ backHref | escape }}" class="w-full px-6 py-2 text-center bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors sm:w-auto">
@@ -325,6 +346,13 @@ class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg fo
     deleteButton.addEventListener('click', (event) => {
       const message = 'Delete this page?\n\nIt will be unpublished from all sites and moved to trash. You can restore it later from Trash.';
       if (!confirm(message)) event.preventDefault();
+    });
+  }
+
+  const unpublishButton = document.querySelector('[data-unpublish-button]');
+  if (unpublishButton) {
+    unpublishButton.addEventListener('click', (event) => {
+      if (!confirm('Un-publish this page?')) event.preventDefault();
     });
   }
 

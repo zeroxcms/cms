@@ -8,7 +8,7 @@ export const DEFAULT_PLUGIN_NAV_WEIGHT = 35;
 export const DEFAULT_PLUGIN_SETTINGS_NAV_WEIGHT = 80;
 
 export const SIDEBAR_MENU_ITEMS = [
-  { key: 'pages', label: 'Pages', description: 'Draft content dashboard and page lists.', href: '/admin/pages/list', icon: 'menu', group: 'main', defaultWeight: 10 },
+  { key: 'pages', label: 'Pages', description: 'Draft content dashboard and page lists.', href: '/admin/pages/list', icon: 'document', group: 'main', defaultWeight: 10 },
   { key: 'tags', label: 'Tags', description: 'Tag terms shown in the main sidebar.', href: '/admin/tags', icon: 'tag', group: 'main', defaultWeight: 20 },
   { key: 'taxonomies', label: 'Taxonomies', description: 'Taxonomy settings link.', href: '/admin/taxonomies', icon: 'list-filter', group: 'settings', defaultWeight: 10 },
   { key: 'pageTypes', label: 'Page Types', description: 'Database-defined page type settings link.', href: '/admin/page_types', icon: 'list', group: 'settings', defaultWeight: 20 },
@@ -16,22 +16,62 @@ export const SIDEBAR_MENU_ITEMS = [
   { key: 'users', label: 'Users & Credits', description: 'User and credit management link for permitted roles.', href: '/admin/users', icon: 'users', group: 'settings', defaultWeight: 40 },
   { key: 'roles', label: 'Roles', description: 'Role and permission management link.', href: '/admin/roles', icon: 'shield-check', group: 'settings', defaultWeight: 50 },
   { key: 'plugins', label: 'Plugins', description: 'Plugin registry settings link.', href: '/admin/plugins-manage', icon: 'beaker', group: 'settings', defaultWeight: 60 },
-  { key: 'credits', label: 'Credit Summary', description: 'Chargeable actions and effective prices across plugins.', href: '/admin/settings/credits', icon: 'tag', group: 'settings', defaultWeight: 65 },
-  { key: 'languages', label: 'Languages', description: 'Content languages and CMS interface translations.', href: '/admin/settings/languages', icon: 'list', group: 'settings', defaultWeight: 67 },
+  { key: 'credits', label: 'Credit Summary', description: 'Chargeable actions and effective prices across plugins.', href: '/admin/settings/credits', icon: 'coins', group: 'settings', defaultWeight: 65 },
+  { key: 'languages', label: 'Languages', description: 'Content languages and CMS interface translations.', href: '/admin/settings/languages', icon: 'globe', group: 'settings', defaultWeight: 67 },
   { key: 'system', label: 'System', description: 'App branding, menu visibility, and menu order.', href: '/admin/settings/system', icon: 'settings', group: 'settings', defaultWeight: 70 },
-  { key: 'content', label: 'Content List', description: 'Media files in the bucket and the pages that reference them.', href: '/admin/settings/content', icon: 'folder', group: 'settings', defaultWeight: 80 },
+  { key: 'content', label: 'Files', description: 'Media files in the bucket and the pages that reference them.', href: '/admin/settings/content', icon: 'folder', group: 'settings', defaultWeight: 80 },
   { key: 'trash', label: 'Trash', description: 'Deleted content review link.', href: '/admin/trash', icon: 'trash', group: 'main', defaultWeight: 40 },
 ] as const;
 
 export const APP_ICON_OPTIONS = [
-  { value: 'document', label: 'Document' },
-  { value: 'settings', label: 'Settings' },
-  { value: 'blocks', label: 'Blocks' },
-  { value: 'folder', label: 'Folder' },
+  { value: 'arrow-left', label: 'Arrow left' },
   { value: 'beaker', label: 'Beaker' },
+  { value: 'blocks', label: 'Blocks' },
+  { value: 'calendar', label: 'Calendar' },
+  { value: 'contact-card', label: 'Contact card' },
+  { value: 'chevron-down', label: 'Chevron down' },
+  { value: 'chevron-right', label: 'Chevron right' },
+  { value: 'clock', label: 'Clock' },
+  { value: 'cloud-upload', label: 'Cloud upload' },
+  { value: 'code', label: 'Code' },
+  { value: 'copy', label: 'Copy' },
+  { value: 'duplicate', label: 'Duplicate' },
+  { value: 'document', label: 'Document' },
+  { value: 'coins', label: 'Coins' },
+  { value: 'document-plus', label: 'Document plus' },
+  { value: 'download', label: 'Download' },
+  { value: 'edit-square', label: 'Edit square' },
+  { value: 'eye', label: 'Eye' },
+  { value: 'eye-off', label: 'Eye off' },
+  { value: 'folder', label: 'Folder' },
+  { value: 'globe', label: 'Globe' },
+  { value: 'github', label: 'GitHub' },
+  { value: 'google', label: 'Google' },
+  { value: 'microsoft', label: 'Microsoft' },
+  { value: 'apple', label: 'Apple' },
+  { value: 'trash-can', label: 'Trash can' },
+  { value: 'settings', label: 'Settings' },
+  { value: 'check-circle', label: 'Check circle' },
+  { value: 'key', label: 'Key' },
+  { value: 'list', label: 'List' },
+  { value: 'list-filter', label: 'Filtered list' },
+  { value: 'logout', label: 'Log out' },
+  { value: 'menu', label: 'Menu' },
+  { value: 'mail-check', label: 'Email checked' },
+  { value: 'moon', label: 'Moon' },
+  { value: 'pencil-square', label: 'Pencil square' },
+  { value: 'plus', label: 'Plus' },
+  { value: 'search', label: 'Search' },
   { value: 'shield-check', label: 'Shield' },
+  { value: 'sun', label: 'Sun' },
   { value: 'tag', label: 'Tag' },
+  { value: 'trash', label: 'Trash' },
+  { value: 'upload', label: 'Upload' },
+  { value: 'user', label: 'User' },
+  { value: 'user-group', label: 'User group' },
   { value: 'users', label: 'Users' },
+  { value: 'warning', label: 'Warning' },
+  { value: 'x', label: 'Close' },
 ] as const;
 
 export type SidebarMenuItemKey = typeof SIDEBAR_MENU_ITEMS[number]['key'];
@@ -52,6 +92,7 @@ export interface SidebarChromeSettings {
   items: SidebarMenuSettings;
   settingsGroupWeight: number;
   pluginWeights: Record<string, number>;
+  pluginIcons: Record<string, AppIcon>;
   hiddenPluginKeys: Set<string>;
 }
 
@@ -136,9 +177,10 @@ export async function loadSidebarChromeSettings(env: Env): Promise<SidebarChrome
   const settings = defaultSidebarMenuSettings();
   let settingsGroupWeight = DEFAULT_SETTINGS_GROUP_WEIGHT;
   let pluginWeights: Record<string, number> = {};
+  let pluginIcons: Record<string, AppIcon> = {};
   let hiddenPluginKeys = new Set<string>();
   const raw = await getSetting(env, SIDEBAR_MENU_SETTING_KEY);
-  if (!raw) return { items: settings, settingsGroupWeight, pluginWeights, hiddenPluginKeys };
+  if (!raw) return { items: settings, settingsGroupWeight, pluginWeights, pluginIcons, hiddenPluginKeys };
 
   try {
     const saved = JSON.parse(raw);
@@ -166,23 +208,27 @@ export async function loadSidebarChromeSettings(env: Env): Promise<SidebarChrome
         pluginWeights = Object.fromEntries(Object.entries(saved.pluginWeights)
           .map(([key, value]) => [key, finiteWeight(value, defaultPluginNavWeight(key))]));
       }
+      if (saved.pluginIcons && typeof saved.pluginIcons === 'object') {
+        pluginIcons = Object.fromEntries(Object.entries(saved.pluginIcons)
+          .filter((entry): entry is [string, AppIcon] => typeof entry[1] === 'string' && APP_ICON_VALUES.has(entry[1])));
+      }
       if (Array.isArray(saved.hiddenPlugins)) {
         hiddenPluginKeys = new Set(saved.hiddenPlugins.filter((key: unknown): key is string => typeof key === 'string'));
       }
     }
     settings.system.visible = true;
   } catch (error) {
-    return { items: settings, settingsGroupWeight, pluginWeights, hiddenPluginKeys };
+    return { items: settings, settingsGroupWeight, pluginWeights, pluginIcons, hiddenPluginKeys };
   }
 
-  return { items: settings, settingsGroupWeight, pluginWeights, hiddenPluginKeys };
+  return { items: settings, settingsGroupWeight, pluginWeights, pluginIcons, hiddenPluginKeys };
 }
 
 export async function saveSidebarMenuSettings(
   env: Env,
   visibleKeys: string[],
   weights: Record<string, unknown> = {},
-  options: { settingsGroupWeight?: unknown; pluginWeights?: Record<string, unknown>; pluginVisibleKeys?: string[] } = {},
+  options: { settingsGroupWeight?: unknown; pluginWeights?: Record<string, unknown>; pluginIcons?: Record<string, unknown>; pluginVisibleKeys?: string[] } = {},
 ): Promise<SidebarChromeSettings> {
   const visible = new Set(visibleKeys.map(legacySidebarMenuKey).filter((key): key is SidebarMenuItemKey => !!key));
   visible.add('system');
@@ -190,6 +236,7 @@ export async function saveSidebarMenuSettings(
   const hidden: SidebarMenuItemKey[] = [];
   const savedWeights: Record<string, number> = {};
   const pluginWeights: Record<string, number> = {};
+  const pluginIcons: Record<string, AppIcon> = {};
   const hiddenPluginKeys = new Set<string>();
   const visiblePluginKeys = new Set(options.pluginVisibleKeys ?? []);
   const settingsGroupWeight = finiteWeight(options.settingsGroupWeight, DEFAULT_SETTINGS_GROUP_WEIGHT);
@@ -207,6 +254,11 @@ export async function saveSidebarMenuSettings(
     if (weight !== defaultPluginNavWeight(key)) pluginWeights[key] = weight;
     if (!visiblePluginKeys.has(key)) hiddenPluginKeys.add(key);
   }
+  for (const [key, value] of Object.entries(options.pluginIcons ?? {})) {
+    if (typeof value === 'string' && APP_ICON_VALUES.has(value) && value !== 'beaker') {
+      pluginIcons[key] = value as AppIcon;
+    }
+  }
 
   const groupWeights = settingsGroupWeight === DEFAULT_SETTINGS_GROUP_WEIGHT
     ? {}
@@ -216,9 +268,10 @@ export async function saveSidebarMenuSettings(
     weights: savedWeights,
     groupWeights,
     pluginWeights,
+    pluginIcons,
     hiddenPlugins: [...hiddenPluginKeys],
   }));
-  return { items: settings, settingsGroupWeight, pluginWeights, hiddenPluginKeys };
+  return { items: settings, settingsGroupWeight, pluginWeights, pluginIcons, hiddenPluginKeys };
 }
 
 export function pluginSidebarKey(item: { pluginId: string; href: string; group?: 'settings' }): string {
