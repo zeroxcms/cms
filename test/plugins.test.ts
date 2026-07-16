@@ -788,8 +788,49 @@ describe('plugin admin proxy', () => {
     // override is unambiguous. (The group:settings test below pins the
     // multi-item case, where manifest labels are kept.)
     expect(payload.layoutData.pluginNav).toEqual(expect.arrayContaining([
-      { label: 'Ticketing', href: '/admin/plugins/events/dashboard' },
+      { label: 'Ticketing', translationKey: 'plugins.events.nav.dashboard', href: '/admin/plugins/events/dashboard' },
     ]));
+  });
+
+  it('includes plugin navigation translations in the admin catalog on core pages', async () => {
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const url = 'https://plugin-nav-locale.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Events', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).pathname;
+        if (path === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        if (path === '/__plugin/views/locales/en.json') {
+          return Response.json({ plugins: { events: { nav: { dashboard: 'Events' } } } });
+        }
+        if (path === '/__plugin/views/locales/zh-hant.json') {
+          return Response.json({ plugins: { events: { nav: { dashboard: '活動' } } } });
+        }
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+    const headers = { Cookie: `access_token=${token}; cms_ui_locale=zh-hant`, 'Sec-Fetch-Site': 'same-origin' };
+    const page = await worker.fetch(new Request('http://localhost/admin/pages/list', { headers }));
+
+    expect(page.status).toBe(200);
+    const payload = renderPayload(await page.text());
+    expect(payload.layoutData.sidebarNav).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        label: 'Events',
+        translationKey: 'plugins.events.nav.dashboard',
+        href: '/admin/plugins/events/dashboard',
+      }),
+    ]));
+
+    const catalog = await worker.fetch(new Request('http://localhost/admin/i18n/catalog/zh-hant', { headers }));
+    expect(catalog.status).toBe(200);
+    expect((await catalog.json<Record<string, string>>())['plugins.events.nav.dashboard']).toBe('活動');
   });
 
   it('renders an event page edit view from the plugin and falls back when it declines', async () => {
@@ -1341,10 +1382,14 @@ describe('plugin admin proxy', () => {
     expect(response.status).toBe(200);
     const payload = renderPayload(await response.text());
     expect(payload.layoutData.pluginSettingsNav).toEqual([
-      { label: 'Mail Settings', href: '/admin/plugins/events/mail-settings' },
+      {
+        label: 'Mail Settings',
+        translationKey: 'plugins.events.nav.mail.settings',
+        href: '/admin/plugins/events/mail-settings',
+      },
     ]);
     expect(payload.layoutData.pluginNav).toEqual([
-      { label: 'Events', href: '/admin/plugins/events/dashboard' },
+      { label: 'Events', translationKey: 'plugins.events.nav.dashboard', href: '/admin/plugins/events/dashboard' },
     ]);
     expect(payload.layoutData.sidebarNav).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: 'Events', href: '/admin/plugins/events/dashboard' }),

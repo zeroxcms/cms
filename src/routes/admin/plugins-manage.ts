@@ -387,15 +387,15 @@ pluginsManageRoutes.post('/plugins-manage/:id/assets/revoke', async (c) => {
 // limits). Values are stored in settings. The host enforces page quotas on
 // creates; plugins enforce operational limits. See utils/plugin-limits.ts.
 
-function scopeLabel(def: NormalizedLimitDef): string {
-  if (def.scope === 'per_second') return 'Per second';
-  if (def.scope === 'per_parent') return 'Per parent page';
-  if (def.scope === 'per_pointer') return `Per ${def.pointerKey}`;
-  return 'Total';
+function scopeKey(def: NormalizedLimitDef): string {
+  if (def.scope === 'per_second') return 'view_strings.sections_plugin_limits.scope_per_second';
+  if (def.scope === 'per_parent') return 'view_strings.sections_plugin_limits.scope_per_parent';
+  if (def.scope === 'per_pointer') return 'view_strings.sections_plugin_limits.scope_per';
+  return 'view_strings.sections_plugin_limits.scope_total';
 }
 
 function limitLabel(value: number | null): string {
-  return value === null ? 'Unlimited' : String(value);
+  return value === null ? '' : String(value);
 }
 
 pluginsManageRoutes.get('/plugins-manage/:id/limits', async (c) => {
@@ -422,20 +422,28 @@ pluginsManageRoutes.get('/plugins-manage/:id/limits', async (c) => {
     const configured = def.key in values;
     const effective = configured ? values[def.key] : def.defaultValue;
     // Scoped usage varies per parent/collection, so only totals are shown here.
-    const usageLabel = def.scope === 'per_second'
-      ? 'not counted by CMS'
+    const usageLabel = def.scope === 'total' ? String(await countLimitUsage(c.env.DB, def, null)) : '';
+    const usageKey = def.scope === 'per_second'
+      ? 'view_strings.sections_plugin_limits.usage_not_counted'
       : def.scope === 'total'
-      ? String(await countLimitUsage(c.env.DB, def, null))
-      : 'varies by group';
+        ? ''
+        : 'view_strings.sections_plugin_limits.usage_varies_by_group';
     return {
       key: def.key,
       label: def.label,
       description: def.description,
-      pageType: def.pageType ?? 'email delivery',
-      scopeLabel: scopeLabel(def),
+      pageType: def.pageType ?? '',
+      pageTypeKey: def.pageType ? '' : 'view_strings.sections_plugin_limits.email_delivery',
+      scopeLabel: '',
+      scopeKey: scopeKey(def),
+      scopeDetail: def.scope === 'per_pointer' ? def.pointerKey ?? '' : '',
       defaultLabel: limitLabel(def.defaultValue),
-      effectiveLabel: limitLabel(effective) + (configured ? '' : ' (default)'),
+      defaultKey: def.defaultValue === null ? 'view_strings.sections_plugin_limits.unlimited' : '',
+      effectiveLabel: limitLabel(effective),
+      effectiveKey: effective === null ? 'view_strings.sections_plugin_limits.unlimited' : '',
+      usesDefault: !configured,
       usageLabel,
+      usageKey,
       value: configured && values[def.key] !== null ? String(values[def.key]) : '',
       unlimited: configured && values[def.key] === null,
     };
@@ -486,13 +494,11 @@ pluginsManageRoutes.post('/plugins-manage/:id/limits', async (c) => {
 // logs every change in credit_ledger. See utils/credits.ts.
 
 function creditChargeLabel(def: NormalizedCreditDef): string {
-  return def.charge === 'page_create'
-    ? `On create: ${def.pageType}`
-    : `Metered per ${def.unit}`;
+  return def.charge === 'page_create' ? String(def.pageType) : def.unit;
 }
 
 function priceLabel(value: number): string {
-  return value === 0 ? 'Free' : String(value);
+  return value === 0 ? '' : String(value);
 }
 
 pluginsManageRoutes.get('/plugins-manage/:id/credits', async (c) => {
@@ -523,8 +529,15 @@ pluginsManageRoutes.get('/plugins-manage/:id/credits', async (c) => {
       label: def.label,
       description: def.description,
       chargeLabel: creditChargeLabel(def),
+      chargeKey: def.charge === 'page_create'
+        ? 'view_strings.sections_plugin_credits.on_create'
+        : 'view_strings.sections_plugin_credits.metered_per',
+      chargeDetail: creditChargeLabel(def),
       defaultLabel: priceLabel(def.defaultValue),
-      effectiveLabel: priceLabel(effective) + (configured ? '' : ' (default)'),
+      defaultKey: def.defaultValue === 0 ? 'view_strings.sections_plugin_credits.free' : '',
+      effectiveLabel: priceLabel(effective),
+      effectiveKey: effective === 0 ? 'view_strings.sections_plugin_credits.free' : '',
+      usesDefault: !configured,
       value: configured ? String(values[def.key]) : '',
     };
   });

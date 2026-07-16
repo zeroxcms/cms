@@ -62,7 +62,7 @@ function message(value: string | undefined): string {
 
 settingsRoutes.get('/i18n/catalog/:locale', async (c) => {
   try {
-    return c.json(await buildTranslationCatalog(c.env, c.req.param('locale')), 200, {
+    return c.json(await buildTranslationCatalog(c.env, c.req.param('locale'), true), 200, {
       'Cache-Control': 'private, no-cache',
     });
   } catch {

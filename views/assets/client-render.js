@@ -56,14 +56,14 @@
   registerCustomFilters(dataEngine);
 
   function registerCustomFilters(target) {
-    target.registerFilter('t', function (key) {
+    target.registerFilter('t', function (key, fallback) {
       const normalized = String(key == null ? '' : key);
       if (Object.prototype.hasOwnProperty.call(translations, normalized)) return translations[normalized];
       if (!missingTranslations.has(normalized)) {
         missingTranslations.add(normalized);
         console.warn('Missing translation:', normalized);
       }
-      return normalized;
+      return fallback == null ? normalized : String(fallback);
     });
 
     target.registerFilter('l10n_number', function (value, options) {

@@ -407,7 +407,7 @@
             <details class="group overflow-hidden"{% if item.isActive %} open{% endif %}>
               <summary class="flex cursor-pointer list-none items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-gray-700 hover:text-white [&::-webkit-details-marker]:hidden {% if item.isActive %}font-semibold text-white{% else %}text-gray-300{% endif %}">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ item.icon }}"></use></svg>
-                <span>{% if item.translationKey %}{{ item.translationKey | t }}{% else %}{{ item.label }}{% endif %}</span>
+                <span>{% if item.translationKey %}{{ item.translationKey | t: item.label }}{% else %}{{ item.label }}{% endif %}</span>
                 <svg class="ml-auto h-4 w-4 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#chevron-right"></use></svg>
               </summary>
               <div class="mt-1 ml-3 space-y-1 border-l border-gray-700 pl-3">
@@ -416,7 +416,7 @@
                      {% if settingItem.isActive %}aria-current="page"{% endif %}
                      class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors {% if settingItem.isActive %}bg-indigo-600 font-semibold text-white shadow-sm hover:bg-indigo-700{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ settingItem.icon }}"></use></svg>
-                    {% if settingItem.translationKey %}{{ settingItem.translationKey | t }}{% else %}{{ settingItem.label }}{% endif %}
+                    {% if settingItem.translationKey %}{{ settingItem.translationKey | t: settingItem.label }}{% else %}{{ settingItem.label }}{% endif %}
                   </a>
                 {% endfor %}
               </div>
@@ -426,7 +426,7 @@
                {% if item.isActive %}aria-current="page"{% endif %}
                class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors {% if item.isActive %}bg-indigo-600 font-semibold text-white shadow-sm hover:bg-indigo-700{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><use href="{{ iconHrefPrefix }}#{{ item.icon }}"></use></svg>
-              {% if item.translationKey %}{{ item.translationKey | t }}{% else %}{{ item.label }}{% endif %}
+              {% if item.translationKey %}{{ item.translationKey | t: item.label }}{% else %}{{ item.label }}{% endif %}
             </a>
           {% endif %}
         {% endfor %}

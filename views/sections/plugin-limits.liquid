@@ -2,13 +2,13 @@
   <div class="flex items-center justify-between gap-4 mb-4">
     <div>
       <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref }}">{{ "view_strings.sections_plugin_limits.plugins" | t }}</a>
-      <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel }} · Limits</h2>
+      <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel }} · {{ "view_strings.sections_plugin_limits.limits" | t }}</h2>
       <p class="mt-1 text-sm text-gray-500">{{ "view_strings.sections_plugin_limits.quotas_and_operational_limits_this_plugin_declares_page_quotas_are_enfor" | t }}</p>
     </div>
   </div>
 
   {% if hasFlash %}
-    <div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">{{ flashMessage }}</div>
+    <div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">{{ flashMessageKey | t }}</div>
   {% endif %}
 
   {% if unreachable %}
@@ -34,14 +34,14 @@
                 <tr class="border-t border-gray-100">
                   <td class="px-4 py-3">
                     <div class="font-medium text-gray-900">{{ limit.label }}</div>
-                    <div class="text-xs text-gray-400 mt-0.5 font-mono">{{ limit.key }} · {{ limit.pageType }}</div>
+                    <div class="text-xs text-gray-400 mt-0.5 font-mono">{{ limit.key }} · {% if limit.pageTypeKey != '' %}{{ limit.pageTypeKey | t }}{% else %}{{ limit.pageType }}{% endif %}</div>
                     {% if limit.description != '' %}<div class="text-xs text-gray-500 mt-0.5">{{ limit.description }}</div>{% endif %}
                   </td>
-                  <td class="px-4 py-3 text-sm text-gray-700">{{ limit.scopeLabel }}</td>
-                  <td class="px-4 py-3 text-sm text-gray-700">{{ limit.usageLabel }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700">{{ limit.scopeKey | t }}{% if limit.scopeDetail != '' %} {{ limit.scopeDetail }}{% endif %}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700">{% if limit.usageKey != '' %}{{ limit.usageKey | t }}{% else %}{{ limit.usageLabel }}{% endif %}</td>
                   <td class="px-4 py-3">
-                    <div class="text-sm text-gray-700">{{ limit.effectiveLabel }}</div>
-                    <div class="text-xs text-gray-400 mt-0.5">Default: {{ limit.defaultLabel }}</div>
+                    <div class="text-sm text-gray-700">{% if limit.effectiveKey != '' %}{{ limit.effectiveKey | t }}{% else %}{{ limit.effectiveLabel }}{% endif %}{% if limit.usesDefault %} ({{ "view_strings.sections_plugin_limits.default" | t }}){% endif %}</div>
+                    <div class="text-xs text-gray-400 mt-0.5">{{ "view_strings.sections_plugin_limits.default" | t }}: {% if limit.defaultKey != '' %}{{ limit.defaultKey | t }}{% else %}{{ limit.defaultLabel }}{% endif %}</div>
                   </td>
                   <td class="px-4 py-3">
                     <input name="value_{{ limit.key }}" type="number" min="0" step="1" value="{{ limit.value }}" placeholder="{{ "view_strings.sections_plugin_limits.default" | t }}"

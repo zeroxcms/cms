@@ -120,12 +120,12 @@ export async function pluginAssetsPage(views: Fetcher, opts: BaseTemplateProps &
   flash?: string;
 }): Promise<string> {
   const { pluginLabel, unreachable, assets, flash } = opts;
-  const flashMessage = flash === 'approved'
-    ? 'Asset approved. It will now execute inside CMS chrome for this plugin.'
+  const flashMessageKey = flash === 'approved'
+    ? 'view_strings.sections_plugin_assets.flash_approved'
     : flash === 'revoked'
-      ? 'Approval revoked. The asset will no longer execute inside CMS chrome.'
+      ? 'view_strings.sections_plugin_assets.flash_revoked'
       : flash === 'fetch-failed'
-        ? 'Could not fetch the asset from the plugin — approval not changed.'
+        ? 'view_strings.sections_plugin_assets.flash_fetch_failed'
         : '';
 
   const body = await renderView(views, '/templates/plugin-assets.json', {
@@ -134,11 +134,15 @@ export async function pluginAssetsPage(views: Fetcher, opts: BaseTemplateProps &
     hasAssets: assets.length > 0,
     assets: assets.map((asset) => ({
       ...asset,
-      statusLabel: asset.drifted ? 'Expired' : asset.approved ? 'Approved' : 'Not approved',
+      statusKey: asset.drifted
+        ? 'view_strings.sections_plugin_assets.status_expired'
+        : asset.approved
+          ? 'view_strings.sections_plugin_assets.status_approved'
+          : 'view_strings.sections_plugin_assets.status_not_approved',
       statusClass: asset.drifted ? 'bg-red-400 text-amber-800' : asset.approved ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600',
     })),
-    hasFlash: !!flashMessage,
-    flashMessage,
+    hasFlash: !!flashMessageKey,
+    flashMessageKey,
     backHref: '/admin/plugins-manage',
   });
 
@@ -151,9 +155,16 @@ export interface PluginLimitRow {
   description: string;
   pageType: string;
   scopeLabel: string;
+  scopeKey: string;
+  scopeDetail: string;
   defaultLabel: string;
+  defaultKey: string;
   effectiveLabel: string;
+  effectiveKey: string;
+  usesDefault: boolean;
   usageLabel: string;
+  usageKey: string;
+  pageTypeKey: string;
   /** Configured numeric value as a string, or '' when unset/unlimited. */
   value: string;
   unlimited: boolean;
@@ -168,8 +179,8 @@ export async function pluginLimitsPage(views: Fetcher, opts: BaseTemplateProps &
   flash?: string;
 }): Promise<string> {
   const { pluginLabel, unreachable, limits, saveAction, flash } = opts;
-  const flashMessage = flash === 'saved'
-    ? 'Limits saved. Page quotas apply to every create path; operational limits apply in the plugin.'
+  const flashMessageKey = flash === 'saved'
+    ? 'view_strings.sections_plugin_limits.flash_saved'
     : '';
 
   const body = await renderView(views, '/templates/plugin-limits.json', {
@@ -178,8 +189,8 @@ export async function pluginLimitsPage(views: Fetcher, opts: BaseTemplateProps &
     hasLimits: limits.length > 0,
     limits,
     saveAction,
-    hasFlash: !!flashMessage,
-    flashMessage,
+    hasFlash: !!flashMessageKey,
+    flashMessageKey,
     backHref: '/admin/plugins-manage',
   });
 
@@ -191,8 +202,13 @@ export interface PluginCreditRow {
   label: string;
   description: string;
   chargeLabel: string;
+  chargeKey: string;
+  chargeDetail: string;
   defaultLabel: string;
+  defaultKey: string;
   effectiveLabel: string;
+  effectiveKey: string;
+  usesDefault: boolean;
   /** Configured price as a string, or '' when unset (default applies). */
   value: string;
 }
@@ -206,8 +222,8 @@ export async function pluginCreditsPage(views: Fetcher, opts: BaseTemplateProps 
   flash?: string;
 }): Promise<string> {
   const { pluginLabel, unreachable, credits, saveAction, flash } = opts;
-  const flashMessage = flash === 'saved'
-    ? 'Credit costs saved. New charges use these prices immediately.'
+  const flashMessageKey = flash === 'saved'
+    ? 'view_strings.sections_plugin_credits.flash_saved'
     : '';
 
   const body = await renderView(views, '/templates/plugin-credits.json', {
@@ -216,8 +232,8 @@ export async function pluginCreditsPage(views: Fetcher, opts: BaseTemplateProps 
     hasCredits: credits.length > 0,
     credits,
     saveAction,
-    hasFlash: !!flashMessage,
-    flashMessage,
+    hasFlash: !!flashMessageKey,
+    flashMessageKey,
     backHref: '/admin/plugins-manage',
   });
 
@@ -261,10 +277,10 @@ export async function pluginPageTypesPage(views: Fetcher, opts: BaseTemplateProp
   flash?: string;
 }): Promise<string> {
   const { pluginLabel, unreachable, definedPageTypes, definedTaxonomies, pageTypes, flash } = opts;
-  const flashMessage = flash === 'approved'
-    ? 'Page type access approved. The plugin can now use this delegated scope.'
+  const flashMessageKey = flash === 'approved'
+    ? 'view_strings.sections_plugin_page_types.flash_approved'
     : flash === 'revoked'
-      ? 'Page type access revoked. The plugin can no longer use this delegated scope.'
+      ? 'view_strings.sections_plugin_page_types.flash_revoked'
       : '';
 
   const body = await renderView(views, '/templates/plugin-page-types.json', {
@@ -277,13 +293,18 @@ export async function pluginPageTypesPage(views: Fetcher, opts: BaseTemplateProp
     hasPageTypes: pageTypes.length > 0,
     pageTypes: pageTypes.map((row) => ({
       ...row,
-      readStatusLabel: row.readApproved ? 'Approved' : 'Not approved',
+      pageTypeLabelKey: row.pageType === '*' ? 'view_strings.sections_plugin_page_types.all_page_types' : '',
+      readStatusKey: row.readApproved
+        ? 'view_strings.sections_plugin_page_types.status_approved'
+        : 'view_strings.sections_plugin_page_types.status_not_approved',
       readStatusClass: row.readApproved ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600',
-      writeStatusLabel: row.writeApproved ? 'Approved' : 'Not approved',
+      writeStatusKey: row.writeApproved
+        ? 'view_strings.sections_plugin_page_types.status_approved'
+        : 'view_strings.sections_plugin_page_types.status_not_approved',
       writeStatusClass: row.writeApproved ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600',
     })),
-    hasFlash: !!flashMessage,
-    flashMessage,
+    hasFlash: !!flashMessageKey,
+    flashMessageKey,
     backHref: '/admin/plugins-manage',
   });
 

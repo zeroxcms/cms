@@ -2,13 +2,13 @@
   <div class="flex items-center justify-between gap-4 mb-4">
     <div>
       <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref }}">{{ "view_strings.sections_plugin_credits.plugins" | t }}</a>
-      <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel }} · Credits</h2>
+      <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel }} · {{ "view_strings.sections_plugin_credits.credits" | t }}</h2>
       <p class="mt-1 text-sm text-gray-500">{{ "view_strings.sections_plugin_credits.chargeable_actions_this_plugin_declares_prices_set_here_are_deducted_fro" | t }}</p>
     </div>
   </div>
 
   {% if hasFlash %}
-    <div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">{{ flashMessage }}</div>
+    <div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">{{ flashMessageKey | t }}</div>
   {% endif %}
 
   {% if unreachable %}
@@ -36,10 +36,10 @@
                     <div class="text-xs text-gray-400 mt-0.5 font-mono">{{ credit.key }}</div>
                     {% if credit.description != '' %}<div class="text-xs text-gray-500 mt-0.5">{{ credit.description }}</div>{% endif %}
                   </td>
-                  <td class="px-4 py-3 text-sm text-gray-700">{{ credit.chargeLabel }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700">{{ credit.chargeKey | t }} {{ credit.chargeDetail }}</td>
                   <td class="px-4 py-3">
-                    <div class="text-sm text-gray-700">{{ credit.effectiveLabel }}</div>
-                    <div class="text-xs text-gray-400 mt-0.5">Default: {{ credit.defaultLabel }}</div>
+                    <div class="text-sm text-gray-700">{% if credit.effectiveKey != '' %}{{ credit.effectiveKey | t }}{% else %}{{ credit.effectiveLabel }}{% endif %}{% if credit.usesDefault %} ({{ "view_strings.sections_plugin_credits.default" | t }}){% endif %}</div>
+                    <div class="text-xs text-gray-400 mt-0.5">{{ "view_strings.sections_plugin_credits.default" | t }}: {% if credit.defaultKey != '' %}{{ credit.defaultKey | t }}{% else %}{{ credit.defaultLabel }}{% endif %}</div>
                   </td>
                   <td class="px-4 py-3">
                     <input name="value_{{ credit.key }}" type="number" min="0" step="1" value="{{ credit.value }}" placeholder="{{ "view_strings.sections_plugin_credits.default" | t }}"

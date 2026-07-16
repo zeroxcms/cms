@@ -81,7 +81,17 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
   const menuSettings = sidebarSettings.items;
   const visible = navItems
     .filter((item) => !item.roles?.length || item.roles.some((role) => userRoles.includes(role)));
-  const toLink = (item: { label: string; href: string }) => ({ label: item.label, href: item.href });
+  const pluginTranslationKey = (item: { pluginId: string; href: string }): string => {
+    const pluginPath = item.href.replace(`/admin/plugins/${item.pluginId}/`, '').replace(/[^a-z0-9]+/gi, '.').replace(/^\.|\.$/g, '');
+    return `plugins.${item.pluginId}.nav.${pluginPath || 'index'}`;
+  };
+  const toLink = (item: { pluginId: string; label: string; href: string }) => {
+    return {
+      label: item.label,
+      translationKey: pluginTranslationKey(item),
+      href: item.href,
+    };
+  };
   // Plugins may target the Settings group (group: 'settings'); everything else
   // sits at the top level of the sidebar.
   const nav = visible.filter((item) => item.group !== 'settings').map(toLink);
@@ -131,6 +141,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     const entry = {
       item: {
         label: item.label,
+        translationKey: pluginTranslationKey(item),
         href: item.href,
         icon: sidebarSettings.pluginIcons[key] ?? 'beaker',
       },

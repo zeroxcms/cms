@@ -2,13 +2,13 @@
   <div class="flex items-center justify-between gap-4 mb-4">
     <div>
       <a class="inline-block text-xs text-gray-500 mb-1 hover:text-indigo-700" href="{{ backHref }}">{{ "view_strings.sections_plugin_assets.plugins" | t }}</a>
-      <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel }} · Assets</h2>
+      <h2 class="text-2xl font-bold text-gray-900">{{ pluginLabel }} · {{ "view_strings.sections_plugin_assets.assets" | t }}</h2>
       <p class="mt-1 text-sm text-gray-500">{{ "view_strings.sections_plugin_assets.js_css_files_this_plugin_wants_to_run_inside_cms_chrome_approving_a_file" | t }}</p>
     </div>
   </div>
 
   {% if hasFlash %}
-    <div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">{{ flashMessage }}</div>
+    <div class="mb-4 px-4 py-2 rounded-lg bg-amber-50 text-amber-800 text-sm">{{ flashMessageKey | t }}</div>
   {% endif %}
 
   {% if unreachable %}
@@ -33,17 +33,17 @@
                   <div class="font-medium text-gray-900">{{ asset.label }}</div>
                   <div class="text-xs text-gray-500 font-mono">{{ asset.path }}</div>
                   {% if asset.approved %}
-                    <div class="text-xs text-gray-400 mt-0.5">Approved by {{ asset.approvedBy }}</div>
+                    <div class="text-xs text-gray-400 mt-0.5">{{ "view_strings.sections_plugin_assets.approved_by" | t }} {{ asset.approvedBy }}</div>
                     <div class="text-xs text-gray-400 mt-0.5 font-mono break-all">{{ asset.integrity }}</div>
                   {% endif %}
                 </td>
                 <td class="px-4 py-3">
-                  <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold {{ asset.statusClass }}">{{ asset.statusLabel }}</span>
+                  <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold {{ asset.statusClass }}">{{ asset.statusKey | t }}</span>
                   {% if asset.fetchError %}<div class="text-xs text-red-600 mt-1">{{ "view_strings.sections_plugin_assets.could_not_fetch_current_file_from_plugin" | t }}</div>{% endif %}
                 </td>
                 <td class="px-4 py-3 text-right whitespace-nowrap">
                   {% if asset.approved %}
-                    <form method="post" action="{{ asset.revokeAction }}" class="inline" data-confirm="Revoke approval for {{ asset.path }}? It will stop running in CMS chrome.">
+                    <form method="post" action="{{ asset.revokeAction }}" class="inline" data-confirm="{{ "view_strings.sections_plugin_assets.revoke_confirmation" | t }}">
                       <input type="hidden" name="path" value="{{ asset.path }}">
                       <button type="submit" class="px-3 py-1 rounded-lg border border-red-300 text-xs font-semibold text-red-700">{{ "view_strings.sections_plugin_assets.revoke" | t }}</button>
                     </form>
