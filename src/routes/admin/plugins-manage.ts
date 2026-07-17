@@ -35,6 +35,7 @@ import {
   revokePageTypeAccess,
 } from '../../utils/plugin-page-types';
 import { PLUGIN_ORIGIN } from '../../plugins/registry';
+import { pluginTenantId } from '../../security/plugin-proxy';
 import {
   countLimitUsage,
   declaredLimits,
@@ -231,6 +232,7 @@ pluginsManageRoutes.get('/plugins-manage/:id/edit', async (c) => {
     sortOrder: plugin.sort_order,
     config: plugin.config ?? '',
     secret: plugin.secret ?? '',
+    tenantKvKey: `tenant:${pluginTenantId(c.env)}`,
     flash: c.req.query('flash') ?? undefined,
   });
 });

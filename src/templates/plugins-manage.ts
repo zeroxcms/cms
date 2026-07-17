@@ -67,10 +67,11 @@ export async function pluginFormPage(views: Fetcher, opts: BaseTemplateProps & {
   sortOrder: number;
   config: string;
   secret?: string;
+  tenantKvKey?: string;
   flash?: string;
   error?: string;
 }): Promise<string> {
-  const { isNew, id, label, url, enabled, sortOrder, config, secret, flash, error } = opts;
+  const { isNew, id, label, url, enabled, sortOrder, config, secret, tenantKvKey, flash, error } = opts;
   const heading = isNew ? 'Register Plugin' : 'Edit Plugin';
   const flashMessageKey = flash === 'secret-generated'
     ? 'plugins.form.registered_flash'
@@ -93,6 +94,8 @@ export async function pluginFormPage(views: Fetcher, opts: BaseTemplateProps & {
     flashMessageKey,
     showSecret: !isNew,
     secret: secret ?? '',
+    tenantKvKey: tenantKvKey ?? '',
+    tenantKvValue: JSON.stringify({ secret: secret ?? '' }),
     usesSharedSecret: !secret,
     rotateSecretAction: isNew ? '' : `/admin/plugins-manage/${id}/rotate-secret`,
   });
