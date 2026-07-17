@@ -18,7 +18,11 @@ import { requirePermission } from '../../middleware/auth';
 import { renderPage, userCan } from '../../utils/admin-render';
 import { clearConfigCache, resolveCmsConfig } from '../../plugins/config';
 import { getPlugins } from '../../plugins/registry';
-import { listDbPageTypes } from '../../utils/page-type-store';
+import {
+  listDbPageTypes,
+  loadPageTypeExtensions,
+  savePageTypeExtension,
+} from '../../utils/page-type-store';
 import { listDbBlockTypes } from '../../utils/block-type-store';
 import { configOnlyTypes, validateTypeForm } from '../../utils/type-admin';
 import type { AppContext } from '../../utils/context';
@@ -65,6 +69,11 @@ interface TypeCrudSpec<Row extends DbTypeRow, Values extends BaseTypeFormValues>
     blockOptions?: TypeFormOption[];
     taxonomyOptions?: TypeFormOption[];
   }>;
+  /** Page types only — read-only (config/plugin) types accept extra block/taxonomy selections. */
+  extension?: {
+    decorateViewModel: (c: AppContext, config: CmsConfig, slug: string, model: TypeFormModel) => Promise<TypeFormModel>;
+    save: (c: AppContext, config: CmsConfig, slug: string, values: Values) => Promise<void>;
+  };
 }
 
 function dbTypeRoutes<Row extends DbTypeRow, Values extends BaseTypeFormValues>(
@@ -120,13 +129,29 @@ function dbTypeRoutes<Row extends DbTypeRow, Values extends BaseTypeFormValues>(
     return c.redirect(spec.copy.routeBase);
   });
 
-  // Read-only view of a config-file or plugin-contributed definition.
+  // View of a config-file or plugin-contributed definition: the definition
+  // itself is read-only, but specs with an `extension` let permitted users
+  // add extra selections (blocks/taxonomies) on top of it.
   routes.get(`${base}/view/:slug`, async (c) => {
     const config = await resolveCmsConfig(c.env);
-    const model = spec.modelFromConfig(config, c.req.param('slug'));
+    const slug = c.req.param('slug');
+    let model = spec.modelFromConfig(config, slug);
     if (!model) return c.notFound();
+    if (spec.extension) model = await spec.extension.decorateViewModel(c, config, slug, model);
     return renderForm(c, model);
   });
+
+  const extension = spec.extension;
+  if (extension) {
+    routes.post(`${base}/view/:slug`, requirePermission(spec.permission), async (c) => {
+      const config = await resolveCmsConfig(c.env);
+      const slug = c.req.param('slug');
+      if (!spec.modelFromConfig(config, slug)) return c.notFound();
+      await extension.save(c, config, slug, spec.formValues(await c.req.formData()));
+      clearConfigCache();
+      return c.redirect(`${spec.copy.routeBase}/view/${encodeURIComponent(slug)}`);
+    });
+  }
 
   routes.get(`${base}/:id/edit`, async (c) => {
     const row = await fetchRow(c.env.DB, parseInt(c.req.param('id'), 10));
@@ -283,6 +308,12 @@ export const pageTypesRoutes = dbTypeRoutes<DbTypeRow & { block_lists: string | 
     const selectedTaxonomies = new Set(model.selectedTaxonomies ?? []);
     const available = availableTaxonomies(config, taxonomies.results);
 
+    // In view mode the config/plugin-owned entries stay disabled; with extend
+    // permission the remaining checkboxes become editable additions.
+    const lockAll = model.mode === 'view' && !model.canExtend;
+    const lockedBlocks = new Set(model.lockedBlocks ?? []);
+    const lockedTaxonomies = new Set(model.lockedTaxonomies ?? []);
+
     // Union available with selected so a stored value still shows even if its
     // definition is missing from the current config.
     const blockSlugs = [...new Set([...Object.keys(config.blocks), ...selectedBlocks])];
@@ -291,13 +322,52 @@ export const pageTypesRoutes = dbTypeRoutes<DbTypeRow & { block_lists: string | 
 
     return {
       ...model,
-      blockOptions: blockSlugs.map((slug) => ({ value: slug, label: slug, checked: selectedBlocks.has(slug) })),
+      blockOptions: blockSlugs.map((slug) => ({
+        value: slug,
+        label: slug,
+        checked: selectedBlocks.has(slug),
+        disabled: lockAll || lockedBlocks.has(slug),
+      })),
       taxonomyOptions: taxonomySlugs.map((slug) => ({
         value: slug,
         label: taxonomyBySlug.get(slug) || slug,
         checked: selectedTaxonomies.has(slug),
+        disabled: lockAll || lockedTaxonomies.has(slug),
       })),
     };
+  },
+  extension: {
+    decorateViewModel: async (c, config, slug, model) => {
+      if (!(await userCan(c, 'pagetype:write'))) return model;
+      const current = (await loadPageTypeExtensions(c.env))[slug] ?? { blocks: [], taxonomies: [] };
+      const extensionBlocks = new Set(current.blocks);
+      const extensionTaxonomies = new Set(current.taxonomies);
+      return {
+        ...model,
+        canExtend: true,
+        lockedBlocks: (config.blockLists[slug] ?? []).filter((entry) => !extensionBlocks.has(entry)),
+        lockedTaxonomies: (config.taxonomyLists[slug] ?? []).filter((entry) => !extensionTaxonomies.has(entry)),
+      };
+    },
+    save: async (c, config, slug, values) => {
+      const [extensions, taxonomies] = await Promise.all([
+        loadPageTypeExtensions(c.env),
+        c.env.DB.prepare('SELECT slug, name FROM taxonomies ORDER BY name ASC').all<{ slug: string; name: string }>(),
+      ]);
+      const current = extensions[slug] ?? { blocks: [], taxonomies: [] };
+      const knownBlocks = new Set(Object.keys(config.blocks));
+      const knownTaxonomies = new Set(availableTaxonomies(config, taxonomies.results).map((taxonomy) => taxonomy.slug));
+      // Config/plugin-owned entries never enter the extension, so unchecking
+      // them (or replaying a stale form) cannot shrink the base lists.
+      const lockedBlocks = new Set((config.blockLists[slug] ?? []).filter((entry) => !current.blocks.includes(entry)));
+      const lockedTaxonomies = new Set((config.taxonomyLists[slug] ?? []).filter((entry) => !current.taxonomies.includes(entry)));
+      const extension = {
+        blocks: [...new Set(values.blockLists)].filter((entry) => knownBlocks.has(entry) && !lockedBlocks.has(entry)),
+        taxonomies: [...new Set(values.taxonomyLists)].filter((entry) => knownTaxonomies.has(entry) && !lockedTaxonomies.has(entry)),
+      };
+      await savePageTypeExtension(c.env, slug, extension);
+      logAudit(c, 'page_type.extend', 'page_type', slug, { blocks: extension.blocks, taxonomies: extension.taxonomies });
+    },
   },
 });
 

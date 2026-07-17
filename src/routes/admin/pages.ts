@@ -863,11 +863,15 @@ pagesRoutes.get('/pages/:id/read', requirePermission('content:read'), async (c) 
   });
   if (pluginView) return pluginView;
 
-  const modifierName = await fetchUserName(c.env.DB, num(lect._modifier, 0));
+  const [modifierName, editorUsers] = await Promise.all([
+    fetchUserName(c.env.DB, num(lect._modifier, 0)),
+    fetchEditorUsers(c.env.DB, page.editors),
+  ]);
 
   return renderPage(c, readPage, {
     page: { ...page, lect: stringifyLect(lect) },
     modifierName: modifierName ?? undefined,
+    editorUsers,
     version: data.version ?? undefined,
     isVersionPreview: Number.isFinite(requestedVersionId) && !!data.version,
     liveVersionId: data.liveVersionId,

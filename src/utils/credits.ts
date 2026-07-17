@@ -32,7 +32,7 @@
 // (transferSharedCredits); admins top the pool up via adjustSharedCredits.
 // ============================================================
 
-import type { Env, PluginCreditCharge, PluginCreditDef, PluginManifest, ResolvedPlugin } from '../types';
+import type { Env, PluginCreditBilling, PluginCreditCharge, PluginCreditDef, PluginManifest, ResolvedPlugin } from '../types';
 import { getPlugins } from '../plugins/registry';
 import { limitScopeTypes } from './plugin-limits';
 import { getSetting, saveSetting } from './settings';
@@ -41,7 +41,10 @@ import { getSetting, saveSetting } from './settings';
 export const MAX_DECLARED_CREDITS = 20;
 
 const CREDIT_KEY_RE = /^[a-z0-9_]{1,64}$/;
-const CHARGES = new Set<PluginCreditCharge>(['page_create', 'metered']);
+const CHARGES = new Set<PluginCreditCharge>(['page_create', 'metered', 'recurring']);
+const BILLINGS = new Set<PluginCreditBilling>(['advance', 'arrears']);
+/** Cap on a recurring cost's billing block size. */
+const MAX_RECURRING_PER = 1_000_000_000;
 
 export function creditsSettingKey(pluginId: string): string {
   return `plugin.credits.${pluginId}`;
@@ -55,10 +58,14 @@ export interface NormalizedCreditDef {
   charge: PluginCreditCharge;
   /** Set exactly when charge is 'page_create'. */
   pageType: string | null;
-  /** Display unit for metered costs. */
+  /** Display unit for metered/recurring costs. */
   unit: string;
   /** Manifest default price; 0 = free until configured. */
   defaultValue: number;
+  /** Recurring only: usage block size the price applies to (≥ 1). */
+  per: number;
+  /** Set exactly when charge is 'recurring'. */
+  billing: PluginCreditBilling | null;
 }
 
 /** Configured prices keyed by credit key (always ≥ 0; 0 = explicitly free). */
@@ -127,6 +134,13 @@ export function declaredCredits(manifest: PluginManifest, allowedTypes: Set<stri
     if (!CHARGES.has(def.charge as PluginCreditCharge)) continue;
     const pageType = typeof def.page_type === 'string' ? def.page_type : '';
     if (def.charge === 'page_create' && (!pageType || !allowedTypes.has(pageType))) continue;
+    // Recurring costs bill monthly; an unknown period must not silently bill
+    // at the wrong cadence, so anything but 'month' (or omitted) is dropped.
+    if (def.charge === 'recurring' && def.period !== undefined && def.period !== 'month') continue;
+    if (def.charge === 'recurring' && def.billing !== undefined && !BILLINGS.has(def.billing as PluginCreditBilling)) continue;
+    const per = typeof def.per === 'number' && Number.isFinite(def.per)
+      ? Math.min(Math.max(Math.trunc(def.per), 1), MAX_RECURRING_PER)
+      : 1;
 
     seen.add(def.key);
     out.push({
@@ -137,9 +151,16 @@ export function declaredCredits(manifest: PluginManifest, allowedTypes: Set<stri
       pageType: def.charge === 'page_create' ? pageType : null,
       unit: typeof def.unit === 'string' && def.unit.trim() ? def.unit.trim().slice(0, 40) : 'action',
       defaultValue: coercePrice(def.default),
+      per: def.charge === 'recurring' ? per : 1,
+      billing: def.charge === 'recurring' ? (def.billing as PluginCreditBilling | undefined) ?? 'advance' : null,
     });
   }
   return out;
+}
+
+/** Display unit for a cost: recurring block sizes read "5000 record". */
+export function creditUnitLabel(def: NormalizedCreditDef): string {
+  return def.per > 1 ? `${def.per} ${def.unit}` : def.unit;
 }
 
 export async function loadCreditValues(env: Env, pluginId: string): Promise<PluginCreditValues> {

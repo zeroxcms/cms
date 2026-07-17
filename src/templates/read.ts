@@ -154,6 +154,8 @@ export async function readPage(
     backHref?: string;
     /** Server-side UI-string lookup (see uiTranslator); labels fall back to English. */
     t: UiTranslator;
+    /** Resolved editor display names (see fetchEditorUsers); falls back to raw ids. */
+    editorUsers?: Array<{ id: number; name: string }>;
     structured: {
       config: CmsConfig;
       language: string;
@@ -203,7 +205,7 @@ export async function readPage(
   // Header metadata.
   const parent = parentPages.find((candidate) => candidate.id === page.page_id);
   const parentLabel = parent ? `/${parent.slug}` : '';
-  const chips = editorChips(page.editors);
+  const chips = opts.editorUsers?.map((editor) => editor.name) ?? editorChips(page.editors);
   const editorsHtml = chips.length
     ? chips
         .map(

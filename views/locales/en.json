@@ -410,6 +410,8 @@
     "sections_plugin_credits.flash_saved": "Credit costs saved. New charges use these prices immediately.",
     "sections_plugin_credits.on_create": "On create:",
     "sections_plugin_credits.metered_per": "Metered per",
+    "sections_plugin_credits.monthly_advance_per": "Monthly (advance) per",
+    "sections_plugin_credits.monthly_arrears_per": "Monthly (arrears) per",
     "sections_plugin_credits.free": "Free",
     "sections_plugin_form.base_url": "Base URL",
     "sections_plugin_form.the_cms_calls": "The CMS calls",

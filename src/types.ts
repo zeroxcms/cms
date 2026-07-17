@@ -414,9 +414,16 @@ export interface PluginLimitDef {
  * How a declared credit cost is charged: 'page_create' costs are observed and
  * charged by the host at every page-create path; 'metered' costs are reported
  * by the plugin via POST /__cms/credits/charge for actions the host can't see
- * (e.g. sending an EDM blast).
+ * (e.g. sending an EDM blast); 'recurring' costs bill a plugin-reported usage
+ * quantity (POST /__cms/credits/usage) once per period via the cron sweep
+ * (e.g. record storage). See utils/credit-subscriptions.ts.
  */
-export type PluginCreditCharge = 'page_create' | 'metered';
+export type PluginCreditCharge = 'page_create' | 'metered' | 'recurring';
+
+/** When a recurring cost bills: 'advance' charges the current usage snapshot
+ *  for the coming period; 'arrears' charges the period's high-water mark once
+ *  the period has elapsed. */
+export type PluginCreditBilling = 'advance' | 'arrears';
 
 /** A credit cost declared in a plugin manifest (see PluginManifest.credits). */
 export interface PluginCreditDef {
@@ -431,11 +438,20 @@ export interface PluginCreditDef {
    *  charged. Must be a type the plugin owns or may write via an approved
    *  writeType. */
   page_type?: string;
-  /** Display unit for metered costs (e.g. "recipient"); defaults to "action". */
+  /** Display unit for metered/recurring costs (e.g. "recipient", "record");
+   *  defaults to "action". */
   unit?: string;
   /** Cost in credits until an admin configures a value. Omitted or 0 = free —
    *  a freshly deployed manifest never silently starts charging. */
   default?: number;
+  /** Recurring only: usage block size the price applies to — e.g. per: 5000
+   *  with default: 50 bills 50 credits per started block of 5000 units.
+   *  Omitted → 1 (price per unit). */
+  per?: number;
+  /** Recurring only: billing period. Only 'month' is supported. */
+  period?: 'month';
+  /** Recurring only: 'advance' (default) or 'arrears'. */
+  billing?: PluginCreditBilling;
 }
 
 /** An admin-approved plugin asset (see PluginManifest.assets), stored in the

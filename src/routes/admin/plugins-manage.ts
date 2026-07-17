@@ -45,6 +45,7 @@ import {
   type PluginLimitValues,
 } from '../../utils/plugin-limits';
 import {
+  creditUnitLabel,
   declaredCredits,
   loadCreditValues,
   saveCreditValues,
@@ -494,7 +495,17 @@ pluginsManageRoutes.post('/plugins-manage/:id/limits', async (c) => {
 // logs every change in credit_ledger. See utils/credits.ts.
 
 function creditChargeLabel(def: NormalizedCreditDef): string {
-  return def.charge === 'page_create' ? String(def.pageType) : def.unit;
+  return def.charge === 'page_create' ? String(def.pageType) : creditUnitLabel(def);
+}
+
+function creditChargeKey(def: NormalizedCreditDef): string {
+  if (def.charge === 'page_create') return 'view_strings.sections_plugin_credits.on_create';
+  if (def.charge === 'recurring') {
+    return def.billing === 'arrears'
+      ? 'view_strings.sections_plugin_credits.monthly_arrears_per'
+      : 'view_strings.sections_plugin_credits.monthly_advance_per';
+  }
+  return 'view_strings.sections_plugin_credits.metered_per';
 }
 
 function priceLabel(value: number): string {
@@ -529,9 +540,7 @@ pluginsManageRoutes.get('/plugins-manage/:id/credits', async (c) => {
       label: def.label,
       description: def.description,
       chargeLabel: creditChargeLabel(def),
-      chargeKey: def.charge === 'page_create'
-        ? 'view_strings.sections_plugin_credits.on_create'
-        : 'view_strings.sections_plugin_credits.metered_per',
+      chargeKey: creditChargeKey(def),
       chargeDetail: creditChargeLabel(def),
       defaultLabel: priceLabel(def.defaultValue),
       defaultKey: def.defaultValue === 0 ? 'view_strings.sections_plugin_credits.free' : '',

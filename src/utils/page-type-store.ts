@@ -7,8 +7,9 @@
 // by resolveCmsConfig() (src/plugins/config.ts).
 // ============================================================
 
-import type { BlueprintEntry } from '../cms-config';
-import type { PageType, PluginContentTypes } from '../types';
+import type { BlueprintEntry, CmsConfig } from '../cms-config';
+import type { Env, PageType, PluginContentTypes } from '../types';
+import { getSetting, saveSetting } from './settings';
 
 /** Loads all database-defined page types, ordered for display. */
 export async function listDbPageTypes(db: D1DatabaseClient): Promise<PageType[]> {
@@ -46,4 +47,60 @@ export function dbPageTypeToContentTypes(row: PageType): PluginContentTypes {
   if (taxonomyLists.length > 0) fragment.taxonomyLists = { [row.slug]: taxonomyLists };
 
   return fragment;
+}
+
+// ── Page-type extensions ──────────────────────────────────────────────────────
+// Site-added blocks/taxonomies for read-only (config-file or plugin) page
+// types. Stored as one JSON settings row rather than a table so existing
+// deployments need no schema change; resolveCmsConfig() unions them into the
+// type's blockLists/taxonomyLists on top of every other source.
+
+export const PAGE_TYPE_EXTENSIONS_SETTING_KEY = 'content.page_type_extensions';
+
+export interface PageTypeExtension {
+  blocks: string[];
+  taxonomies: string[];
+}
+
+export type PageTypeExtensions = Record<string, PageTypeExtension>;
+
+const UNSAFE_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+/** Loads the extensions map, dropping malformed or empty entries. */
+export async function loadPageTypeExtensions(env: Env): Promise<PageTypeExtensions> {
+  const parsed = parseJson<Record<string, unknown>>(await getSetting(env, PAGE_TYPE_EXTENSIONS_SETTING_KEY), {});
+  const extensions: PageTypeExtensions = {};
+  for (const [slug, value] of Object.entries(parsed)) {
+    if (UNSAFE_KEYS.has(slug) || !value || typeof value !== 'object') continue;
+    const blocks = stringArray((value as PageTypeExtension).blocks);
+    const taxonomies = stringArray((value as PageTypeExtension).taxonomies);
+    if (blocks.length || taxonomies.length) extensions[slug] = { blocks, taxonomies };
+  }
+  return extensions;
+}
+
+/** Replaces one type's extension; an empty extension deletes the entry. */
+export async function savePageTypeExtension(env: Env, slug: string, extension: PageTypeExtension): Promise<void> {
+  if (UNSAFE_KEYS.has(slug)) return;
+  const extensions = await loadPageTypeExtensions(env);
+  if (extension.blocks.length || extension.taxonomies.length) extensions[slug] = extension;
+  else delete extensions[slug];
+  await saveSetting(env, PAGE_TYPE_EXTENSIONS_SETTING_KEY, JSON.stringify(extensions));
+}
+
+/** Unions extension entries into the lists of types that exist in the config. */
+export function applyPageTypeExtensions(config: CmsConfig, extensions: PageTypeExtensions): void {
+  for (const [slug, extension] of Object.entries(extensions)) {
+    if (!(slug in config.blueprint)) continue;
+    if (extension.blocks.length) config.blockLists[slug] = union(config.blockLists[slug], extension.blocks);
+    if (extension.taxonomies.length) config.taxonomyLists[slug] = union(config.taxonomyLists[slug], extension.taxonomies);
+  }
+}
+
+function union(base: string[] | undefined, extra: string[]): string[] {
+  return [...new Set([...(base ?? []), ...extra])];
 }

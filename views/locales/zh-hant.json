@@ -410,6 +410,8 @@
     "sections_plugin_credits.flash_saved": "點數費用已儲存，新產生的費用將立即使用這些價格。",
     "sections_plugin_credits.on_create": "建立時：",
     "sections_plugin_credits.metered_per": "按單位收費：",
+    "sections_plugin_credits.monthly_advance_per": "每月預付，按單位收費：",
+    "sections_plugin_credits.monthly_arrears_per": "每月後付，按單位收費：",
     "sections_plugin_credits.free": "免費",
     "sections_plugin_form.base_url": "基礎網址",
     "sections_plugin_form.the_cms_calls": "CMS 會呼叫",

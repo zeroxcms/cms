@@ -81,6 +81,9 @@ export interface BaseTemplateProps extends NavFlags {
   cmsOnce?: string;
   uiLocale: string;
   uiDirection: 'ltr' | 'rtl';
+  uiLocaleOptions: Array<{ code: string; label: string; selected: boolean }>;
+  uiLocaleAction: string;
+  uiLocaleReturnTo: string;
   catalogHref: string;
   /** IANA timezone used by client-side date/time localization. */
   systemTimezone: string;
@@ -130,6 +133,9 @@ export async function adminLayout(
     cmsOnce: base.cmsOnce,
     uiLocale: base.uiLocale,
     uiDirection: base.uiDirection,
+    uiLocaleOptions: base.uiLocaleOptions,
+    uiLocaleAction: base.uiLocaleAction,
+    uiLocaleReturnTo: base.uiLocaleReturnTo,
     catalogHref: base.catalogHref,
     systemTimezone: base.systemTimezone,
     approvedPluginAssets: opts.approvedPluginAssets,
@@ -169,6 +175,9 @@ export interface LayoutOptions extends NavFlags {
   cmsOnce?: string;
   uiLocale?: string;
   uiDirection?: 'ltr' | 'rtl';
+  uiLocaleOptions?: Array<{ code: string; label: string; selected: boolean }>;
+  uiLocaleAction?: string;
+  uiLocaleReturnTo?: string;
   catalogHref?: string;
   systemTimezone?: string;
   /** Admin-approved plugin assets available to the current page's plugin (if any). */
@@ -228,6 +237,9 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
     nonce,
     uiLocale: opts.uiLocale || 'en',
     uiDirection: opts.uiDirection || 'ltr',
+    uiLocaleOptions: opts.uiLocaleOptions ?? [],
+    uiLocaleAction: opts.uiLocaleAction || '/admin/profile/locale',
+    uiLocaleReturnTo: opts.uiLocaleReturnTo || '/admin',
     systemTimezone: opts.systemTimezone || '+0000',
   };
   const payload = {

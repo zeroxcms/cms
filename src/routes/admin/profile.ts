@@ -8,6 +8,7 @@ import { countCreditLedger, donateSharedCredits, getSharedCreditBalance, listCre
 import { creditLedgerRowForView } from '../../templates/users';
 import { logAudit } from '../../utils/audit';
 import { localeRegistry, resolveUiLocale, setUiLocaleCookie } from '../../utils/i18n';
+import { appendQuery, safeAdminReturnPath } from '../../utils/forms';
 
 const CREDIT_TRANSFER_ACTION = '/admin/profile/credits/transfer';
 const SHARED_DONATE_ACTION = '/admin/profile/credits/shared';
@@ -167,13 +168,14 @@ profileRoutes.get('/profile', async (c) => {
 
 profileRoutes.post('/profile/locale', async (c) => {
   const form = await c.req.formData();
+  const back = safeAdminReturnPath(form.get('return_to'), '/admin/profile');
   const requested = String(form.get('locale') ?? '');
   const { uiLocales } = await localeRegistry(c.env);
   if (!uiLocales.some((locale) => locale.code === requested)) {
-    return c.redirect('/admin/profile?error=profile.language_not_enabled', 303);
+    return c.redirect(appendQuery(back, 'error=profile.language_not_enabled'), 303);
   }
   setUiLocaleCookie(c, requested);
-  return c.redirect('/admin/profile?flash=profile.language_saved', 303);
+  return c.redirect(appendQuery(back, 'flash=profile.language_saved'), 303);
 });
 
 // Send credits to another user. Recipients are looked up by email and must be

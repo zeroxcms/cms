@@ -68,6 +68,7 @@ import {
   spendCredits,
   type CreditSource,
 } from '../utils/credits';
+import { listSubscriptionsForPlugin, reportSubscriptionUsage, type CreditSubscriptionRow } from '../utils/credit-subscriptions';
 
 export const cmsApiRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -941,6 +942,9 @@ cmsApiRoutes.get('/credits', async (c) => {
       unit: credit.def.unit,
       value: credit.value,
       configured: credit.configured,
+      // Recurring costs: block size and billing mode (per `per` units/month).
+      per: credit.def.charge === 'recurring' ? credit.def.per : undefined,
+      billing: credit.def.billing ?? undefined,
     })),
   });
 });
@@ -1028,6 +1032,70 @@ cmsApiRoutes.post('/credits/charge', async (c) => {
   // paid, the user's balance is unchanged and must be re-read.
   const balance = charge.source === 'user' ? charge.balanceAfter : await getCreditBalance(c.env, payer);
   return c.json({ ok: true, charged: total, balance, source: charge.source });
+});
+
+/** The subscription fields exposed to plugins (host bookkeeping omitted). */
+function subscriptionJson(row: CreditSubscriptionRow) {
+  return {
+    key: row.credit_key,
+    user_id: row.user_id,
+    quantity: row.quantity,
+    peak_quantity: row.peak_quantity,
+    status: row.status,
+    next_charge_at: row.next_charge_at,
+    last_charged_at: row.last_charged_at,
+  };
+}
+
+// Plugin-reported usage snapshot for recurring costs (e.g. stored records).
+// Upserts the subscription row the cron sweep bills monthly; nothing is
+// charged here, so a report can never fail on an empty balance. Like metered
+// charges, only manifest-declared keys are accepted and the price comes from
+// host-side configuration. `user_id` in the body (fallback: x-acting-user-id)
+// says whose usage this is — the authenticated plugin is trusted to attribute
+// usage, exactly as it is trusted for metered charges.
+cmsApiRoutes.post('/credits/usage', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const body = await c.req.json().catch(() => null) as {
+    key?: unknown; quantity?: unknown; user_id?: unknown;
+  } | null;
+  if (!body || typeof body !== 'object') return c.json({ error: 'invalid_body' }, 400);
+
+  const key = typeof body.key === 'string' ? body.key.trim() : '';
+  if (!key) return c.json({ error: 'key_required' }, 400);
+  const quantity = Math.trunc(asFiniteNumber(body.quantity) ?? -1);
+  if (quantity < 0 || quantity > 1_000_000_000) return c.json({ error: 'invalid_quantity' }, 400);
+
+  const credit = (await effectiveCreditsForPlugin(c.env, auth.plugin)).find((entry) => entry.def.key === key);
+  if (!credit) return c.json({ error: 'unknown_credit_key' }, 400);
+  if (credit.def.charge !== 'recurring') return c.json({ error: 'not_recurring' }, 400);
+
+  const bodyUserId = Math.trunc(asFiniteNumber(body.user_id) ?? 0);
+  const userId = bodyUserId > 0 ? bodyUserId : actingUserId(c);
+  if (userId === null || userId <= 0) return c.json({ error: 'user_required' }, 400);
+
+  const report = await reportSubscriptionUsage(c.env, { userId, credit, quantity });
+  if (!report.ok) return c.json({ error: 'unknown_user' }, 400);
+  return c.json({ ok: true, subscription: report.subscription ? subscriptionJson(report.subscription) : null });
+});
+
+// The calling plugin's recurring subscriptions — for enforcement (a plugin
+// should go read-only on a 'past_due' storage subscription) and plugin UIs.
+// Optional ?user_id= narrows to one user.
+cmsApiRoutes.get('/credits/subscriptions', async (c) => {
+  const auth = await authenticatePlugin(c);
+  if (auth instanceof Response) return auth;
+
+  const rawUser = c.req.query('user_id');
+  let userId: number | undefined;
+  if (rawUser !== undefined) {
+    userId = Math.trunc(asFiniteNumber(rawUser) ?? 0);
+    if (userId <= 0) return c.json({ error: 'invalid_user_id' }, 400);
+  }
+  const rows = await listSubscriptionsForPlugin(c.env, auth.pluginId, userId);
+  return c.json({ subscriptions: rows.map(subscriptionJson) });
 });
 
 // List pages of a content type the plugin owns.

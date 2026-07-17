@@ -9,7 +9,12 @@
 import { cmsConfig } from '../cms-config';
 import type { CmsConfig } from '../cms-config';
 import { getPlugins } from './registry';
-import { dbPageTypeToContentTypes, listDbPageTypes } from '../utils/page-type-store';
+import {
+  applyPageTypeExtensions,
+  dbPageTypeToContentTypes,
+  listDbPageTypes,
+  loadPageTypeExtensions,
+} from '../utils/page-type-store';
 import { dbBlockTypeToContentTypes, listDbBlockTypes } from '../utils/block-type-store';
 import type { Env, PluginContentTypes } from '../types';
 import { DEFAULT_CONTENT_LANGUAGE, localeRegistry } from '../utils/i18n';
@@ -44,9 +49,14 @@ export async function resolveCmsConfig(env: Env): Promise<CmsConfig> {
   if (cached && cached.expires > Date.now()) return cached.config;
 
   const plugins = await getPlugins(env);
-  const [dbPageTypes, dbBlockTypes, registry] = env.DB
-    ? await Promise.all([listDbPageTypes(env.DB), listDbBlockTypes(env.DB), localeRegistry(env)])
-    : [[], [], { contentLanguages: cmsConfig.languages }];
+  const [dbPageTypes, dbBlockTypes, registry, extensions] = env.DB
+    ? await Promise.all([
+        listDbPageTypes(env.DB),
+        listDbBlockTypes(env.DB),
+        localeRegistry(env),
+        loadPageTypeExtensions(env),
+      ])
+    : [[], [], { contentLanguages: cmsConfig.languages }, {}];
 
   // Shallow-clone the mutable record fields so we never mutate the base.
   const merged: CmsConfig = {
@@ -70,6 +80,9 @@ export async function resolveCmsConfig(env: Env): Promise<CmsConfig> {
   for (const blockType of dbBlockTypes) {
     mergeContentTypes(merged, dbBlockTypeToContentTypes(blockType));
   }
+
+  // Last: extensions ADD to (never replace) whatever the layers above produced.
+  applyPageTypeExtensions(merged, extensions);
 
   cached = { config: merged, expires: Date.now() + CONFIG_TTL_MS };
   return merged;

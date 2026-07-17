@@ -76,12 +76,18 @@ export interface TypeFormModel {
   /** Page types only — stored selections the decorate step turns into options. */
   selectedBlocks?: string[];
   selectedTaxonomies?: string[];
+  /** View mode only — the user may add blocks/taxonomies to this read-only type. */
+  canExtend?: boolean;
+  /** View mode only — entries owned by the config/plugin, not un-checkable. */
+  lockedBlocks?: string[];
+  lockedTaxonomies?: string[];
 }
 
 export interface TypeFormOption {
   value: string;
   label: string;
   checked: boolean;
+  disabled?: boolean;
 }
 
 export async function typeFormPage(views: Fetcher, opts: BaseTemplateProps & TypeFormModel & {
@@ -92,14 +98,19 @@ export async function typeFormPage(views: Fetcher, opts: BaseTemplateProps & Typ
   const { copy, mode, id, error } = opts;
   const readOnly = mode === 'view';
   const isEdit = mode === 'edit';
+  const canExtend = readOnly && !!opts.canExtend;
   const heading = `${mode === 'view' ? 'View' : mode === 'edit' ? 'Edit' : 'New'} ${copy.singular}`;
 
   const body = await renderView(views, copy.formTemplate, {
     isEdit,
     readOnly,
+    canExtend,
+    canSave: !readOnly || canExtend,
     heading,
     headingKey: `types.${copy.translationKey}.${mode}_title`,
-    action: isEdit ? `${copy.routeBase}/${id}` : copy.routeBase,
+    action: canExtend
+      ? `${copy.routeBase}/view/${encodeURIComponent(opts.slug)}`
+      : isEdit ? `${copy.routeBase}/${id}` : copy.routeBase,
     deleteAction: isEdit ? `${copy.routeBase}/${id}/delete` : '',
     error: error ?? '',
     hasError: !!error,

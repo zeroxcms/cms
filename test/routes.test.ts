@@ -810,6 +810,22 @@ describe('admin routes', () => {
     ]));
   });
 
+  it('merges config taxonomies into the editor tag groups', async () => {
+    const response = await fetchWorker('/admin/pages/101/edit', { headers: { Cookie: await authCookie() } });
+    expect(response.status).toBe(200);
+    const data = bodyData(await response.text());
+
+    // taxonomyLists.default order, with config-defined taxonomies present even
+    // though only 'categories' exists as a DB row.
+    const groups = data.tagGroups as Array<{ slug: string; hasTags: boolean; tags: unknown[] }>;
+    expect(groups.map((group) => group.slug)).toEqual(['years', 'categories', 'topics', 'collections']);
+    expect(groups.find((group) => group.slug === 'categories')?.tags).toEqual([
+      expect.objectContaining({ id: 301, name: 'News', checked: false }),
+      expect.objectContaining({ id: 302, name: 'Updates', checked: true }),
+    ]);
+    expect(groups.find((group) => group.slug === 'years')).toMatchObject({ hasTags: false });
+  });
+
   it('filters tags by taxonomy slug', async () => {
     const response = await fetchWorker('/admin/tags?filter_taxonomy=categories', { headers: { Cookie: await authCookie() } });
     expect(response.status).toBe(200);
@@ -941,6 +957,15 @@ describe('admin routes', () => {
 
   it('persists the selected interface locale and serves its translated profile catalog', async () => {
     const cookie = await authCookie();
+    const dashboard = await fetchWorker('/admin?status=live', { headers: { Cookie: cookie } });
+    const dashboardPayload = renderPayload(await dashboard.text());
+    expect(dashboardPayload.layoutData.uiLocaleOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'en', label: 'English', selected: true }),
+      expect.objectContaining({ code: 'zh-hant', label: '繁體中文', selected: false }),
+    ]));
+    expect(dashboardPayload.layoutData.uiLocaleAction).toBe('/admin/profile/locale');
+    expect(dashboardPayload.layoutData.uiLocaleReturnTo).toBe('/admin?status=live');
+
     const saved = await fetchWorker('/admin/profile/locale', {
       method: 'POST',
       headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -950,6 +975,13 @@ describe('admin routes', () => {
     expect(saved.status).toBe(303);
     expect(saved.headers.get('Location')).toBe('/admin/profile?flash=profile.language_saved');
     expect(saved.headers.getSetCookie().join('\n')).toContain('cms_ui_locale=zh-hant');
+
+    const savedInPlace = await fetchWorker('/admin/profile/locale', {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form({ locale: 'zh-hant', return_to: '/admin?status=live' }),
+    });
+    expect(savedInPlace.headers.get('Location')).toBe('/admin?status=live&flash=profile.language_saved');
 
     const profile = await fetchWorker('/admin/profile', {
       headers: { Cookie: `${cookie}; cms_ui_locale=zh-hant` },

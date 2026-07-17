@@ -410,6 +410,8 @@
     "sections_plugin_credits.flash_saved": "点数费用已保存，新产生的费用将立即使用这些价格。",
     "sections_plugin_credits.on_create": "创建时：",
     "sections_plugin_credits.metered_per": "按单位计费：",
+    "sections_plugin_credits.monthly_advance_per": "每月预付，按单位计费：",
+    "sections_plugin_credits.monthly_arrears_per": "每月后付，按单位计费：",
     "sections_plugin_credits.free": "免费",
     "sections_plugin_form.base_url": "基础网址",
     "sections_plugin_form.the_cms_calls": "CMS 会调用",

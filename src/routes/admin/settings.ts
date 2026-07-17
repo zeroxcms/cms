@@ -7,7 +7,7 @@ import { languagesPage, translationsPage, type LocaleViewRow } from '../../templ
 import type { Env, Variables } from '../../types';
 import { getPlugins, pluginNav } from '../../plugins/registry';
 import { listPlugins } from '../../utils/plugin-store';
-import { effectiveCreditsForPlugin, type EffectiveCredit } from '../../utils/credits';
+import { creditUnitLabel, effectiveCreditsForPlugin, type EffectiveCredit } from '../../utils/credits';
 import { effectiveLimitsForPlugin, type NormalizedLimitDef } from '../../utils/plugin-limits';
 import { logAudit } from '../../utils/audit';
 import { renderPage, userCan } from '../../utils/admin-render';
@@ -268,9 +268,19 @@ settingsRoutes.post('/settings/content/delete', async (c) => {
 });
 
 function creditSummaryChargeLabel(credit: EffectiveCredit): string {
-  return credit.def.charge === 'page_create'
-    ? `On create: ${credit.def.pageType}`
-    : `Metered per ${credit.def.unit}`;
+  if (credit.def.charge === 'page_create') return `On create: ${credit.def.pageType}`;
+  if (credit.def.charge === 'recurring') {
+    return `Monthly (${credit.def.billing}) per ${creditUnitLabel(credit.def)}`;
+  }
+  return `Metered per ${credit.def.unit}`;
+}
+
+function creditSummaryChargeKey(credit: EffectiveCredit): string {
+  if (credit.def.charge === 'page_create') return 'credits.summary.on_create';
+  if (credit.def.charge === 'recurring') {
+    return credit.def.billing === 'arrears' ? 'credits.summary.monthly_arrears_per' : 'credits.summary.monthly_advance_per';
+  }
+  return 'credits.summary.metered_per';
 }
 
 function limitSummaryScopeLabel(def: NormalizedLimitDef): string {
@@ -311,8 +321,8 @@ settingsRoutes.get('/settings/credits', async (c) => {
       label: credit.def.label,
       description: credit.def.description,
       chargeLabel: creditSummaryChargeLabel(credit),
-      chargeKey: credit.def.charge === 'page_create' ? 'credits.summary.on_create' : 'credits.summary.metered_per',
-      chargeValue: (credit.def.charge === 'page_create' ? credit.def.pageType : credit.def.unit) ?? '',
+      chargeKey: creditSummaryChargeKey(credit),
+      chargeValue: (credit.def.charge === 'page_create' ? credit.def.pageType : creditUnitLabel(credit.def)) ?? '',
       effectiveLabel: credit.value === 0 ? 'Free' : `${credit.value} credits`,
       effectiveFree: credit.value === 0,
       effectiveValue: credit.value,

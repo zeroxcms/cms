@@ -44,7 +44,7 @@ import {
 export type { BaseTemplateProps } from '../templates/layout';
 import type { BaseTemplateProps, SidebarNavItem } from '../templates/layout';
 import { withActiveSidebarItems } from './sidebar';
-import { resolveUiLocale } from './i18n';
+import { localeRegistry, resolveUiLocale } from './i18n';
 
 /** The signed-in user's effective permission set (built-in defaults + DB overrides). */
 export async function userPermissions(c: AppContext): Promise<Set<Permission>> {
@@ -66,7 +66,8 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
   const user = c.get('user');
   const userRoles = user.role.split(',').map((role) => role.trim()).filter(Boolean);
   const fallbackSiteTitle = c.env.SITE_TITLE ?? '0xCMS';
-  const [userAvatar, navItems, permissions, branding, userCredits, sharedCredits, cmsOnce, uiLocale, systemTimezone] = await Promise.all([
+  const requestUrl = new URL(c.req.url);
+  const [userAvatar, navItems, permissions, branding, userCredits, sharedCredits, cmsOnce, uiLocale, systemTimezone, localeState] = await Promise.all([
     fetchUserAvatar(c.env.DB, userIdFromContext(c)),
     pluginNav(c.env),
     userPermissions(c),
@@ -76,6 +77,7 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     mintFormOnceToken(c.env.JWT_SECRET),
     resolveUiLocale(c),
     loadSystemTimezone(c.env),
+    localeRegistry(c.env),
   ]);
   const sidebarSettings = await loadSidebarChromeSettings(c.env);
   const menuSettings = sidebarSettings.items;
@@ -191,6 +193,13 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
     cmsOnce,
     uiLocale: uiLocale.code,
     uiDirection: uiLocale.direction,
+    uiLocaleOptions: localeState.uiLocales.map((locale) => ({
+      code: locale.code,
+      label: locale.label,
+      selected: locale.code === uiLocale.code,
+    })),
+    uiLocaleAction: '/admin/profile/locale',
+    uiLocaleReturnTo: `${requestUrl.pathname}${requestUrl.search}`,
     catalogHref: `/admin/i18n/catalog/${encodeURIComponent(uiLocale.code)}`,
     systemTimezone,
     canManageUsers: permissions.has('users:manage'),

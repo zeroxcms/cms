@@ -25,6 +25,7 @@ import type { Env, Variables, WorkerEnv } from './types';
 import { isCmsAdminJobMessage } from './utils/admin-jobs';
 import { runCmsAdminJob } from './utils/admin-job-runner';
 import { ingestSubmissions } from './utils/submission-ingest';
+import { sweepCreditSubscriptions } from './utils/credit-subscriptions';
 import { withD1Sessions } from './utils/d1-sessions';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -180,12 +181,16 @@ export default {
     }
   },
 
-  // Cron: pull live-only submission rows (published DB → draft pages).
-  // Each tick handles one bounded batch and advances the cursor; plugins can
-  // trigger the same ingest on demand via POST /__cms/ingest/submissions.
+  // Cron: pull live-only submission rows (published DB → draft pages) and
+  // bill due recurring credit subscriptions. Each tick handles one bounded
+  // batch of each; plugins can trigger the same ingest on demand via
+  // POST /__cms/ingest/submissions.
   async scheduled(_controller: ScheduledController, env: WorkerEnv, _ctx: ExecutionContext): Promise<void> {
-    const result = await ingestSubmissions(withD1Sessions(env));
+    const sessionEnv = withD1Sessions(env);
+    const result = await ingestSubmissions(sessionEnv);
     if (result.scanned) console.log('submission ingest:', JSON.stringify(result));
+    const sweep = await sweepCreditSubscriptions(sessionEnv);
+    if (sweep.processed) console.log('credit subscription sweep:', JSON.stringify(sweep));
   },
 };
 export { PageSyncDO } from './durable-objects/page-sync';
