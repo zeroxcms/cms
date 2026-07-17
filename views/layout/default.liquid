@@ -432,7 +432,7 @@
         {% endfor %}
       </nav>
       <div class="border-t border-gray-700 px-4 py-3 md:py-4" data-admin-sidebar-footer>
-        <a href="/admin/profile" class="mb-3 flex min-w-0 items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-gray-700" data-mobile-menu-close>
+        <div class="mb-3 flex min-w-0 items-start gap-3 rounded-lg px-2 py-2">
           {% if hasUserAvatar %}
             <div class="relative w-8 h-8 shrink-0">
               <img src="{{ userAvatar }}"
@@ -446,8 +446,23 @@
             <div class="w-8 h-8 shrink-0 rounded-full bg-indigo-500 flex items-center justify-center text-sm font-bold"
                  data-avatar-fallback>{{ userInitial }}</div>
           {% endif %}
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-white truncate">{{ userName }}</p>
+          <div class="min-w-0 flex-1">
+            <a href="/admin/profile" class="flex min-w-0 items-center gap-1.5 text-sm font-medium text-white hover:text-indigo-200" data-mobile-menu-close>
+              <span class="min-w-0 truncate">{{ userName }}</span>
+              <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#chevron-right"></use></svg>
+            </a>
+            <form method="post" action="{{ uiLocaleAction }}" class="mt-1 flex min-w-0 items-center gap-1.5">
+              <input type="hidden" name="return_to" value="{{ uiLocaleReturnTo }}">
+              <svg class="h-3.5 w-3.5 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#globe"></use></svg>
+              <label class="sr-only" for="admin_sidebar_locale">{{ "profile.interface_language" | t }}</label>
+              <select id="admin_sidebar_locale"
+                      name="locale"
+                      class="min-w-0 max-w-full cursor-pointer bg-transparent py-0.5 text-xs font-medium text-gray-400 outline-none hover:text-white focus:text-white"
+                      aria-label="{{ "profile.interface_language" | t }}"
+                      data-autosubmit>
+                {% for option in uiLocaleOptions %}<option value="{{ option.code }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}
+              </select>
+            </form>
             <p class="text-xs text-gray-400">{% for role in userRoleItems %}{% if role.labelKey %}{{ role.labelKey | t }}{% else %}{{ role.label }}{% endif %}{% unless forloop.last %}, {% endunless %}{% endfor %}</p>
             <p class="mt-1 flex items-center gap-1 text-xs font-medium text-amber-400">
               <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -464,8 +479,7 @@
               <span>{{ sharedCredits }} {{ "shell.shared" | t }}</span>
             </p>
           </div>
-          <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#chevron-right"></use></svg>
-        </a>
+        </div>
         <div class="flex shrink-0 items-center gap-3 md:flex-col md:items-start">
           <button type="button"
                   class="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-700 px-2.5 py-1.5 text-sm text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
