@@ -9,10 +9,8 @@ async function objectNames(db: D1Database, type: 'table' | 'index' | 'trigger'):
 }
 
 describe('flattened migration contract', () => {
-  // credit_subscriptions ships as 0002 for now; fold it into the flattened
-  // baseline at the next migration squash.
-  it('ships the flattened baseline plus pending increments per D1 database', () => {
-    expect(env.TEST_MIGRATIONS.map((migration) => migration.name)).toEqual(['0001_initial_schema.sql', '0002_credit_subscriptions.sql']);
+  it('ships one complete baseline per D1 database', () => {
+    expect(env.TEST_MIGRATIONS.map((migration) => migration.name)).toEqual(['0001_initial_schema.sql']);
     expect(env.TEST_PUBLISHED_MIGRATIONS.map((migration) => migration.name)).toEqual(['0001_published_schema.sql']);
   });
 

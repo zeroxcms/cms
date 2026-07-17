@@ -520,8 +520,8 @@ always hold the permission, and it can be granted to any custom role under
 
 ## Database schema
 
-The flattened initial migrations create **29 application
-D1 tables**: 27 in the private CMS database and 2 in the published database.
+The flattened initial migrations create **30 application
+D1 tables**: 28 in the private CMS database and 2 in the published database.
 Live page editing also uses 2 SQLite tables inside each page's Durable Object;
 these are not D1 tables.
 
@@ -530,13 +530,14 @@ The migration history was flattened into one initial file per D1 database in
 July 2026. These baselines are intended for fresh databases. Before deploying
 the flattened history over an existing installation, ensure every migration
 from the previous history through `0016_i18n.sql` (and published migration
-`0003_submission_scan_index.sql`) has already been applied; Wrangler will not
-re-run a modified `0001` that the database has previously recorded.
+`0003_submission_scan_index.sql`) and `0002_credit_subscriptions.sql` has
+already been applied; Wrangler will not re-run a modified `0001` that the
+database has previously recorded.
 
 An upgraded deployment may show additional legacy `live_*` tables in `DB`;
 current CMS routes ignore those tables and use `PUBLISHED_DB` instead.
 
-### CMS database (`DB`) — 27 tables
+### CMS database (`DB`) — 28 tables
 
 The private schema is divided into five feature categories:
 
@@ -547,8 +548,8 @@ The private schema is divided into five feature categories:
   - Localization: `locales`, `locale_messages`
 - **Identity and access (5)**
   - `users`, `user_oauth_identities`, `sessions`, `roles`, `role_permissions`
-- **Credits (3)**
-  - `credit_ledger`, `shared_credits`, `shared_credit_ledger`
+- **Credits (4)**
+  - `credit_ledger`, `shared_credits`, `shared_credit_ledger`, `credit_subscriptions`
 - **Plugin (5)**
   - `plugins`, `plugin_asset_approvals`, `plugin_page_type_approvals`, `settings`, `admin_jobs`
 - **Compliance (1)**
