@@ -151,9 +151,20 @@
 
   function controlFor(table) {
     if (!table.parentElement) return null;
-    var existing = Array.from(table.parentElement.children).find(function(child) {
+    var tableParent = table.parentElement;
+    var scrollContainer = tableParent.classList.contains('overflow-x-auto') ? tableParent : table;
+    var host = scrollContainer.parentElement;
+    if (!host) return null;
+
+    var existing = Array.from(host.children).find(function(child) {
       return child.hasAttribute('data-privacy-control');
     });
+    if (!existing && scrollContainer !== table) {
+      existing = Array.from(scrollContainer.children).find(function(child) {
+        return child.hasAttribute('data-privacy-control');
+      });
+      if (existing) host.insertBefore(existing, scrollContainer);
+    }
     if (existing) return existing.querySelector('[data-privacy-toggle]');
 
     var row = document.createElement('div');
@@ -167,7 +178,7 @@
     button.innerHTML = '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="' + ICON_HREF_PREFIX + '#eye-off"></use></svg><span data-privacy-toggle-label></span>';
     row.appendChild(button);
 
-    table.parentElement.insertBefore(row, table);
+    host.insertBefore(row, scrollContainer);
     return button;
   }
 

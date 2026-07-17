@@ -369,26 +369,6 @@ CREATE TABLE IF NOT EXISTS shared_credit_ledger(
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
 );
 
--- 25b. Recurring credit subscriptions: one row per (user, plugin, cost),
--- created/updated by plugin usage reports (POST /__cms/credits/usage) and
--- billed by the cron sweep. See utils/credit-subscriptions.ts.
-CREATE TABLE IF NOT EXISTS credit_subscriptions(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    plugin_id TEXT NOT NULL,
-    credit_key TEXT NOT NULL,
-    quantity INTEGER NOT NULL DEFAULT 0,
-    peak_quantity INTEGER NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'past_due', 'canceled')),
-    next_charge_at TEXT NOT NULL,
-    last_charged_at TEXT,
-    last_mode TEXT CHECK (last_mode IN ('advance', 'arrears')),
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, plugin_id, credit_key),
-    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-);
-
 -- 26-27. Configurable content and admin-interface locales.
 CREATE TABLE IF NOT EXISTS locales(
     code TEXT PRIMARY KEY,
@@ -440,7 +420,6 @@ CREATE INDEX IF NOT EXISTS idx_plugin_asset_approvals_plugin ON plugin_asset_app
 CREATE INDEX IF NOT EXISTS idx_plugin_page_type_approvals_plugin ON plugin_page_type_approvals(plugin_id);
 CREATE INDEX IF NOT EXISTS idx_credit_ledger_user ON credit_ledger(user_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_shared_credit_ledger_user ON shared_credit_ledger(user_id, id DESC);
-CREATE INDEX IF NOT EXISTS idx_credit_subscriptions_due ON credit_subscriptions(status, next_charge_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_previous_refresh ON sessions(previous_refresh_token_hash);
 CREATE INDEX IF NOT EXISTS idx_locales_content ON locales(content_enabled, weight, code);
 CREATE INDEX IF NOT EXISTS idx_locales_ui ON locales(ui_enabled, weight, code);
