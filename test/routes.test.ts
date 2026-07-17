@@ -1860,15 +1860,15 @@ describe('admin routes', () => {
   it('bulk-selects matching dashboard pages outside the current pagination page', async () => {
     const { queue, sent } = queueStub<CmsAdminJobMessage>();
     (env as unknown as { ADMIN_JOBS_QUEUE?: Queue<CmsAdminJobMessage> }).ADMIN_JOBS_QUEUE = queue;
-    await seedDraftPages('default', 3, 6000, 'Across Pagination');
+    await seedDraftPages('company', 3, 6000, 'Across Pagination');
 
-    const response = await fetchWorker('/admin/advanced-search/default/bulk?dashboard=1&status=draft', {
+    const response = await fetchWorker('/admin/advanced-search/company/bulk?dashboard=1&status=draft', {
       method: 'POST',
       body: form({
         bulk_action: 'delete',
         scope: 'all',
         page_ids: '6000',
-        return_to: '/admin/pages/list/default?status=draft&page=1&pagesize=1',
+        return_to: '/admin/pages/list/company?status=draft&page=1&pagesize=1',
       }),
       headers: { Cookie: await authCookie() },
     });
@@ -1880,7 +1880,7 @@ describe('admin routes', () => {
       .first<{ body: string }>();
     expect(JSON.parse(job?.body ?? '{}')).toMatchObject({
       scope: 'all',
-      pageTypes: ['default'],
+      pageTypes: ['company'],
       criteria: [],
       status: 'draft',
     });

@@ -79,16 +79,30 @@ async function bulkAdvancedSearch(
   let pageTypes: string[] = [];
   const criteria = parseAdvancedSearchCriteria(c.req.url);
   const operator = advancedSearchOperator(c.req.query('operator'));
-  const status = c.req.query('dashboard') === '1'
+  const isDashboardBulk = c.req.query('dashboard') === '1';
+  const status = isDashboardBulk
     ? dashboardStatusFilter(c.req.query('status')) || undefined
     : undefined;
 
   if (scope === 'all') {
-    const config = await resolveCmsConfig(c.env);
-    const selectedPageType = canSelectPageType
-      ? advancedSearchSelectedPageType(c.req.query('page_type'), defaultPageType, config)
-      : advancedSearchSelectedPageType(undefined, defaultPageType, config);
-    pageTypes = advancedSearchTargetPageTypes(selectedPageType, config);
+    if (isDashboardBulk) {
+      if (defaultPageType !== 'all') {
+        // Page-list routes may contain stored page types that are no longer in
+        // the active blueprint. Keep the bulk scope on that exact list.
+        pageTypes = [defaultPageType];
+      } else {
+        const rows = await c.env.DB.prepare(
+          "SELECT DISTINCT page_type FROM draft_pages WHERE page_type IS NOT NULL AND page_type != ''",
+        ).all<{ page_type: string }>();
+        pageTypes = rows.results.map((row) => row.page_type);
+      }
+    } else {
+      const config = await resolveCmsConfig(c.env);
+      const selectedPageType = canSelectPageType
+        ? advancedSearchSelectedPageType(c.req.query('page_type'), defaultPageType, config)
+        : advancedSearchSelectedPageType(undefined, defaultPageType, config);
+      pageTypes = advancedSearchTargetPageTypes(selectedPageType, config);
+    }
   }
 
   if (scope === 'selected' && !ids.length) {
