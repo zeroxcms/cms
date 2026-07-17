@@ -42,7 +42,7 @@ export async function tagFormPage(views: Fetcher, opts: BaseTemplateProps & {
   translatedName: string;
   translatedPlaceholder: string;
   taxonomies: TagTaxonomyOption[];
-  parentTags: Tag[];
+  selectedParent: { id: string; label: string };
 }): Promise<string> {
   const {
     tag,
@@ -51,7 +51,7 @@ export async function tagFormPage(views: Fetcher, opts: BaseTemplateProps & {
     translatedName,
     translatedPlaceholder,
     taxonomies,
-    parentTags,
+    selectedParent,
   } = opts;
   const body = await renderView(views, '/templates/tag-form.json', {
     isEdit: !!tag,
@@ -75,13 +75,9 @@ export async function tagFormPage(views: Fetcher, opts: BaseTemplateProps & {
       name: type.sourceLabel ? `${type.name} (${type.sourceLabel})` : type.name,
       selected: tag?.taxonomy_slug === type.id,
     })),
-    parentOptions: parentTags
-      .filter((candidate) => candidate.id !== tag?.id)
-      .map((candidate) => ({
-        id: candidate.id,
-        name: candidate.name,
-        selected: tag?.parent_tag === candidate.id,
-      })),
+    parentExclude: tag?.id ?? '',
+    selectedParentId: selectedParent.id,
+    selectedParentLabel: selectedParent.label,
     deleteAction: tag ? `/admin/tags/${tag.id}/delete` : '',
   });
 

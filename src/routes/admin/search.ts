@@ -13,7 +13,7 @@ import {
 import { runCmsAdminJob } from '../../utils/admin-job-runner';
 import { renderAdvancedSearch, userCan } from '../../utils/admin-render';
 import type { AppContext } from '../../utils/context';
-import { appendQuery, safeAdminReturnPath, str } from '../../utils/forms';
+import { appendQuery, dashboardStatusFilter, safeAdminReturnPath, str } from '../../utils/forms';
 import {
   advancedSearchOperator,
   advancedSearchSelectedPageType,
@@ -79,6 +79,9 @@ async function bulkAdvancedSearch(
   let pageTypes: string[] = [];
   const criteria = parseAdvancedSearchCriteria(c.req.url);
   const operator = advancedSearchOperator(c.req.query('operator'));
+  const status = c.req.query('dashboard') === '1'
+    ? dashboardStatusFilter(c.req.query('status')) || undefined
+    : undefined;
 
   if (scope === 'all') {
     const config = await resolveCmsConfig(c.env);
@@ -99,6 +102,7 @@ async function bulkAdvancedSearch(
     pageTypes,
     criteria,
     operator,
+    status,
     returnTo,
     user: c.get('user'),
   });

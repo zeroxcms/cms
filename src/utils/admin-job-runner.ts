@@ -2,6 +2,7 @@ import { deliverHooks, type HookEvent, type HookPage } from '../plugins/hooks';
 import { PLUGIN_ORIGIN, pluginById } from '../plugins/registry';
 import { pluginTenantId, setPluginAuthHeaders } from '../security/plugin-proxy';
 import {
+  listLiveByTypes,
   publishPageToTargets,
   unpublishPageFromTargets,
   unpublishPagesFromTargets,
@@ -78,9 +79,17 @@ async function runAdvancedSearchBulkActionJob(env: Env, job: AdminJobRecord): Pr
   if (!job.user) throw new Error('Admin job is missing user data');
   let input = parseAdvancedSearchBulkActionJob(job.body);
   if (input.scope === 'all' && !input.resolvedAll) {
+    let ids = await advancedSearchMatchingPageIds(env.DB, input.pageTypes, input.criteria, input.operator);
+    if (input.status) {
+      const liveUuids = new Set((await listLiveByTypes(env, input.pageTypes)).map((page) => page.uuid));
+      const matchingPages = await draftPagesByIds(env.DB, ids);
+      ids = matchingPages
+        .filter((page) => input.status === 'live' ? liveUuids.has(page.uuid) : !liveUuids.has(page.uuid))
+        .map((page) => page.id);
+    }
     input = {
       ...input,
-      ids: await advancedSearchMatchingPageIds(env.DB, input.pageTypes, input.criteria, input.operator),
+      ids,
       cursor: 0,
       resolvedAll: true,
     };
@@ -132,6 +141,7 @@ function parseAdvancedSearchBulkActionJob(body: string | null): AdvancedSearchBu
     : [];
   const criteria = Array.isArray(value.criteria) ? value.criteria : [];
   const operator = value.operator === 'OR' || value.operator === 'NOT' ? value.operator : 'AND';
+  const status = value.status === 'draft' || value.status === 'live' ? value.status : undefined;
   const returnTo = typeof value.returnTo === 'string' && value.returnTo.startsWith('/admin')
     ? value.returnTo
     : '/admin/advanced-search';
@@ -143,7 +153,7 @@ function parseAdvancedSearchBulkActionJob(body: string | null): AdvancedSearchBu
     : [];
   const resolvedAll = value.resolvedAll === true;
   if (scope === 'all' && !pageTypes.length) throw new Error('Admin job is missing page types');
-  return { action: value.action, scope, ids, pageTypes, criteria, operator, returnTo, resolvedAll, cursor, updated, refused, failedTargets };
+  return { action: value.action, scope, ids, pageTypes, criteria, operator, status, returnTo, resolvedAll, cursor, updated, refused, failedTargets };
 }
 
 async function applyAdvancedSearchBulkAction(

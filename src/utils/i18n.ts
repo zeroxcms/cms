@@ -178,7 +178,9 @@ export async function buildTranslationCatalog(
   if (!chain.includes(DEFAULT_UI_LOCALE)) chain.unshift(DEFAULT_UI_LOCALE);
 
   const pluginViews = includePluginCatalogs
-    ? (await getPlugins(env)).map((plugin) => plugin.fetcher)
+    ? (await getPlugins(env))
+      .filter((plugin) => plugin.manifest.i18n === true)
+      .map((plugin) => plugin.fetcher)
     : [];
   const catalog: Record<string, string> = {};
   for (const localeCode of chain) {
@@ -188,6 +190,11 @@ export async function buildTranslationCatalog(
     for (const message of messages) catalog[message.message_key] = message.value;
   }
   return catalog;
+}
+
+/** Loads only the strings bundled in a core locale JSON file, without fallbacks or database overrides. */
+export async function loadBundledLocaleCatalog(env: Env, localeCode: unknown): Promise<Record<string, string>> {
+  return bundledCatalog(env, normalizeLocaleCode(localeCode));
 }
 
 /** Looks up a UI string in the merged catalog, falling back to the given English text. */

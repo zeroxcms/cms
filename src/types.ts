@@ -316,6 +316,12 @@ export interface PluginManifest {
   /** When true, the plugin is a publish target: it receives full page
    *  snapshots on publish/unpublish via /__plugin/publish/*. */
   publishTarget?: boolean;
+  /**
+   * When true, the plugin provides UI translation catalogs at
+   * `/__plugin/views/locales/:locale.json`. Locale catalogs are opt-in so the
+   * CMS does not probe that endpoint on plugins that are not i18n-ready.
+   */
+  i18n?: boolean;
   nav?: PluginNavItem[];
   contentTypes?: PluginContentTypes;
   fieldTypes?: PluginFieldType[];

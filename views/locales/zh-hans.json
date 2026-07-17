@@ -31,7 +31,7 @@
   },
   "nav": {
     "pages": "页面",
-    "tags": "标签",
+    "tags": "索引",
     "taxonomies": "分类法",
     "pageTypes": "页面类型",
     "blockTypes": "区块类型",
@@ -143,7 +143,7 @@
       "description": "数据库中的值会覆盖内置语言文件。缺失的值会回退到英语，最后显示翻译键。",
       "manage": "管理翻译",
       "save": "保存翻译",
-      "empty": "此语言没有数据库翻译。"
+      "empty": "此语言没有内置或数据库翻译。"
     },
     "fields": {
       "code": "语言代码",
@@ -155,7 +155,9 @@
       "ui_enabled": "CMS 界面",
       "locale": "语言",
       "key": "翻译键",
-      "value": "翻译内容"
+      "value": "翻译内容",
+      "file_value": "语言文件内容",
+      "override_value": "数据库覆盖值"
     }
   },
   "view_strings": {
@@ -175,7 +177,7 @@
     "sections_advanced_search.asc": "升序",
     "sections_advanced_search.search": "搜索",
     "sections_advanced_search.path": "Path",
-    "sections_advanced_search.tags": "标签",
+    "sections_advanced_search.tags": "索引",
     "sections_advanced_search.select_tags": "Select Tags",
     "sections_advanced_search.no_tags": "No tags",
     "sections_advanced_search.add_criterion": "Add Criterion",
@@ -253,6 +255,9 @@
     "sections_dashboard.new_page": "新建页面",
     "sections_dashboard.page": "页面",
     "sections_dashboard.type": "类型",
+    "sections_dashboard.all_types": "全部类型",
+    "sections_dashboard.filter_by_type": "按类型筛选",
+    "sections_dashboard.all_matching_pages": "所有匹配页面",
     "sections_dashboard.weight": "权重",
     "sections_dashboard.status": "状态",
     "sections_dashboard.actions": "操作",
@@ -303,7 +308,7 @@
     "sections_editor.diff_vs_current_draft": "与当前草稿对比",
     "sections_editor.this_version": "此版本",
     "sections_editor.current_draft": "当前草稿",
-    "sections_editor.tags": "标签",
+    "sections_editor.tags": "索引",
     "sections_editor.no_tags_in_taxonomy": "尚无标签 — 新增一个",
     "sections_editor.versions": "版本",
     "sections_editor.clean_all_versions": "清理所有版本",
@@ -517,17 +522,18 @@
     "sections_tag_form.new_tag": "新建标签",
     "sections_tag_form.edit_tag": "编辑标签",
     "sections_tag_form.name": "名称",
-    "sections_tag_form.translated_name": "翻译名称",
+    "sections_tag_form.translated_name": "显示名称",
     "sections_tag_form.slug": "别名",
     "sections_tag_form.weight": "权重",
     "sections_tag_form.taxonomy": "分类法",
     "sections_tag_form.none": "无",
     "sections_tag_form.parent_tag": "父标签",
+    "sections_tag_form.no_matching_tags": "没有匹配的标签",
     "sections_tag_form.save": "保存",
     "sections_tag_form.cancel": "取消",
     "sections_tag_form.delete": "删除",
     "sections_tag_form.delete_this_tag_it_will_be_removed_from_all_pages_that_use_it": "要删除此标签吗？它将从所有使用该标签的页面中移除。",
-    "sections_tags.tags": "标签",
+    "sections_tags.tags": "索引",
     "sections_tags.taxonomies": "分类法",
     "sections_tags.new_tag": "新建标签",
     "sections_tags.filter_by_taxonomy": "按分类法筛选",

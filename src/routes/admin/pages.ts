@@ -5,6 +5,7 @@ import { dashboardPage } from '../../templates/dashboard';
 import { editorPage } from '../../templates/editor';
 import { readPage } from '../../templates/read';
 import { resolveCmsConfig } from '../../plugins/config';
+import { advancedSearchPageTypes } from '../../utils/search';
 import { dispatchHook } from '../../plugins/hooks';
 import { viewsFor } from '../../plugins/views';
 import { pluginEditView, pluginNewView, pluginReadView } from '../../plugins/edit-view';
@@ -433,6 +434,7 @@ async function renderAllPagesList(c: AppContext, routeBase: string) {
   });
   const statusParams = statusFilter ? { status: statusFilter } : {};
   const { importHref, exportHref } = await importExportHrefs(c.env);
+  const config = await resolveCmsConfig(c.env);
 
   return renderPage(c, dashboardPage, {
     pages: draftPages.results,
@@ -444,6 +446,7 @@ async function renderAllPagesList(c: AppContext, routeBase: string) {
     advancedSearchHref: '/admin/advanced-search',
     importHref,
     exportHref,
+    pageTypeChoices: advancedSearchPageTypes(config),
     pagination: dashboardPagination(routeBase, draftPages, statusParams),
   });
 }
@@ -500,6 +503,7 @@ pagesRoutes.get('/pages/list/:pageType', requirePermission('content:read'), asyn
       advancedSearchHref: `/admin/advanced-search/${encodeURIComponent(pageType)}`,
       importHref,
       exportHref,
+      pageTypeChoices: advancedSearchPageTypes(config),
       pagination: dashboardPagination(routeBase, draftPages, statusParams),
       privacyTable: pageTypeHasPrivacyFields(config.blueprint[pageType]),
   });

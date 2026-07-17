@@ -1,58 +1,107 @@
-<div class="min-w-0 max-w-xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
+<div class="min-w-0 max-w-2xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
   <h2 class="text-2xl font-bold text-gray-900 mb-6">{{ headingKey | t }}</h2>
-  <form id="tag-form" method="POST" action="{{ action }}" class="min-w-0 space-y-4">
-    <label for="tag_language" class="block min-w-0">
-      <span class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_tag_form.language" | t }}</span>
-      <select id="tag_language" name="_language"
-              class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-        {% for option in languageOptions %}
-          <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.value }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label for="tag_name" class="block min-w-0">
-      <span class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_tag_form.name" | t }}</span>
-      <input id="tag_name" name="name" required value="{{ name }}"
-             class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-    </label>
-    <label for="translated_name" class="block min-w-0">
-      <span class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_tag_form.translated_name" | t }}</span>
-      <input id="translated_name" name="{{ translatedFieldName }}"
-             value="{{ translatedName }}"
-             placeholder="{{ translatedPlaceholder }}"
-             class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-    </label>
-    <label for="tag_slug" class="block min-w-0">
-      <span class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_tag_form.slug" | t }}</span>
-      <input id="tag_slug" name="slug" value="{{ slug }}" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-    </label>
-    <label for="tag_weight" class="block min-w-0">
-      <span class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_tag_form.weight" | t }}</span>
-      <input id="tag_weight" name="weight" type="number" value="{{ weight }}" class="block min-w-0 w-32 max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-    </label>
-    <label for="taxonomy_slug" class="block min-w-0">
-      <span class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_tag_form.taxonomy" | t }}</span>
-      <select id="taxonomy_slug" name="taxonomy_slug" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-        <option value="">{{ "view_strings.sections_tag_form.none" | t }}</option>
-        {% for option in taxonomyOptions %}
-          <option value="{{ option.id }}" {% if option.selected %}selected{% endif %}>{{ option.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label for="parent_tag" class="block min-w-0">
-      <span class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_tag_form.parent_tag" | t }}</span>
-      <select id="parent_tag" name="parent_tag" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-        <option value="">{{ "view_strings.sections_tag_form.none" | t }}</option>
-        {% for option in parentOptions %}
-          <option value="{{ option.id }}" {% if option.selected %}selected{% endif %}>{{ option.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
+  <form id="tag-form" method="POST" action="{{ action }}" class="min-w-0 space-y-6">
+
+    {%- comment -%} Top section: base Name (not translated), auto-slug beneath it, weight on the right. {%- endcomment -%}
+    <div class="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div class="flex min-w-0 flex-col gap-3 border-b border-gray-200 bg-gray-100 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+        <div class="min-w-0 flex-1">
+          <label for="tag_name" class="sr-only">{{ "view_strings.sections_tag_form.name" | t }}</label>
+          <input type="text" id="tag_name" name="name" required
+                 value="{{ name }}"
+                 placeholder="{{ "view_strings.sections_tag_form.name" | t }}"
+                 class="w-full max-w-full border-b border-transparent bg-transparent p-0 text-[2rem] leading-tight text-gray-900 focus:border-indigo-500 focus:outline-none">
+          <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1 text-xs font-mono text-gray-500">
+            <span class="shrink-0">/</span>
+            <label for="tag_slug" class="sr-only">{{ "view_strings.sections_tag_form.slug" | t }}</label>
+            <input type="text" id="tag_slug" name="slug"
+                   value="{{ slug }}"
+                   placeholder="tag-slug"
+                   class="min-w-[10rem] flex-1 border-b border-transparent bg-transparent p-0 focus:border-indigo-500 focus:outline-none">
+            <button type="button" id="copy-tag-slug-btn" title="{{ "view_strings.sections_tag_form.slug" | t }}"
+                    class="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-700">
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#copy"></use></svg>
+              <span class="sr-only">{{ "view_strings.sections_tag_form.slug" | t }}</span>
+            </button>
+          </div>
+        </div>
+        <div class="flex shrink-0 items-center gap-1 text-gray-500 sm:pt-1">
+          <span class="text-sm" aria-hidden="true">#</span>
+          <label for="tag_weight" class="sr-only">{{ "view_strings.sections_tag_form.weight" | t }}</label>
+          <input type="number" id="tag_weight" name="weight" value="{{ weight }}" min="0" max="100000"
+                 class="w-14 border-b border-transparent bg-transparent p-0 text-right text-lg font-bold focus:border-indigo-500 focus:outline-none">
+        </div>
+      </div>
+    </div>
+
+    {%- comment -%} Taxonomy + parent tag, above the translated name. {%- endcomment -%}
+    <div class="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+      <label for="taxonomy_slug" class="block min-w-0">
+        <span class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_tag_form.taxonomy" | t }}</span>
+        <select id="taxonomy_slug" name="taxonomy_slug" class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+          <option value="">{{ "view_strings.sections_tag_form.none" | t }}</option>
+          {% for option in taxonomyOptions %}
+            <option value="{{ option.id }}" {% if option.selected %}selected{% endif %}>{{ option.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="block min-w-0">
+        <label for="parent_tag_search" class="block text-sm font-medium text-gray-700 mb-1">{{ "view_strings.sections_tag_form.parent_tag" | t }}</label>
+        <div class="relative min-w-0" data-parent-tag-combobox data-parent-exclude="{{ parentExclude }}">
+          <input type="hidden" id="parent_tag" name="parent_tag" value="{{ selectedParentId }}">
+          <input type="text" id="parent_tag_search"
+                 value="{{ selectedParentLabel }}"
+                 placeholder="{{ "view_strings.sections_tag_form.none" | t }}"
+                 autocomplete="off" role="combobox"
+                 aria-controls="parent_tag_results" aria-expanded="false" aria-autocomplete="list"
+                 class="block min-w-0 w-full max-w-full rounded-lg border border-gray-300 px-3 py-2 pr-9 text-sm focus:border-indigo-500 focus:outline-none"
+                 data-parent-search>
+          <button type="button"
+                  class="absolute inset-y-0 right-0 flex items-center rounded-r-lg px-2 text-gray-400 hover:text-gray-700"
+                  data-parent-toggle aria-label="{{ "view_strings.sections_tag_form.parent_tag" | t }}">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#chevron-down"></use></svg>
+          </button>
+          <div id="parent_tag_results"
+               class="absolute left-0 top-full z-20 mt-1 hidden max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+               data-parent-results>
+            <button type="button"
+                    class="block w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50"
+                    data-parent-option data-parent-id="" data-parent-label="">
+              {{ "view_strings.sections_tag_form.none" | t }}
+            </button>
+            <p class="hidden px-3 py-2 text-sm text-gray-400" data-parent-empty>{{ "view_strings.sections_tag_form.no_matching_tags" | t }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {%- comment -%} Multi-language translated name with a language selector (mirrors the page editor content section). {%- endcomment -%}
+    <div class="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
+      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-sm font-semibold text-gray-700">{{ "view_strings.sections_tag_form.translated_name" | t }}</p>
+        <label for="tag_language" class="flex min-w-0 w-full items-center gap-2 text-xs text-gray-500 sm:w-auto">
+          {{ "view_strings.sections_tag_form.language" | t }}
+          <select id="tag_language" name="_language"
+                  class="min-w-0 flex-1 px-2 py-1 border border-gray-300 rounded-lg text-xs sm:flex-none">
+            {% for option in languageOptions %}
+              <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.value }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <label for="translated_name" class="block min-w-0">
+        <span class="sr-only">{{ "view_strings.sections_tag_form.translated_name" | t }}</span>
+        <input id="translated_name" name="{{ translatedFieldName }}"
+               value="{{ translatedName }}"
+               placeholder="{{ translatedPlaceholder }}"
+               class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+      </label>
+    </div>
   </form>
   {% if isEdit %}
     <form id="tag-delete-form" method="POST" action="{{ deleteAction }}" data-confirm="{{ "view_strings.sections_tag_form.delete_this_tag_it_will_be_removed_from_all_pages_that_use_it" | t }}"></form>
   {% endif %}
-  <div class="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+  <div class="mt-6 flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
     <button form="tag-form" type="submit" class="w-full px-6 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm sm:w-auto">{{ "view_strings.sections_tag_form.save" | t }}</button>
     <a href="/admin/tags" class="w-full px-6 py-2 text-center bg-white text-gray-700 text-sm font-semibold rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors sm:w-auto">{{ "view_strings.sections_tag_form.cancel" | t }}</a>
     {% if isEdit %}
@@ -82,6 +131,117 @@
       .replace(/^-+|-+$/g, '');
   }
 
+  function copyTagSlug() {
+    if (!tagSlugInput) return;
+    tagSlugInput.select();
+    tagSlugInput.setSelectionRange(0, 99999);
+    document.execCommand('copy');
+  }
+
   document.getElementById('tag_language')?.addEventListener('change', (event) => switchTagLanguage(event.target.value));
   document.getElementById('tag_name')?.addEventListener('input', (event) => autoTagSlug(event.target.value));
+  document.getElementById('copy-tag-slug-btn')?.addEventListener('click', copyTagSlug);
+
+  // Parent-tag combobox: searches tags server-side (/admin/api/parent-tags) so
+  // it scales past a plain <select>. The hidden #parent_tag carries the chosen
+  // id; the empty-id option clears the parent.
+  const parentCombobox = document.querySelector('[data-parent-tag-combobox]');
+  if (parentCombobox) {
+    const parentInput = parentCombobox.querySelector('[data-parent-search]');
+    const parentHidden = parentCombobox.querySelector('#parent_tag');
+    const parentResults = parentCombobox.querySelector('[data-parent-results]');
+    const parentEmpty = parentCombobox.querySelector('[data-parent-empty]');
+    const parentToggle = parentCombobox.querySelector('[data-parent-toggle]');
+    const parentNoneOption = parentCombobox.querySelector('[data-parent-id=""]');
+    let parentSearchRequest = 0;
+
+    function parentOptions() {
+      return Array.from(parentCombobox.querySelectorAll('[data-parent-option]'));
+    }
+
+    function bindParentOption(option) {
+      option.addEventListener('click', () => selectParentOption(option));
+    }
+
+    function renderParentOptions(tags) {
+      parentCombobox.querySelectorAll('[data-parent-dynamic]').forEach((option) => option.remove());
+      tags.forEach((tag) => {
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.className = 'block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50';
+        option.dataset.parentOption = '';
+        option.dataset.parentDynamic = '';
+        option.dataset.parentId = String(tag.id);
+        option.dataset.parentLabel = tag.name;
+        option.innerHTML = '<span class="block truncate font-medium"></span><span class="block truncate text-[11px] text-gray-400"></span>';
+        option.children[0].textContent = tag.name;
+        option.children[1].textContent = tag.slug ? '/' + tag.slug : '';
+        bindParentOption(option);
+        parentResults.insertBefore(option, parentEmpty);
+      });
+      // The "None" (clear) row only makes sense with no active query.
+      parentNoneOption.classList.toggle('hidden', !!parentInput.value.trim());
+      const visible = parentOptions().filter((option) => !option.classList.contains('hidden')).length;
+      parentEmpty.classList.toggle('hidden', visible > 0);
+    }
+
+    async function loadParentOptions() {
+      const requestId = ++parentSearchRequest;
+      const params = new window.URLSearchParams();
+      const query = parentInput.value.trim();
+      const exclude = parentCombobox.dataset.parentExclude || '';
+      if (query) params.set('q', query);
+      if (exclude) params.set('exclude', exclude);
+      try {
+        const response = await fetch('/admin/api/parent-tags?' + params.toString());
+        if (!response.ok || requestId !== parentSearchRequest) return;
+        renderParentOptions(await response.json());
+      } catch (_error) {
+        if (requestId === parentSearchRequest) renderParentOptions([]);
+      }
+    }
+
+    async function openParentResults() {
+      parentResults.classList.remove('hidden');
+      parentInput.setAttribute('aria-expanded', 'true');
+      await loadParentOptions();
+    }
+
+    function closeParentResults() {
+      parentResults.classList.add('hidden');
+      parentInput.setAttribute('aria-expanded', 'false');
+    }
+
+    function selectParentOption(option) {
+      parentHidden.value = option.dataset.parentId || '';
+      parentInput.value = option.dataset.parentLabel || '';
+      closeParentResults();
+    }
+
+    parentInput.addEventListener('focus', openParentResults);
+    parentInput.addEventListener('input', () => {
+      if (!parentInput.value.trim()) parentHidden.value = '';
+      openParentResults();
+    });
+    parentInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { closeParentResults(); return; }
+      if (event.key !== 'Enter') return;
+      const firstVisible = parentOptions().find((option) => !option.classList.contains('hidden'));
+      if (!firstVisible) return;
+      event.preventDefault();
+      selectParentOption(firstVisible);
+    });
+    parentToggle.addEventListener('click', () => {
+      if (parentResults.classList.contains('hidden')) {
+        parentInput.focus();
+        openParentResults();
+      } else {
+        closeParentResults();
+      }
+    });
+    parentOptions().forEach(bindParentOption);
+    document.addEventListener('click', (event) => {
+      if (!parentCombobox.contains(event.target)) closeParentResults();
+    });
+  }
 </script>

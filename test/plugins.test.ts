@@ -105,6 +105,11 @@ describe('resolveCmsConfig', () => {
     expect(await getPlugins(invalidEnv)).toEqual([]);
   });
 
+  it('rejects a non-boolean i18n manifest setting', async () => {
+    const invalidEnv = await envWith(makePlugin({ ...EVENTS_MANIFEST, i18n: 'yes' }));
+    expect(await getPlugins(invalidEnv)).toEqual([]);
+  });
+
   it.each([
     ['a misleading Content-Length header', new Response('x'.repeat(256 * 1024 + 1), { headers: { 'content-length': '1' } })],
     ['a chunked response without Content-Length', new Response(new ReadableStream({
@@ -799,7 +804,7 @@ describe('plugin admin proxy', () => {
     __injectPluginFetcher(url, {
       fetch: async (input: RequestInfo | URL): Promise<Response> => {
         const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).pathname;
-        if (path === '/__plugin/manifest') return Response.json(EVENTS_MANIFEST);
+        if (path === '/__plugin/manifest') return Response.json({ ...EVENTS_MANIFEST, i18n: true });
         if (path === '/__plugin/views/locales/en.json') {
           return Response.json({ plugins: { events: { nav: { dashboard: 'Events' } } } });
         }
@@ -831,6 +836,33 @@ describe('plugin admin proxy', () => {
     const catalog = await worker.fetch(new Request('http://localhost/admin/i18n/catalog/zh-hant', { headers }));
     expect(catalog.status).toBe(200);
     expect((await catalog.json<Record<string, string>>())['plugins.events.nav.dashboard']).toBe('活動');
+  });
+
+  it('does not request locale catalogs unless the plugin opts into i18n', async () => {
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const url = 'https://plugin-without-locales.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Contacts', url).run();
+    const requestedPaths: string[] = [];
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).pathname;
+        requestedPaths.push(path);
+        if (path === '/__plugin/manifest') return Response.json({ ...EVENTS_MANIFEST, id: 'contacts', name: 'Contacts' });
+        return new Response('nf', { status: 404 });
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+    const response = await worker.fetch(new Request('http://localhost/admin/i18n/catalog/zh-hant', {
+      headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(requestedPaths).toEqual(['/__plugin/manifest']);
   });
 
   it('renders an event page edit view from the plugin and falls back when it declines', async () => {

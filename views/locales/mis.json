@@ -143,7 +143,7 @@
       "description": "Database values override bundled locale files. Missing values fall back to English, then to the translation key.",
       "manage": "Manage translations",
       "save": "Save translation",
-      "empty": "No database translation overrides for this locale."
+      "empty": "No bundled or database translations for this locale."
     },
     "fields": {
       "code": "Locale code",
@@ -155,7 +155,9 @@
       "ui_enabled": "CMS interface",
       "locale": "Locale",
       "key": "Translation key",
-      "value": "Translated value"
+      "value": "Translated value",
+      "file_value": "Locale file value",
+      "override_value": "Database override"
     }
   },
   "view_strings": {
@@ -253,6 +255,9 @@
     "sections_dashboard.new_page": "New Page",
     "sections_dashboard.page": "Page",
     "sections_dashboard.type": "Type",
+    "sections_dashboard.all_types": "All types",
+    "sections_dashboard.filter_by_type": "Filter by type",
+    "sections_dashboard.all_matching_pages": "All matching pages",
     "sections_dashboard.weight": "Weight",
     "sections_dashboard.status": "Status",
     "sections_dashboard.actions": "Actions",
@@ -517,12 +522,13 @@
     "sections_tag_form.new_tag": "New Tag",
     "sections_tag_form.edit_tag": "Edit Tag",
     "sections_tag_form.name": "Name",
-    "sections_tag_form.translated_name": "Translated Name",
+    "sections_tag_form.translated_name": "Display Name",
     "sections_tag_form.slug": "Slug",
     "sections_tag_form.weight": "Weight",
     "sections_tag_form.taxonomy": "Taxonomy",
     "sections_tag_form.none": "None",
     "sections_tag_form.parent_tag": "Parent Tag",
+    "sections_tag_form.no_matching_tags": "No matching tags",
     "sections_tag_form.save": "Save",
     "sections_tag_form.cancel": "Cancel",
     "sections_tag_form.delete": "Delete",

@@ -308,9 +308,8 @@ async function tagTaxonomyOptions(c: AppContext): Promise<TagTaxonomyOption[]> {
 }
 
 async function tagForm(c: AppContext, tag?: Tag) {
-  const [taxonomies, tags, config] = await Promise.all([
+  const [taxonomies, config] = await Promise.all([
     tagTaxonomyOptions(c),
-    listTags(c.env.DB),
     resolveCmsConfig(c.env),
   ]);
   const language = languageFromRequest(c, undefined, config);
@@ -319,6 +318,16 @@ async function tagForm(c: AppContext, tag?: Tag) {
   const translatedName = language === cmsConfig.defaultLanguage ? rawTranslatedName || tag?.name || '' : rawTranslatedName;
   const defaultTranslatedName = getLectLocalizedValue(lect, 'name', cmsConfig.defaultLanguage) || tag?.name || '';
   const translatedPlaceholder = language === cmsConfig.defaultLanguage ? '' : defaultTranslatedName;
+  const selectedParent = { id: '', label: '' };
+  if (tag?.parent_tag) {
+    const parent = await c.env.DB.prepare('SELECT id, name, lect FROM tags WHERE id = ?')
+      .bind(tag.parent_tag)
+      .first<Tag>();
+    if (parent) {
+      selectedParent.id = String(parent.id);
+      selectedParent.label = getLectLocalizedValue(safeParseLect(parent.lect), 'name', cmsConfig.defaultLanguage) || parent.name;
+    }
+  }
   return renderPage(c, tagFormPage, {
     tag,
     language,
@@ -326,6 +335,6 @@ async function tagForm(c: AppContext, tag?: Tag) {
     translatedName,
     translatedPlaceholder,
     taxonomies,
-    parentTags: tags,
+    selectedParent,
   });
 }

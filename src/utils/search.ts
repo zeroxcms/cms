@@ -309,7 +309,10 @@ export function advancedSearchWhere(
   criteria: AdvancedSearchCriterion[],
   operator: AdvancedSearchOperator,
 ): { whereSql: string; baseParams: unknown[] } {
-  let searchCondition = '1=0';
+  // Bulk actions from ordinary page lists intentionally have no search
+  // criteria: in that context an empty query means every page of the selected
+  // type(s), including records outside the current pagination page.
+  let searchCondition = criteria.length === 0 ? '1=1' : '1=0';
   let searchParams: unknown[] = [];
   const pageTypePlaceholders = pageTypes.map(() => '?').join(',');
 

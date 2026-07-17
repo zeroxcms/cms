@@ -8,15 +8,29 @@
         {% elsif statusFilter == 'draft' %}{% if singularCount %}{{ "pages.count.draft_page" | t }}{% else %}{{ "pages.count.draft_pages" | t }}{% endif %}
         {% else %}{% if singularCount %}{{ "pages.count.page" | t }}{% else %}{{ "pages.count.pages" | t }}{% endif %} {{ "pages.count.in_draft" | t }}{% endif %}
       </p>
-      {% if hasStatusFilters %}
-        <div class="mt-3 inline-flex h-9 overflow-hidden rounded-lg border border-gray-300 bg-white text-sm font-semibold shadow-sm">
-          {% for filter in statusFilters %}
-            <a href="{{ filter.href }}"
-               {% if filter.isActive %}aria-current="page"{% endif %}
-               class="inline-flex items-center border-r border-gray-300 px-3 last:border-r-0 {% if filter.isActive %}bg-indigo-600 text-white{% else %}text-gray-700 hover:bg-gray-50{% endif %}">
-              {% if filter.translationKey %}{{ filter.translationKey | t }}{% else %}{{ filter.label }}{% endif %}
-            </a>
-          {% endfor %}
+      {% if hasStatusFilters or hasPageTypeChoices %}
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          {% if hasStatusFilters %}
+            <div class="inline-flex h-9 overflow-hidden rounded-lg border border-gray-300 bg-white text-sm font-semibold shadow-sm">
+              {% for filter in statusFilters %}
+                <a href="{{ filter.href }}"
+                   {% if filter.isActive %}aria-current="page"{% endif %}
+                   class="inline-flex items-center border-r border-gray-300 px-3 last:border-r-0 {% if filter.isActive %}bg-indigo-600 text-white{% else %}text-gray-700 hover:bg-gray-50{% endif %}">
+                  {% if filter.translationKey %}{{ filter.translationKey | t }}{% else %}{{ filter.label }}{% endif %}
+                </a>
+              {% endfor %}
+            </div>
+          {% endif %}
+          {% if hasPageTypeChoices %}
+            <label for="page_type_filter" class="sr-only">{{ "view_strings.sections_dashboard.filter_by_type" | t }}</label>
+            <select id="page_type_filter"
+                    class="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 shadow-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="{{ allTypesHref }}"{% if allTypesSelected %} selected{% endif %}>{{ "view_strings.sections_dashboard.all_types" | t }}</option>
+              {% for opt in pageTypeOptions %}
+                <option value="{{ opt.href }}"{% if opt.isSelected %} selected{% endif %}>{{ opt.slug }}</option>
+              {% endfor %}
+            </select>
+          {% endif %}
         </div>
       {% endif %}
     </div>
@@ -66,8 +80,46 @@
   {% if hasFlash %}
     <div id="flash" class="mb-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700 flex items-center gap-2">
       <svg class="w-4 h-4 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><use href="{{ iconHrefPrefix }}#check-circle"></use></svg>
-      {{ flash }}
+      {{ flash | t }}
     </div>
+  {% endif %}
+
+  {% if hasSelectablePages %}
+    <form id="dashboard-bulk-form" method="POST" action="{{ bulkAction }}"
+          class="mb-3 hidden rounded-xl border border-gray-200 bg-white p-3 shadow-sm"
+          data-dashboard-bulk-form aria-hidden="true">
+      <input type="hidden" name="return_to" value="{{ returnPath }}">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div class="grid gap-3 sm:grid-cols-2">
+          <label class="block sm:w-56">
+            <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">{{ "view_strings.sections_advanced_search.bulk_action" | t }}</span>
+            <select name="bulk_action" data-dashboard-bulk-action
+                    class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="publish">{{ "view_strings.sections_advanced_search.publish" | t }}</option>
+              <option value="unpublish">{{ "view_strings.sections_advanced_search.unpublish" | t }}</option>
+              <option value="delete">{{ "view_strings.sections_advanced_search.move_to_trash" | t }}</option>
+            </select>
+          </label>
+          <label class="block sm:w-56">
+            <span class="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-500">{{ "view_strings.sections_advanced_search.apply_to" | t }}</span>
+            <select name="scope" data-dashboard-bulk-scope
+                    class="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="selected">{{ "view_strings.sections_advanced_search.selected_items" | t }}</option>
+              <option value="all">{{ "view_strings.sections_dashboard.all_matching_pages" | t }}</option>
+            </select>
+          </label>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="text-sm text-gray-500"><span data-dashboard-selected-count>0</span> {{ "view_strings.sections_advanced_search.selected" | t }}</div>
+          <button type="submit"
+                  title="{{ "view_strings.sections_advanced_search.apply_bulk_action" | t }}"
+                  aria-label="{{ "view_strings.sections_advanced_search.apply_bulk_action" | t }}"
+                  class="inline-flex h-10 items-center justify-center rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700">
+            {{ "view_strings.sections_advanced_search.apply" | t }}
+          </button>
+        </div>
+      </div>
+    </form>
   {% endif %}
 
   <div class="bg-white rounded-xl shadow-sm border border-gray-200">
@@ -76,12 +128,16 @@
       {% if hasPages %}
       <thead class="bg-gray-50 border-b border-gray-200">
         <tr>
+          <th class="w-12 px-6 py-3">
+            {% if hasSelectablePages %}
+              <input type="checkbox" data-dashboard-bulk-select-all
+                     title="{{ "view_strings.sections_advanced_search.select_all_visible_pages" | t }}"
+                     aria-label="{{ "view_strings.sections_advanced_search.select_all_visible_pages" | t }}"
+                     class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+            {% endif %}
+          </th>
           <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_dashboard.page" | t }}</th>
-          {% if showPageTypeColumn %}
-            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_dashboard.type" | t }}</th>
-          {% endif %}
           <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_dashboard.weight" | t }}</th>
-          <th class="whitespace-nowrap px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_dashboard.status" | t }}</th>
           <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">{{ "view_strings.sections_dashboard.actions" | t }}</th>
         </tr>
       </thead>
@@ -90,6 +146,13 @@
         {% if hasPages %}
           {% for page in pages %}
             <tr class="hover:bg-gray-50 transition-colors">
+              <td class="px-6 py-4 align-top">
+                {% if page.isSelectable %}
+                  <input type="checkbox" name="page_ids" value="{{ page.id }}" form="dashboard-bulk-form"
+                         data-dashboard-bulk-checkbox title="Select {{ page.name }}" aria-label="Select {{ page.name }}"
+                         class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                {% endif %}
+              </td>
               <td class="px-6 py-4">
                 {% if page.isDraftMissing %}
                   <div class="flex flex-col gap-1">
@@ -102,44 +165,14 @@
                     <div class="text-xs text-gray-500 font-mono">/{{ page.slug }}</div>
                   </a>
                 {% endif %}
-              </td>
-              {% if showPageTypeColumn %}
-                <td class="px-6 py-4 text-sm text-gray-500">
-                  {% if page.pageTypeHref %}
-                    <a href="{{ page.pageTypeHref }}" class="font-medium text-indigo-600 hover:text-indigo-800 hover:underline">
-                      {{ page.pageType }}
-                    </a>
-                  {% else %}
-                    {{ page.pageType }}
-                  {% endif %}
-                </td>
-              {% endif %}
-              <td class="px-6 py-4">
-                {% if page.isDraftMissing %}
-                  <span class="text-sm text-gray-700">{{ page.weight }}</span>
-                {% else %}
-                  <form method="POST" action="{{ page.weightAction }}" class="flex min-w-0 flex-nowrap items-center gap-2">
-                    <input type="hidden" name="return_to" value="{{ returnPath }}">
-                    <label for="weight_{{ page.id }}" class="sr-only">Weight for {{ page.name }}</label>
-                    <input id="weight_{{ page.id }}" type="number" name="weight" value="{{ page.weight }}" min="0" max="1000"
-                           class="w-20 shrink-0 px-2 py-1 border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
-                    <button type="submit"
-                            title="{{ "view_strings.sections_dashboard.save" | t }}"
-                            aria-label="{{ "view_strings.sections_dashboard.save" | t }}"
-                            class="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-indigo-600 transition-colors hover:bg-indigo-50 hover:text-indigo-800">
-                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#save"></use></svg>
-                    </button>
-                    {% if page.hasLiveWeightDrift %}
-                      <span title="Live weight is {{ page.liveWeight }}; publish to sync"
-                            class="inline-flex items-center text-amber-600">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#warning"></use></svg>
-                      </span>
+                <div class="mt-1.5 flex flex-wrap items-center gap-2">
+                  {% if showPageTypeColumn and page.hasPageType %}
+                    {% if page.pageTypeHref %}
+                      <a href="{{ page.pageTypeHref }}" class="inline-flex items-center rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-200 hover:text-gray-900">{{ page.pageType }}</a>
+                    {% else %}
+                      <span class="inline-flex items-center rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">{{ page.pageType }}</span>
                     {% endif %}
-                  </form>
-                {% endif %}
-              </td>
-              <td class="whitespace-nowrap px-6 py-4">
-                <div class="flex items-center gap-2">
+                  {% endif %}
                   {% if page.isPublished %}
                     <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                       <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>{{ "view_strings.sections_dashboard.live" | t }}
@@ -164,6 +197,30 @@
                     </span>
                   {% endif %}
                 </div>
+              </td>
+              <td class="px-6 py-4">
+                {% if page.isDraftMissing %}
+                  <span class="text-sm text-gray-700">{{ page.weight }}</span>
+                {% else %}
+                  <form method="POST" action="{{ page.weightAction }}" class="flex min-w-0 flex-nowrap items-center gap-2">
+                    <input type="hidden" name="return_to" value="{{ returnPath }}">
+                    <label for="weight_{{ page.id }}" class="sr-only">Weight for {{ page.name }}</label>
+                    <input id="weight_{{ page.id }}" type="number" name="weight" value="{{ page.weight }}" min="0" max="1000"
+                           class="w-20 shrink-0 px-2 py-1 border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                    <button type="submit"
+                            title="{{ "view_strings.sections_dashboard.save" | t }}"
+                            aria-label="{{ "view_strings.sections_dashboard.save" | t }}"
+                            class="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-indigo-600 transition-colors hover:bg-indigo-50 hover:text-indigo-800">
+                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#save"></use></svg>
+                    </button>
+                    {% if page.hasLiveWeightDrift %}
+                      <span title="Live weight is {{ page.liveWeight }}; publish to sync"
+                            class="inline-flex items-center text-amber-600">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#warning"></use></svg>
+                      </span>
+                    {% endif %}
+                  </form>
+                {% endif %}
               </td>
               <td class="px-6 py-4">
                 <div class="flex flex-wrap items-center gap-2">
@@ -281,4 +338,53 @@
 <script nonce="{{ nonce }}">
   const flash = document.getElementById('flash');
   if (flash) setTimeout(() => flash.remove(), 4000);
+
+  const typeFilter = document.getElementById('page_type_filter');
+  if (typeFilter) typeFilter.addEventListener('change', () => {
+    if (typeFilter.value) window.location.href = typeFilter.value;
+  });
+
+  (() => {
+    const bulkForm = document.querySelector('[data-dashboard-bulk-form]');
+    if (!bulkForm) return;
+    const checkboxes = Array.from(document.querySelectorAll('[data-dashboard-bulk-checkbox]'));
+    const selectAll = document.querySelector('[data-dashboard-bulk-select-all]');
+    const selectedCount = document.querySelector('[data-dashboard-selected-count]');
+    const action = document.querySelector('[data-dashboard-bulk-action]');
+    const scope = document.querySelector('[data-dashboard-bulk-scope]');
+
+    const countSelected = () => checkboxes.filter((checkbox) => checkbox.checked).length;
+    const syncSelection = () => {
+      const selected = countSelected();
+      if (selectedCount) selectedCount.textContent = String(selected);
+      bulkForm.classList.toggle('hidden', selected === 0);
+      bulkForm.setAttribute('aria-hidden', selected === 0 ? 'true' : 'false');
+      if (selectAll) {
+        selectAll.checked = selected > 0 && selected === checkboxes.length;
+        selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
+      }
+    };
+
+    selectAll?.addEventListener('change', () => {
+      checkboxes.forEach((checkbox) => { checkbox.checked = selectAll.checked; });
+      syncSelection();
+    });
+    checkboxes.forEach((checkbox) => checkbox.addEventListener('change', syncSelection));
+    bulkForm.addEventListener('submit', (event) => {
+      const selected = countSelected();
+      if (selected === 0) {
+        event.preventDefault();
+        return;
+      }
+      const selectedAction = action?.value || 'publish';
+      const actionLabel = selectedAction === 'delete' ? 'move to trash' : selectedAction;
+      const subject = scope?.value === 'all'
+        ? 'all matching pages, including pages outside this pagination page'
+        : selected + ' selected page' + (selected === 1 ? '' : 's');
+      if (!confirm('Bulk ' + actionLabel + ' ' + subject + '?')) {
+        event.preventDefault();
+      }
+    });
+    syncSelection();
+  })();
 </script>

@@ -109,6 +109,24 @@ describe('database locale registry', () => {
     expect(generatedKeys.filter((key) => !(key in english))).toEqual([]);
   });
 
+  it('translates flash message keys across core admin sections', async () => {
+    const paths = [
+      'sections/dashboard.liquid',
+      'sections/editor.liquid',
+      'sections/languages.liquid',
+      'sections/translations.liquid',
+      'sections/trash.liquid',
+      'sections/user-form.liquid',
+      'sections/users.liquid',
+    ];
+    const sources = await Promise.all(paths.map(async (path) => {
+      const response = await cmsEnv.VIEWS.fetch(`https://views.local/${path}`);
+      expect(response.ok).toBe(true);
+      return response.text();
+    }));
+    expect(sources.every((source) => source.includes('{{ flash | t }}'))).toBe(true);
+  });
+
   it('rejects Liquid syntax in database messages', async () => {
     await expect(saveLocaleMessage(cmsEnv, 'en', 'unsafe.label', '{{ user.name }}')).rejects.toThrow('plain text');
   });

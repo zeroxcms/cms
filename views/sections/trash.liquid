@@ -38,7 +38,7 @@
   </div>
 
   {% if hasFlash %}
-    <div id="flash" class="mb-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ flash }}</div>
+    <div id="flash" class="mb-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700">{{ flash | t }}</div>
   {% endif %}
 
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">

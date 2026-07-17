@@ -50,6 +50,45 @@ apiRoutes.get('/api/parent-pages', requirePermission('content:read'), async (c) 
   })));
 });
 
+// Tags for the parent-tag combobox on the tag editor. `q` filters by name or
+// slug; `exclude` drops a tag (the one being edited) so it can't be its own
+// parent. Without a query, returns the lightest-weighted tags. Mirrors
+// /api/parent-pages so the tag form scales past a plain <select>.
+apiRoutes.get('/api/parent-tags', requirePermission('content:read'), async (c) => {
+  const query = c.req.query('q')?.trim() ?? '';
+  const excludeId = num(c.req.query('exclude'), 0);
+  const params: unknown[] = [];
+  const conditions: string[] = [];
+
+  if (query) {
+    const term = `%${query.replaceAll(' ', '%')}%`;
+    conditions.push('(name LIKE ? OR slug LIKE ?)');
+    params.push(term, term);
+  }
+
+  if (excludeId) {
+    conditions.push('id != ?');
+    params.push(excludeId);
+  }
+
+  const whereSql = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const tags = await c.env.DB.prepare(
+    `SELECT id, name, slug, lect
+     FROM tags
+     ${whereSql}
+     ORDER BY weight ASC, name ASC
+     LIMIT 20`,
+  )
+    .bind(...params)
+    .all<Tag>();
+
+  return c.json(tags.results.map((tag) => ({
+    id: tag.id,
+    name: getLectLocalizedValue(safeParseLect(tag.lect), 'name', cmsConfig.defaultLanguage) || tag.name,
+    slug: tag.slug,
+  })));
+});
+
 // Users for the editors combobox on the page editor. `q` filters by name or
 // email; without it, returns the most recently active users. Requires
 // content:write (not just read) since it enumerates user names/emails and only

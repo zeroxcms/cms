@@ -1831,7 +1831,29 @@ describe('admin routes', () => {
     expect(data.nextHref).toBe('/admin/pages/list/company?page=3&pagesize=25');
   });
 
+  it('GET /admin/pages/list renders bulk page actions', async () => {
+    const response = await fetchWorker('/admin/pages/list', {
+      headers: { Cookie: await authCookie() },
+    });
+    const data = bodyData(await response.text());
+    const section = await (await env.VIEWS.fetch('https://views.local/sections/dashboard.liquid')).text();
 
+    expect(response.status).toBe(200);
+    expect(data.bulkAction).toBe('/admin/advanced-search/bulk');
+    expect(data.hasSelectablePages).toBe(true);
+    expect(data.pages).toContainEqual(expect.objectContaining({
+      name: 'About',
+      isSelectable: true,
+    }));
+    expect(section).toContain('id="dashboard-bulk-form"');
+    expect(section).toContain('class="mb-3 hidden rounded-xl');
+    expect(section).toContain('data-dashboard-bulk-form aria-hidden="true"');
+    expect(section).toContain('data-dashboard-bulk-select-all');
+    expect(section).toContain('data-dashboard-bulk-checkbox');
+    expect(section).toContain('<option value="publish">');
+    expect(section).toContain('<option value="unpublish">');
+    expect(section).toContain('<option value="delete">');
+  });
 
   it('redirects anonymous admin requests to login', async () => {
     const response = await fetchWorker('/admin');

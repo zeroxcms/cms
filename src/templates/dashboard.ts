@@ -42,6 +42,9 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
   advancedSearchHref?: string;
   importHref?: string;
   exportHref?: string;
+  bulkAction?: string;
+  /** All page-type slugs, used to build the filter dropdown. */
+  pageTypeChoices?: string[];
   pagination?: DashboardPagination;
 }): Promise<string> {
   const {
@@ -57,6 +60,8 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
     // Import/export live in the import-export plugin; empty hrefs hide the buttons.
     importHref = '',
     exportHref = '',
+    bulkAction: requestedBulkAction,
+    pageTypeChoices = [],
     pagination,
   } = opts;
   const pageCount = pagination?.total ?? pages.length;
@@ -67,6 +72,17 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
     ? Math.min(pageCount, paginationStart + pages.length - 1)
     : pages.length;
   const showPageTypeColumn = !pageTypeFilter;
+  const bulkRoute = pageTypeFilter
+    ? `/admin/advanced-search/${encodeURIComponent(pageTypeFilter)}/bulk`
+    : '/admin/advanced-search/bulk';
+  const bulkParams = new URLSearchParams({ dashboard: '1' });
+  if (statusFilter) bulkParams.set('status', statusFilter);
+  const bulkAction = requestedBulkAction ?? `${bulkRoute}?${bulkParams.toString()}`;
+  const pageTypeOptions = pageTypeChoices.map((slug) => ({
+    slug,
+    href: `/admin/pages/list/${encodeURIComponent(slug)}`,
+    isSelected: slug === pageTypeFilter,
+  }));
   const countSubject = statusFilter === 'live'
     ? 'live page'
     : statusFilter === 'draft'
@@ -83,8 +99,12 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
     pageTypeFilter: pageTypeFilter ?? '',
     pageTitle: pageTypeFilter ? `Pages: ${pageTypeFilter}` : 'Pages',
     showPageTypeColumn,
+    hasPageTypeChoices: pageTypeOptions.length > 0,
+    allTypesSelected: !pageTypeFilter,
+    pageTypeOptions,
+    allTypesHref: '/admin/pages/list',
     privacyTable: !!opts.privacyTable,
-    emptyColspan: showPageTypeColumn ? 5 : 4,
+    emptyColspan: 4,
     searchValue,
     searchAction,
     searchPlaceholder: pageTypeFilter ? `Search ${pageTypeFilter} pages` : 'Search pages',
@@ -103,6 +123,8 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
     paginationEnd,
     singularCount: pageCount === 1,
     hasPages: pages.length > 0,
+    hasSelectablePages: pages.some((page) => !page.isDraftMissing),
+    bulkAction,
     showPagination: !!pagination && pagination.totalPages > 1,
     currentPage: pagination?.currentPage ?? 1,
     totalPages: pagination?.totalPages ?? 1,
@@ -119,12 +141,14 @@ export async function dashboardPage(views: Fetcher, opts: BaseTemplateProps & {
       name: page.name,
       slug: page.slug,
       pageType: page.page_type ?? '-',
+      hasPageType: !!page.page_type,
       pageTypeHref: showPageTypeColumn && page.page_type ? `/admin/pages/list/${encodeURIComponent(page.page_type)}` : '',
       weight: page.weight,
       liveWeight: page.liveWeight,
       hasLiveWeightDrift: !!page.hasLiveWeightDrift,
       hasLiveLectDrift: !!page.hasLiveLectDrift,
       isDraftMissing: !!page.isDraftMissing,
+      isSelectable: !page.isDraftMissing,
       isPublished: page.isPublished,
       weightAction: page.isDraftMissing ? '' : `/admin/pages/${page.id}/weight`,
       editHref: page.isDraftMissing ? '' : `/admin/pages/${page.id}/edit`,

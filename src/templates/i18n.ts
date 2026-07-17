@@ -37,7 +37,14 @@ export async function translationsPage(views: Fetcher, opts: BaseTemplateProps &
   localeCode: string;
   localeLabel: string;
   localeOptions: Array<{ code: string; label: string; selected: boolean }>;
-  messages: Array<{ key: string; value: string; deleteAction: string }>;
+  messages: Array<{
+    key: string;
+    fileValue: string;
+    hasFileValue: boolean;
+    overrideValue: string;
+    hasOverride: boolean;
+    deleteAction: string;
+  }>;
   flash?: string;
   error?: string;
 }): Promise<string> {

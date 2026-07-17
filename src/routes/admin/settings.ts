@@ -33,6 +33,7 @@ import {
   deleteLocaleMessage,
   listLocaleMessages,
   listLocales,
+  loadBundledLocaleCatalog,
   normalizeLocaleCode,
   saveLocale,
   saveLocaleMessage,
@@ -138,16 +139,29 @@ settingsRoutes.get('/settings/translations', async (c) => {
   const requested = c.req.query('locale') ?? 'en';
   const selected = locales.find((locale) => locale.code === requested) ?? locales.find((locale) => locale.code === 'en') ?? locales[0];
   if (!selected) return c.notFound();
-  const messages = await listLocaleMessages(c.env, selected.code);
+  const [messages, bundledMessages] = await Promise.all([
+    listLocaleMessages(c.env, selected.code),
+    loadBundledLocaleCatalog(c.env, selected.code),
+  ]);
+  const overrides = new Map(messages.map((entry) => [entry.message_key, entry]));
+  const messageKeys = [...new Set([...Object.keys(bundledMessages), ...overrides.keys()])].sort();
   return renderPage(c, translationsPage, {
     localeCode: selected.code,
     localeLabel: selected.label,
     localeOptions: locales.map((locale) => ({ code: locale.code, label: locale.label, selected: locale.code === selected.code })),
-    messages: messages.map((entry) => ({
-      key: entry.message_key,
-      value: entry.value,
-      deleteAction: `/admin/settings/translations/${encodeURIComponent(selected.code)}/${encodeURIComponent(entry.message_key)}/delete`,
-    })),
+    messages: messageKeys.map((key) => {
+      const override = overrides.get(key);
+      return {
+        key,
+        fileValue: bundledMessages[key] ?? '',
+        hasFileValue: key in bundledMessages,
+        overrideValue: override?.value ?? '',
+        hasOverride: !!override,
+        deleteAction: override
+          ? `/admin/settings/translations/${encodeURIComponent(selected.code)}/${encodeURIComponent(key)}/delete`
+          : '',
+      };
+    }),
     flash: message(c.req.query('flash')),
     error: message(c.req.query('error')),
   });

@@ -31,7 +31,7 @@
   },
   "nav": {
     "pages": "頁面",
-    "tags": "標籤",
+    "tags": "索引",
     "taxonomies": "分類法",
     "pageTypes": "頁面類型",
     "blockTypes": "區塊類型",
@@ -143,7 +143,7 @@
       "description": "資料庫中的值會覆蓋內置語言檔。缺少的值會先回退至英文，最後顯示翻譯鍵。",
       "manage": "管理翻譯",
       "save": "儲存翻譯",
-      "empty": "此語言沒有資料庫翻譯。"
+      "empty": "此語言沒有內置或資料庫翻譯。"
     },
     "fields": {
       "code": "語言代碼",
@@ -155,7 +155,9 @@
       "ui_enabled": "CMS 介面",
       "locale": "語言",
       "key": "翻譯鍵",
-      "value": "翻譯內容"
+      "value": "翻譯內容",
+      "file_value": "語言檔內容",
+      "override_value": "資料庫覆蓋值"
     }
   },
   "view_strings": {
@@ -175,7 +177,7 @@
     "sections_advanced_search.asc": "遞增",
     "sections_advanced_search.search": "搜尋",
     "sections_advanced_search.path": "Path",
-    "sections_advanced_search.tags": "標籤",
+    "sections_advanced_search.tags": "索引",
     "sections_advanced_search.select_tags": "Select Tags",
     "sections_advanced_search.no_tags": "No tags",
     "sections_advanced_search.add_criterion": "Add Criterion",
@@ -253,6 +255,9 @@
     "sections_dashboard.new_page": "新增頁面",
     "sections_dashboard.page": "頁面",
     "sections_dashboard.type": "類型",
+    "sections_dashboard.all_types": "全部類型",
+    "sections_dashboard.filter_by_type": "依類型篩選",
+    "sections_dashboard.all_matching_pages": "所有相符頁面",
     "sections_dashboard.weight": "權重",
     "sections_dashboard.status": "狀態",
     "sections_dashboard.actions": "操作",
@@ -303,7 +308,7 @@
     "sections_editor.diff_vs_current_draft": "與目前草稿對比",
     "sections_editor.this_version": "此版本",
     "sections_editor.current_draft": "目前草稿",
-    "sections_editor.tags": "標籤",
+    "sections_editor.tags": "索引",
     "sections_editor.no_tags_in_taxonomy": "尚無標籤 — 新增一個",
     "sections_editor.versions": "版本",
     "sections_editor.clean_all_versions": "清理所有版本",
@@ -517,17 +522,18 @@
     "sections_tag_form.new_tag": "新增標籤",
     "sections_tag_form.edit_tag": "編輯標籤",
     "sections_tag_form.name": "名稱",
-    "sections_tag_form.translated_name": "翻譯名稱",
+    "sections_tag_form.translated_name": "顯示名稱",
     "sections_tag_form.slug": "代稱",
     "sections_tag_form.weight": "權重",
     "sections_tag_form.taxonomy": "分類法",
     "sections_tag_form.none": "無",
     "sections_tag_form.parent_tag": "上層標籤",
+    "sections_tag_form.no_matching_tags": "沒有相符標籤",
     "sections_tag_form.save": "儲存",
     "sections_tag_form.cancel": "取消",
     "sections_tag_form.delete": "刪除",
     "sections_tag_form.delete_this_tag_it_will_be_removed_from_all_pages_that_use_it": "要刪除此標籤嗎？它將從所有使用該標籤的頁面中移除。",
-    "sections_tags.tags": "標籤",
+    "sections_tags.tags": "索引",
     "sections_tags.taxonomies": "分類法",
     "sections_tags.new_tag": "新增標籤",
     "sections_tags.filter_by_taxonomy": "按分類法篩選",
