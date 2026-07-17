@@ -1847,7 +1847,8 @@ describe('admin routes', () => {
     }));
     expect(section).toContain('id="dashboard-bulk-form"');
     expect(section).toContain('class="mb-3 hidden rounded-xl');
-    expect(section).toContain('data-dashboard-bulk-form aria-hidden="true"');
+    expect(section).toContain('data-dashboard-bulk-confirm-template=');
+    expect(section).toContain('aria-hidden="true"');
     expect(section).toContain('data-dashboard-bulk-select-all');
     expect(section).toContain('data-dashboard-bulk-checkbox');
     expect(section).toContain('<option value="publish">');

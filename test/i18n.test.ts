@@ -109,6 +109,20 @@ describe('database locale registry', () => {
     expect(generatedKeys.filter((key) => !(key in english))).toEqual([]);
   });
 
+  it('translates the page-list bulk controls in both Chinese locales', async () => {
+    const [simplified, traditional] = await Promise.all(['zh-hans', 'zh-hant'].map(async (locale) => {
+      const response = await cmsEnv.VIEWS.fetch(`https://views.local/locales/${locale}.json`);
+      return flattenMessages(await response.json());
+    }));
+
+    expect(simplified['view_strings.sections_advanced_search.move_to_trash']).toBe('移至回收站');
+    expect(simplified['view_strings.sections_advanced_search.apply_to']).toBe('应用于');
+    expect(simplified['view_strings.sections_dashboard.all_matching_pages']).toBe('所有匹配页面');
+    expect(traditional['view_strings.sections_advanced_search.move_to_trash']).toBe('移至回收站');
+    expect(traditional['view_strings.sections_advanced_search.apply_to']).toBe('套用至');
+    expect(traditional['view_strings.sections_dashboard.all_matching_pages']).toBe('所有相符頁面');
+  });
+
   it('translates flash message keys across core admin sections', async () => {
     const paths = [
       'sections/dashboard.liquid',
