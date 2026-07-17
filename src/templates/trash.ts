@@ -44,6 +44,9 @@ export async function trashPage(views: Fetcher, opts: BaseTemplateProps & {
     typeCounts,
     hasTypeFilter: typeCounts.length > 0,
     filterType,
+    // Hide the per-row type badge when a type filter is active — every row
+    // shares that type, so it would just be redundant (mirrors the page list).
+    showTypeBadge: !filterType,
     grandTotal,
     recentCount,
     hasRecent: recentCount > 0,
@@ -54,6 +57,8 @@ export async function trashPage(views: Fetcher, opts: BaseTemplateProps & {
       name: page.name,
       slug: page.slug,
       pageType: page.page_type ?? '-',
+      hasPageType: !!page.page_type,
+      pageTypeHref: page.page_type ? `/admin/trash?type=${encodeURIComponent(page.page_type)}` : '',
       updatedAt: page.updated_at,
       restoreAction: `/admin/trash/${page.id}/restore`,
       deleteAction: `/admin/trash/${page.id}/delete`,
