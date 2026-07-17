@@ -1839,7 +1839,7 @@ describe('admin routes', () => {
     const section = await (await env.VIEWS.fetch('https://views.local/sections/dashboard.liquid')).text();
 
     expect(response.status).toBe(200);
-    expect(data.bulkAction).toBe('/admin/advanced-search/bulk');
+    expect(data.bulkAction).toBe('/admin/advanced-search/bulk?dashboard=1');
     expect(data.hasSelectablePages).toBe(true);
     expect(data.pages).toContainEqual(expect.objectContaining({
       name: 'About',
@@ -1853,6 +1853,43 @@ describe('admin routes', () => {
     expect(section).toContain('<option value="publish">');
     expect(section).toContain('<option value="unpublish">');
     expect(section).toContain('<option value="delete">');
+    expect(section).toContain('data-dashboard-bulk-scope');
+    expect(section).toContain('<option value="all">');
+  });
+
+  it('bulk-selects matching dashboard pages outside the current pagination page', async () => {
+    const { queue, sent } = queueStub<CmsAdminJobMessage>();
+    (env as unknown as { ADMIN_JOBS_QUEUE?: Queue<CmsAdminJobMessage> }).ADMIN_JOBS_QUEUE = queue;
+    await seedDraftPages('default', 3, 6000, 'Across Pagination');
+
+    const response = await fetchWorker('/admin/advanced-search/default/bulk?dashboard=1&status=draft', {
+      method: 'POST',
+      body: form({
+        bulk_action: 'delete',
+        scope: 'all',
+        page_ids: '6000',
+        return_to: '/admin/pages/list/default?status=draft&page=1&pagesize=1',
+      }),
+      headers: { Cookie: await authCookie() },
+    });
+
+    expect(response.status).toBe(302);
+    expect(sent).toHaveLength(1);
+    const job = await env.DB.prepare('SELECT body FROM admin_jobs WHERE id = ?')
+      .bind(sent[0].jobId)
+      .first<{ body: string }>();
+    expect(JSON.parse(job?.body ?? '{}')).toMatchObject({
+      scope: 'all',
+      pageTypes: ['default'],
+      criteria: [],
+      status: 'draft',
+    });
+
+    await worker.queue(queueBatch([sent[0]]), env as unknown as AppEnv);
+
+    expect(await env.DB.prepare('SELECT COUNT(*) AS total FROM draft_pages WHERE id BETWEEN 6000 AND 6002')
+      .first<{ total: number }>()).toEqual({ total: 0 });
+    expect(await env.DB.prepare('SELECT id FROM draft_pages WHERE id = 101').first()).not.toBeNull();
   });
 
   it('redirects anonymous admin requests to login', async () => {
