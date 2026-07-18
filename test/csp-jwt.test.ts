@@ -43,6 +43,7 @@ describe('content security policy', () => {
 
     expect(html).toMatch(/\/assets\/admin\.css\?r=[^"'<]+/);
     expect(html).toMatch(/\/assets\/table-filter\.js\?r=[^"'<]+/);
+    expect(html).toMatch(/\/assets\/richtext-md\.js\?r=[^"'<]+/);
     expect(html).toMatch(/\/assets\/icons\.svg\?r=[^"'<#]+#/);
     expect(html).not.toContain('cdn.tailwindcss.com');
   });
@@ -50,6 +51,7 @@ describe('content security policy', () => {
   it.each([
     { path: '/assets/admin.css', contentType: 'text/css' },
     { path: '/assets/table-filter.js', contentType: 'text/javascript' },
+    { path: '/assets/richtext-md.js', contentType: 'text/javascript' },
   ])('serves $path', async ({ path, contentType }) => {
     const response = await worker.fetch(new Request(`http://localhost${path}`));
 

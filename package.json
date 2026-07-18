@@ -4,23 +4,28 @@
   "private": true,
   "scripts": {
     "setup": "node scripts/install.mjs",
-    "dev": "npm run build:css && wrangler dev --local",
+    "dev": "npm run build && wrangler dev --local",
+    "build": "npm run build:css && npm run build:js",
     "build:css": "tailwindcss -i styles/admin.css -o views/assets/admin.css --minify",
-    "deploy": "npm run build:css && wrangler deploy",
+    "build:js": "esbuild client/richtext-md.js --bundle --minify --format=iife --outfile=views/assets/richtext-md.js",
+    "deploy": "npm run build && wrangler deploy",
     "db:migrate": "wrangler d1 migrations apply cms --local && wrangler d1 migrations apply cms-published --local",
     "db:migrate:admin": "wrangler d1 migrations apply cms --local",
     "db:migrate:published": "wrangler d1 migrations apply cms-published --local",
     "type-check": "tsc --noEmit",
-    "pretest": "npm run build:css",
+    "pretest": "npm run build",
     "test": "vitest run"
   },
   "dependencies": {
-    "hono": "^4.12.30"
+    "hono": "^4.12.30",
+    "marked": "^15.0.12",
+    "turndown": "^7.2.0"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.5",
     "@cloudflare/workers-types": "^5.20260716.1",
     "@tailwindcss/cli": "^4.3.3",
+    "esbuild": "^0.28.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",

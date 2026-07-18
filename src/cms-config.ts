@@ -14,10 +14,10 @@ export const cmsConfig: CmsConfig = {
   defaultLanguage: 'mis',
   languages: ['mis', 'en', 'zh-hant', 'zh-hans'],
   blueprint: {
-    default: ['@date:date', 'name:text', 'body:textarea', 'link:link', { items: ['name'] }],
+    default: ['@date:date', 'name:text', 'body:richtext/md', 'link:link', { items: ['name'] }],
   },
   blocks: {
-    default: ['@date', 'name', 'body', 'link__label', 'link__url', { items: ['name'] }],
+    default: ['@date', 'name', 'body:richtext/md', 'link__label', 'link__url', { items: ['name'] }],
     label: ['@key:text','subject'],
     logos: ['label', { pictures: ['url'] }],
     paragraphs: ['subject:text', 'body:textarea', 'picture:picture', 'caption:text', 'description:textarea'],

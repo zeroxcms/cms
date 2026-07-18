@@ -1,10 +1,49 @@
-<label for="{{ field.id }}" class="min-w-0 block">
+<div class="min-w-0 block" data-richtext-md>
   <span class="flex items-center justify-between gap-2 mb-1">
-    <span class="block text-sm font-medium text-gray-700">{{ field.label }}{% if field.required %} *{% endif %}</span>
+    <label for="{{ field.id }}" class="block text-sm font-medium text-gray-700">{{ field.label }}{% if field.required %} *{% endif %}</label>
     <span class="text-xs text-gray-400">{{ "view_strings.snippets_pagefield_richtext_md.markdown_html" | t }}</span>
   </span>
-  <textarea id="{{ field.id }}" name="{{ field.inputName }}" rows="10"
-            placeholder="{{ field.placeholder }}"
-            class="block min-w-0 w-full max-w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-y"
+
+  <div id="{{ field.id }}"
+       contenteditable="true"
+       role="textbox"
+       aria-multiline="true"
+       aria-label="{{ field.label }}"
+       data-placeholder="{{ field.placeholder | default: field.label }}"
+       data-richtext-preview
+       data-richtext-panel="preview"
+       class="richtext-md-preview block min-h-40 max-h-80 min-w-0 w-full max-w-full overflow-y-auto rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm leading-relaxed text-gray-800 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500"></div>
+
+  <textarea rows="10"
+            placeholder="{{ field.placeholder | default: field.label }}"
+            aria-label="{{ "view_strings.snippets_pagefield_richtext_md.markdown" | t }}"
+            data-richtext-markdown
+            data-richtext-panel="markdown"
+            class="hidden min-w-0 w-full max-w-full rounded-lg border border-gray-300 bg-gray-900 px-3 py-2 font-mono text-sm leading-relaxed text-gray-100 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"></textarea>
+
+  {% comment %}The client Liquid engine already escapes output; an escape filter here double-encodes saved HTML.{% endcomment %}
+  <textarea id="{{ field.id }}-source" name="{{ field.inputName }}" rows="10"
+            placeholder="{{ field.placeholder | default: field.label }}"
+            aria-label="{{ "view_strings.snippets_pagefield_richtext_md.html" | t }}"
+            data-richtext-source
+            data-richtext-panel="html"
+            class="hidden min-w-0 w-full max-w-full rounded-lg border border-gray-300 bg-gray-900 px-3 py-2 font-mono text-sm leading-relaxed text-green-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
             {% if field.required %}required{% endif %}>{{ field.value }}</textarea>
-</label>
+
+  <div class="mt-1 flex gap-2">
+    <div class="flex flex-wrap gap-2 rounded-lg bg-gray-100 px-2 py-1 text-gray-500">
+      <label class="cursor-pointer text-xs">
+        <input type="radio" class="me-1" name="{{ field.id }}-richtext-mode" value="preview" data-richtext-mode checked>
+        {{ "view_strings.snippets_pagefield_richtext_md.rich_text" | t }}
+      </label>
+      <label class="cursor-pointer text-xs">
+        <input type="radio" class="me-1" name="{{ field.id }}-richtext-mode" value="markdown" data-richtext-mode>
+        {{ "view_strings.snippets_pagefield_richtext_md.markdown" | t }}
+      </label>
+      <label class="cursor-pointer text-xs">
+        <input type="radio" class="me-1" name="{{ field.id }}-richtext-mode" value="html" data-richtext-mode>
+        {{ "view_strings.snippets_pagefield_richtext_md.html" | t }}
+      </label>
+    </div>
+  </div>
+</div>

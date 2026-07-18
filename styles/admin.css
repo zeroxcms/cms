@@ -10,6 +10,30 @@
 
 @import "tailwindcss";
 
+[data-richtext-preview]:empty::before {
+  color: var(--color-gray-400);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.richtext-md-preview h1 { font-size: 1.5rem; font-weight: 700; }
+.richtext-md-preview h2 { font-size: 1.25rem; font-weight: 700; }
+.richtext-md-preview h3,
+.richtext-md-preview h4,
+.richtext-md-preview h5,
+.richtext-md-preview h6 { font-size: 1rem; font-weight: 700; }
+.richtext-md-preview p,
+.richtext-md-preview blockquote,
+.richtext-md-preview pre,
+.richtext-md-preview ul,
+.richtext-md-preview ol { margin-block: 0.5rem; }
+.richtext-md-preview ul { list-style: disc; padding-inline-start: 1.5rem; }
+.richtext-md-preview ol { list-style: decimal; padding-inline-start: 1.5rem; }
+.richtext-md-preview blockquote { border-inline-start: 3px solid var(--color-gray-300); padding-inline-start: 0.75rem; }
+.richtext-md-preview a { color: var(--color-indigo-600); text-decoration: underline; }
+.richtext-md-preview pre { overflow-x: auto; border-radius: 0.375rem; background: var(--color-gray-100); padding: 0.75rem; }
+.richtext-md-preview code { font-family: var(--font-mono); }
+
 /* Scan templates and the TS files that emit HTML markup. */
 @source "../views";
 @source "../src/templates";

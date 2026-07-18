@@ -273,6 +273,7 @@ export async function layout(views: Fetcher, opts: LayoutOptions): Promise<strin
   <script src="/assets/color-tag.js${escHtml(revisionQuery)}" nonce="${escHtml(nonce)}" defer></script>
   <script src="/assets/picture-field.js${escHtml(revisionQuery)}" nonce="${escHtml(nonce)}" defer></script>
   <script src="/assets/page-ref.js${escHtml(revisionQuery)}" nonce="${escHtml(nonce)}" defer></script>
+  <script src="/assets/richtext-md.js${escHtml(revisionQuery)}" nonce="${escHtml(nonce)}" defer></script>
 </body>
 </html>`;
 }
