@@ -10,6 +10,7 @@ describe('rich-text Markdown pagefield', () => {
     expect(source).toContain('contenteditable="true"');
     expect(source).toContain('data-richtext-preview');
     expect(source).toContain('data-richtext-markdown');
+    expect(source).toMatch(/data-richtext-markdown[\s\S]*?text-white/);
     expect(source).toContain('name="{{ field.inputName }}"');
     expect(source).toContain('data-richtext-source');
     expect(source).toContain('>{{ field.value }}</textarea>');
