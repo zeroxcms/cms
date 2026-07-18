@@ -435,6 +435,7 @@
     "sections_plugin_form.set_this_exact_value_on_the_plugin_worker": "請在外掛程式 Worker 中設定以下準確值：",
     "sections_plugin_form.wrangler_secret_put_plugin_secret": "wrangler secret put PLUGIN_SECRET",
     "sections_plugin_form.copy_secret": "複製密鑰",
+    "sections_plugin_form.copied": "已複製！",
     "sections_plugin_form.tenant_kv": "租戶 KV",
     "sections_plugin_form.tenant_kv_description": "將此記錄新增至外掛程式 Worker 的 TENANTS KV 命名空間。",
     "sections_plugin_form.key": "鍵",

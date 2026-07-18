@@ -435,6 +435,7 @@
     "sections_plugin_form.set_this_exact_value_on_the_plugin_worker": "Set this exact value on the plugin Worker:",
     "sections_plugin_form.wrangler_secret_put_plugin_secret": "wrangler secret put PLUGIN_SECRET",
     "sections_plugin_form.copy_secret": "Copy secret",
+    "sections_plugin_form.copied": "Copied!",
     "sections_plugin_form.tenant_kv": "Tenant KV",
     "sections_plugin_form.tenant_kv_description": "Add this record to the plugin Worker's TENANTS KV namespace.",
     "sections_plugin_form.key": "Key",

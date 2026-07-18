@@ -58,10 +58,12 @@
         <input id="plugin-shared-secret" type="text" readonly value="{{ secret }}"
                class="block min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono bg-gray-50"
                placeholder="{{ "view_strings.sections_plugin_form.using_shared_plugin_secret_fallback" | t }}">
-        <button type="button" id="copy-plugin-shared-secret" title="{{ "view_strings.sections_plugin_form.copy_secret" | t }}" aria-label="{{ "view_strings.sections_plugin_form.copy_secret" | t }}"
+        <button type="button" id="copy-plugin-shared-secret" data-copy-target="plugin-shared-secret"
+                data-copy-label="{{ "view_strings.sections_plugin_form.copy_secret" | t }}" data-copied-label="{{ "view_strings.sections_plugin_form.copied" | t }}"
+                title="{{ "view_strings.sections_plugin_form.copy_secret" | t }}" aria-label="{{ "view_strings.sections_plugin_form.copy_secret" | t }}"
                 class="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50">
           <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#copy"></use></svg>
-          <span class="hidden lg:inline">{{ "view_strings.sections_plugin_form.copy_secret" | t }}</span>
+          <span data-copy-button-label class="hidden lg:inline">{{ "view_strings.sections_plugin_form.copy_secret" | t }}</span>
         </button>
       </div>
       <form method="post" action="{{ rotateSecretAction }}"
@@ -78,10 +80,12 @@
               <dt class="text-xs font-medium text-gray-500">{{ "view_strings.sections_plugin_form.key" | t }}</dt>
               <dd class="mt-1 flex items-start gap-2">
                 <code id="tenant-kv-key" class="block min-w-0 flex-1 break-all rounded bg-gray-50 px-3 py-2 font-mono text-xs text-gray-800">{{ tenantKvKey }}</code>
-                <button type="button" data-copy-target="tenant-kv-key" title="{{ "view_strings.sections_plugin_form.copy_secret" | t }}" aria-label="{{ "view_strings.sections_plugin_form.copy_secret" | t }}"
+                <button type="button" data-copy-target="tenant-kv-key"
+                        data-copy-label="{{ "view_strings.sections_plugin_form.copy_secret" | t }}" data-copied-label="{{ "view_strings.sections_plugin_form.copied" | t }}"
+                        title="{{ "view_strings.sections_plugin_form.copy_secret" | t }}" aria-label="{{ "view_strings.sections_plugin_form.copy_secret" | t }}"
                         class="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
                   <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#copy"></use></svg>
-                  <span class="hidden lg:inline">{{ "view_strings.sections_plugin_form.copy_secret" | t }}</span>
+                  <span data-copy-button-label class="hidden lg:inline">{{ "view_strings.sections_plugin_form.copy_secret" | t }}</span>
                 </button>
               </dd>
             </div>
@@ -89,10 +93,12 @@
               <dt class="text-xs font-medium text-gray-500">{{ "view_strings.sections_plugin_form.value" | t }}</dt>
               <dd class="mt-1 flex items-start gap-2">
                 <code id="tenant-kv-value" class="block min-w-0 flex-1 break-all rounded bg-gray-50 px-3 py-2 font-mono text-xs text-gray-800">{{ tenantKvValue }}</code>
-                <button type="button" data-copy-target="tenant-kv-value" title="{{ "view_strings.sections_plugin_form.copy_secret" | t }}" aria-label="{{ "view_strings.sections_plugin_form.copy_secret" | t }}"
+                <button type="button" data-copy-target="tenant-kv-value"
+                        data-copy-label="{{ "view_strings.sections_plugin_form.copy_secret" | t }}" data-copied-label="{{ "view_strings.sections_plugin_form.copied" | t }}"
+                        title="{{ "view_strings.sections_plugin_form.copy_secret" | t }}" aria-label="{{ "view_strings.sections_plugin_form.copy_secret" | t }}"
                         class="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
                   <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="{{ iconHrefPrefix }}#copy"></use></svg>
-                  <span class="hidden lg:inline">{{ "view_strings.sections_plugin_form.copy_secret" | t }}</span>
+                  <span data-copy-button-label class="hidden lg:inline">{{ "view_strings.sections_plugin_form.copy_secret" | t }}</span>
                 </button>
               </dd>
             </div>
@@ -105,23 +111,46 @@
 
 {% if showSecret %}
   <script nonce="{{ nonce }}">
-    document.getElementById('copy-plugin-shared-secret')?.addEventListener('click', () => {
-      const secret = document.getElementById('plugin-shared-secret');
-      if (!secret) return;
-      secret.select();
-      secret.setSelectionRange(0, 99999);
-      document.execCommand('copy');
-    });
+    function copyPluginValue(source) {
+      const value = source instanceof HTMLInputElement ? source.value : source.textContent;
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
+        return navigator.clipboard.writeText(value).then(() => true).catch(() => copyPluginValueFallback(value));
+      }
+      return Promise.resolve(copyPluginValueFallback(value));
+    }
+
+    function copyPluginValueFallback(value) {
+      const input = document.createElement('textarea');
+      input.value = value;
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      document.body.append(input);
+      input.select();
+      const copied = document.execCommand('copy');
+      input.remove();
+      return copied;
+    }
+
+    function showPluginCopied(button) {
+      const label = button.querySelector('[data-copy-button-label]');
+      const copiedLabel = button.dataset.copiedLabel;
+      if (label) label.textContent = copiedLabel;
+      button.title = copiedLabel;
+      button.setAttribute('aria-label', copiedLabel);
+      window.clearTimeout(button.copyResetTimer);
+      button.copyResetTimer = window.setTimeout(() => {
+        const copyLabel = button.dataset.copyLabel;
+        if (label) label.textContent = copyLabel;
+        button.title = copyLabel;
+        button.setAttribute('aria-label', copyLabel);
+      }, 2000);
+    }
+
     document.querySelectorAll('[data-copy-target]').forEach((button) => {
-      button.addEventListener('click', () => {
+      button.addEventListener('click', async () => {
         const source = document.getElementById(button.dataset.copyTarget);
         if (!source) return;
-        const input = document.createElement('textarea');
-        input.value = source.textContent;
-        document.body.append(input);
-        input.select();
-        document.execCommand('copy');
-        input.remove();
+        if (await copyPluginValue(source)) showPluginCopied(button);
       });
     });
   </script>
