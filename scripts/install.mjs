@@ -285,7 +285,7 @@ async function main() {
     console.log('Cloudflare authentication confirmed.');
   }
 
-  const workerName = await ask('Worker name', 'worker-cms', resourceName);
+  const workerName = await ask('Worker name', 'cms', resourceName);
   const databaseName = await ask('Private D1 database name', 'cms', resourceName);
   const publishedDatabaseName = await ask(
     'Published D1 database name',
