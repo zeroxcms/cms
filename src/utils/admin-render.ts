@@ -41,7 +41,6 @@ import {
   type SidebarMenuItemKey,
 } from './settings';
 
-export type { BaseTemplateProps } from '../templates/layout';
 import type { BaseTemplateProps, SidebarNavItem } from '../templates/layout';
 import { withActiveSidebarItems } from './sidebar';
 import { localeRegistry, resolveUiLocale } from './i18n';

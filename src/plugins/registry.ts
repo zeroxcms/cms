@@ -195,12 +195,6 @@ export async function pluginNav(env: Env): Promise<Array<{ pluginId: string; lab
   });
 }
 
-/** Finds the plugin that owns a given field type, if any. */
-export async function pluginForFieldType(env: Env, type: string): Promise<ResolvedPlugin | null> {
-  const plugins = await getPlugins(env);
-  return plugins.find((plugin) => (plugin.manifest.fieldTypes ?? []).some((field) => field.type === type)) ?? null;
-}
-
 /** Finds the plugin that renders the edit view for a given page type, if any. */
 export async function pluginForEditView(env: Env, pageType: string): Promise<ResolvedPlugin | null> {
   const plugins = await getPlugins(env);

@@ -52,11 +52,6 @@ export function normalizeRoles(roles: string[]): string {
   return normalized.length > 0 ? normalized.join(',') : 'viewer';
 }
 
-export function hasAnyRole(value: string, allowedRoles: readonly UserRole[]): boolean {
-  const roles = parseRoles(value);
-  return allowedRoles.some((role) => roles.includes(role));
-}
-
 /** The union of capabilities granted by every role the user holds. */
 export function permissionsFor(value: string): Set<Permission> {
   const permissions = new Set<Permission>();

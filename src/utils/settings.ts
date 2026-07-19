@@ -93,7 +93,6 @@ export const APP_ICON_OPTIONS = [
 ] as const;
 
 export type SidebarMenuItemKey = typeof SIDEBAR_MENU_ITEMS[number]['key'];
-export type SidebarMenuGroup = typeof SIDEBAR_MENU_ITEMS[number]['group'];
 export type SidebarMenuSettings = Record<SidebarMenuItemKey, { visible: boolean; weight: number }>;
 export type AppIcon = typeof APP_ICON_OPTIONS[number]['value'];
 
@@ -215,10 +214,6 @@ export async function saveAdminHomeSettings(env: Env, input: { href: unknown }):
   const settings = { href: adminHomePath(input.href) };
   await saveSetting(env, ADMIN_HOME_SETTING_KEY, JSON.stringify(settings));
   return settings;
-}
-
-export async function loadSidebarMenuSettings(env: Env): Promise<SidebarMenuSettings> {
-  return (await loadSidebarChromeSettings(env)).items;
 }
 
 export async function loadSidebarChromeSettings(env: Env): Promise<SidebarChromeSettings> {

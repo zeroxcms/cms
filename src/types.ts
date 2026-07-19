@@ -14,8 +14,6 @@ export const USER_ROLES = ['admin', 'editor', 'moderator', 'viewer'] as const;
 
 export type UserRole = typeof USER_ROLES[number];
 
-export const EDITOR_ROLES: UserRole[] = ['admin', 'editor', 'moderator'];
-
 // ── Capability-based authorization ────────────────────────────────────────────
 // Roles are mapped to a least-privilege set of capabilities; routes require a
 // specific capability rather than just "is an editor". See utils/roles.ts.
@@ -63,15 +61,6 @@ export const PERMISSION_DESCRIPTIONS: Record<Permission, string> = {
   'roles:manage': 'Manage roles and permissions',
   'credits:share': 'Transfer shared credits to a user',
 };
-
-/** A role with a stored permission set (custom role, or a customized built-in). */
-export interface Role {
-  name: string;
-  label: string;
-  builtin: number;
-  created_at: string;
-  updated_at: string;
-}
 
 export interface User {
   id: number;
@@ -210,17 +199,6 @@ export interface BlockType {
   /** JSON array of BlueprintEntry for this block's fields. */
   blueprint: string;
   weight: number;
-}
-
-export interface MediaFile {
-  id: number;
-  uuid: string;
-  created_at: string;
-  key: string;
-  url: string;
-  filename: string;
-  content_type: string | null;
-  size: number;
 }
 
 // ============================================================

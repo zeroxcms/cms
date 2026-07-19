@@ -24,8 +24,6 @@ import { pluginTenantId } from '../security/plugin-proxy';
 import { isSubmissionMirror } from '../utils/submission-ingest';
 import { projectLect, publishLectRules } from './projection';
 
-export type { LivePageSnapshot, PublishAdapter, PublishSnapshot, PublishSnapshotTag } from './adapter';
-
 export interface PublishOutcome {
   /** Targets that were attempted, in order. */
   targets: string[];
