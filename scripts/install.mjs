@@ -204,9 +204,14 @@ function setBindingValues(lines, section, binding, values) {
 
   for (const [key, value] of Object.entries(values)) {
     const index = lines.slice(range.start, range.end)
-      .findIndex((line) => new RegExp(`^\\s*${key}\\s*=`).test(line));
-    if (index === -1) throw new Error(`Could not find ${key} for ${binding}.`);
-    lines[range.start + index] = `${key} = ${JSON.stringify(value)}`;
+      .findIndex((line) => new RegExp(`^\\s*#?\\s*${key}\\s*=`).test(line));
+    const replacement = `${key} = ${JSON.stringify(value)}`;
+    if (index === -1) {
+      lines.splice(range.end, 0, replacement);
+      range.end += 1;
+    } else {
+      lines[range.start + index] = replacement;
+    }
   }
 }
 

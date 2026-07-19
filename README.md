@@ -8,11 +8,14 @@ Content management system on Workers
 - **Capability-based access** – routes enforce granular permissions resolved from built-in or custom roles; delegated user/role managers cannot grant authority they do not already hold
 - **Separated D1 content stores** – the CMS database keeps auth, sessions, draft, trash, taxonomy, and media metadata; the published database keeps only live content for public reads
 - **Page versioning** – every save creates a new `page_versions` row; `draft_pages.current_page_version_id` points to the active version
+- **Collaborative editing** – a per-page Durable Object synchronizes unsaved field operations and editor presence; a second Durable Object prevents duplicate plugin-admin form submissions
 - **Private R2 media uploads** – picture fields upload to a private R2 bucket and are served back through the Worker at `/media/...`
+- **Localized admin UI** – bundled Liquid catalogs, database-managed locale overrides, per-user UI locales, and locale-aware plugin views
 - **Tailwind CSS + VanillaJS** admin UI with inline HTML toolbar for content editing
 - **Plugins** – extend the CMS with separate Worker plugins (lifecycle hooks, content types, fields/blocks, admin pages, publish targets). See [Plugins](#plugins).
 - **Pluggable publish targets** – publishing fans out to one or more adapters: the published D1 database (default), static JSON in an R2 bucket, or any plugin Worker (IPFS, webhooks, search indexes). See [Publish targets](#publish-targets).
-- **Credits** – per-user balances that meter chargeable plugin actions; atomic, overdraft-proof, ledger-audited, with admin grants, user-to-user transfers, and a shared site-wide pool that covers users who run out. See [Credits](#credits).
+- **Credits** – per-user balances for one-time, metered, or recurring plugin charges; atomic, overdraft-proof, ledger-audited, with admin grants, user-to-user transfers, and a shared site-wide pool that covers users who run out. See [Credits](#credits).
+- **Background work** – a Queue chunks long admin jobs, while the scheduled handler ingests live-only submissions and bills due recurring credit subscriptions
 
 ---
 
@@ -24,6 +27,18 @@ Content management system on Workers
 npm install
 ```
 
+For a new production installation, the interactive setup is the shortest path:
+
+```bash
+npm run setup
+```
+
+It creates or reuses both D1 databases, the private R2 bucket, and the admin-job
+Queue; writes their identifiers plus the selected OAuth configuration to
+`wrangler.toml`; and offers to apply migrations, deploy, and upload secrets.
+The checked-in configuration intentionally contains no account-specific D1 or
+OAuth client IDs. Continue below for the equivalent manual setup.
+
 ### 2. Create the D1 databases
 
 ```bash
@@ -31,7 +46,8 @@ npx wrangler d1 create cms
 npx wrangler d1 create cms-published
 ```
 
-Copy the `database_id` values printed by the commands into `wrangler.toml`:
+Add the `database_id` values printed by the commands to the matching
+`[[d1_databases]]` blocks in `wrangler.toml`:
 
 - `cms` -> `DB`
 - `cms-published` -> `PUBLISHED_DB`
@@ -90,7 +106,7 @@ binding = "MEDIA_BUCKET"
 bucket_name = "worker-cms-media"
 ```
 
-The checked-in `wrangler.toml` already contains this binding. If you choose another bucket name, update both the create command and `bucket_name`.
+The checked-in `wrangler.toml` uses this generic bucket name. If you choose another bucket name, update both the create command and `bucket_name`.
 
 If uploads return a Cloudflare challenge page such as `Just a moment... Enable JavaScript and cookies to continue`, create a narrow Cloudflare skip rule for the authenticated upload endpoint. The Worker still requires a valid CMS session and editor role before writing to R2.
 
@@ -100,7 +116,7 @@ In the Cloudflare dashboard:
 2. Create a custom rule named `Skip CMS upload challenge`.
 3. Use this expression:
    ```text
-(http.host eq "cms.eventuai.com" and http.request.uri.path eq "/admin/upload" and http.request.method eq "POST")
+(http.host eq "cms.example.com" and http.request.uri.path eq "/admin/upload" and http.request.method eq "POST")
    ```
 4. Set **Action** to **Skip**.
 5. Select the product that appears in **Security > Events** for the failed upload, commonly **All managed rules**, **All Super Bot Fight Mode rules**, **Browser Integrity Check**, or **Security Level**.
@@ -122,18 +138,31 @@ cf: { image: { width: 100, height: 100, fit: 'cover' } }
 
 Enable **Images > Transformations** for the zone before relying on this optimization. If transformations are not enabled, the route falls back to the original `/media/<key>` object for preview display.
 
-### 5. Configure secrets
+### 5. Create the admin-job Queue
+
+Long plugin actions and advanced-search bulk operations use a Queue so each
+bounded batch receives a fresh Worker subrequest budget:
+
+```bash
+npx wrangler queues create cms-admin-jobs
+```
+
+If you choose another name, update both the producer and consumer entries in
+`wrangler.toml`. The `PAGE_SYNC` and `FORM_ONCE` Durable Object migrations are
+already declared there and are applied by Wrangler on deployment.
+
+### 6. Configure secrets
 
 ```bash
 # Random 32-byte secret for signing JWTs – e.g. openssl rand -hex 32
 npx wrangler secret put JWT_SECRET
 ```
 
-Then add a secret for each provider you enable (see step 6).
+Then add a secret for each provider you enable (see step 7).
 
 Create a `.dev.vars` file for local development (see `.dev.vars.example`).
 
-### 6. Enable OAuth providers
+### 7. Enable OAuth providers
 
 Set `ENABLED_PROVIDERS` in `wrangler.toml` to a comma-separated list of the
 providers you want to offer on the login page:
@@ -143,7 +172,14 @@ ENABLED_PROVIDERS = "eventuai,github,google,microsoft,apple"
 ```
 
 Users will see one sign-in button per listed provider, in that order.
-Add the Client ID and secret for every provider you enable.
+Add the client ID and secret for every provider you enable. Also set the shared
+callback and canonical origin; these values are commented out in the release
+configuration until a deployment chooses its hostname:
+
+```toml
+OAUTH_REDIRECT_URI = "https://cms.example.com/auth/callback"
+CANONICAL_ORIGIN = "https://cms.example.com"
+```
 
 To link an additional OAuth provider to the same CMS account, sign in first,
 then start that provider's flow from the profile page (or use
@@ -217,10 +253,11 @@ not silently merge logged-out accounts just because their emails match.
    npx wrangler secret put APPLE_CLIENT_SECRET
    ```
 
-> **Note:** GitHub and Google users have their role defaulted from the database.
-> Promote accounts to `admin` / `editor` with the SQL command in step 7.
+> **Note:** New accounts default to `viewer` unless the Eventuai provider
+> supplies recognized roles on first login. Promote accounts with the SQL
+> command in step 8; later OAuth logins never overwrite the stored CMS role.
 
-### 7. Set the first user's role
+### 8. Set the first user's role
 
 After signing in for the first time, update your role to `admin` in the CMS database. Multiple roles can be stored as a comma-separated list, for example `admin,viewer`:
 
@@ -229,7 +266,7 @@ npx wrangler d1 execute cms --remote \
   --command "UPDATE users SET role='admin,viewer' WHERE email='you@example.com'"
 ```
 
-### 8. Run locally
+### 9. Run locally
 
 ```bash
 npm run dev
@@ -237,7 +274,7 @@ npm run dev
 
 Visit **http://localhost:8787** → redirects to the login page.
 
-### 9. Deploy
+### 10. Deploy
 
 ```bash
 npm run deploy
@@ -251,7 +288,7 @@ The CMS can be extended with **plugins**, each of which is a separate Cloudflare
 Worker registered at runtime by HTTPS URL. Registration, enable/disable,
 credential rotation, delegated page-type scopes, assets, quotas, and credits are
 managed under **Admin → Plugins** without redeploying the CMS.
-A plugin can add six things:
+A plugin can contribute:
 
 - **Lifecycle hooks** – run on page `create`/`update`/`publish`/`unpublish`/`delete`
   plus `submission` when a live-only page is mirrored into draft (webhooks,
@@ -265,6 +302,9 @@ A plugin can add six things:
   `/__cms` API without contributing their blueprints; an admin must approve
   those delegated scopes in plugin management before they are honored. Use `"*"`
   in `readTypes` or `writeTypes` to request access to all concrete page types.
+  A plugin can define `contentTypes.publishLect` keep/drop rules to minimize
+  the structured fields sent to every publish target, and `autoPublishTypes`
+  can republish already-live plugin-owned pages after a save.
 - **Fields & blocks** – register new pagefield types and serve their Liquid
   snippets, which render through the CMS editor.
 - **Edit, create & read views** – list page-type slugs in the manifest
@@ -275,7 +315,13 @@ A plugin can add six things:
 - **Admin routes + nav** – add an admin page (proxied at
   `/admin/plugins/<id>/...`) and a navigation entry. A nav item may set
   `group: 'settings'` to nest under the sidebar's **Settings** group instead of
-  the top level; `roles` restricts who sees it.
+  the top level; `roles` restricts who sees it. Plugins may also contribute
+  namespaced role permissions and request hash-pinned JS/CSS assets that remain
+  disabled until an admin approves them.
+- **Quotas & credits** – declare page-count or operational limits and
+  `page_create`, `metered`, or monthly `recurring` credit costs. The CMS stores
+  admin-configured values and enforces the host-visible operations; plugins
+  report metered charges and recurring usage through `/__cms`.
 - **Publish targets** – declare `publishTarget: true` in the manifest to receive
   full page snapshots whenever a page is published or unpublished (pin to IPFS,
   push to a search index, trigger a static-site rebuild). Unlike hooks, publish
@@ -424,7 +470,7 @@ served on the CMS origin.
 ### Adding a plugin
 
 1. Build/deploy the plugin Worker (see [`examples/plugin-events`](examples/plugin-events)
-   for a complete reference implementing all six capabilities).
+   for a complete reference implementation).
 2. Open **Admin → Plugins → Register plugin**, enter its public HTTPS base URL,
    and leave it disabled until you have reviewed its manifest and code.
 3. Copy the generated dedicated secret from the plugin edit screen and store it
@@ -470,10 +516,8 @@ API; they fail closed with `503 plugin_api_unavailable`.
 - Plugin URL validation rejects obvious private-address literals, but it is not
   a complete DNS-rebinding defense. Only users with `plugin:manage` should
   register audited plugin origins.
-- Run `npm test`, `npm run type-check`, and `npm audit` before release. The July
-  2026 security review covered OAuth, sessions, RBAC, cross-origin mutations,
-  plugins, uploads/media, rendering/CSP, structured JSON, publishing, and
-  dependencies; it is not a substitute for an independent penetration test.
+- Run `npm test`, `npm run type-check`, and `npm audit` before release. These
+  checks are not a substitute for an independent penetration test.
 
 ---
 
@@ -487,6 +531,12 @@ automatically by the host every time a page of that type is created (both the
 by the plugin via `POST /__cms/credits/charge`. Charging is atomic and
 overdraft-proof — a balance can never go below zero — and every change is
 appended to the `credit_ledger` audit trail shown on the profile page.
+
+For `recurring` costs, a plugin reports the user's current usage with
+`POST /__cms/credits/usage`. The five-minute scheduled handler bills due rows
+monthly in advance or arrears according to the manifest, using the same atomic
+ledger and shared-pool fallback. Failed payments become `past_due`; unreachable
+plugins are deferred, and removed recurring costs are canceled.
 
 **Managing balances (admin).** From **Users → _(a user)_ → Credits**, an admin
 grants or deducts credits with a mandatory note. Deductions use the same
@@ -526,13 +576,11 @@ Live page editing also uses 2 SQLite tables inside each page's Durable Object;
 these are not D1 tables.
 
 The counts below exclude D1/SQLite internal tables and Durable Object storage.
-The migration history was flattened into one initial file per D1 database in
-July 2026. These baselines are intended for fresh databases. Before deploying
-the flattened history over an existing installation, ensure every migration
-from the previous history through `0016_i18n.sql` (and published migration
-`0003_submission_scan_index.sql`) and `0002_credit_subscriptions.sql` has
-already been applied; Wrangler will not re-run a modified `0001` that the
-database has previously recorded.
+The migration history is flattened into one initial file per D1 database.
+These baselines are intended for fresh databases. Do not point this release at
+an existing database that recorded a different migration history without first
+planning and verifying a schema migration; Wrangler does not re-run a modified
+`0001` that a database has already recorded.
 
 An upgraded deployment may show additional legacy `live_*` tables in `DB`;
 current CMS routes ignore those tables and use `PUBLISHED_DB` instead.
@@ -571,15 +619,19 @@ Keeping public content in this separate database allows a public Worker to read
 published pages without receiving access to users, sessions, drafts, trash,
 plugin configuration, or other private CMS state.
 
-### Live editing Durable Object — 2 tables per page object
+### Durable Object storage
+
+Each `PageSyncDO` page object creates two SQLite tables:
 
 | Table | Purpose |
 |-------|---------|
 | `crdt_ops` | Unsaved per-user field operations that form the live collaborative editing overlay; cleared after a save |
 | `presence` | Currently connected editors and their last-seen/last-active state |
 
-These tables are created by `PageSyncDO` in Durable Object SQLite storage, not
-by the D1 migration directories.
+These tables are created in Durable Object SQLite storage, not by the D1
+migration directories. `FormOnceDO` separately stores short-lived, hashed
+single-use form claims in Durable Object key/value storage across 64 shards;
+it does not create application SQL tables.
 
 ### Publish / un-publish flow
 
@@ -656,6 +708,9 @@ are write-only.
 ├── src/
 │   ├── index.ts       # Hono app entry point
 │   ├── types.ts       # Shared TypeScript types & Env bindings
+│   ├── durable-objects/
+│   │   ├── page-sync.ts # Collaborative edit overlay and presence
+│   │   └── form-once.ts # Single-use admin form claims
 │   ├── middleware/
 │   │   ├── auth.ts    # Dual-JWT auth + capability guard
 │   │   └── rate-limit.ts
@@ -674,8 +729,11 @@ are write-only.
 │   ├── security/      # JWT, cookies, sessions, HTTP, media, plugin proxy
 │   ├── templates/     # Server renderers for Liquid section data
 │   └── utils/
+│       ├── admin-job-runner.ts # Queue-backed admin job batches
+│       ├── credit-subscriptions.ts # Scheduled recurring billing
 │       ├── lect.ts    # Structured content helpers
-│       └── pkce.ts    # PKCE code verifier / challenge helpers
+│       ├── pkce.ts    # PKCE code verifier / challenge helpers
+│       └── submission-ingest.ts # Published-to-draft submission mirroring
 ├── views/
 │   ├── layout/        # Liquid layout
 │   ├── sections/      # Admin UI Liquid sections

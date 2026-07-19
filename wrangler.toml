@@ -14,27 +14,16 @@ binding = "CF_VERSION_METADATA"
 [[d1_databases]]
 binding = "DB"
 database_name = "cms"
-database_id = "036882b7-c7d1-4163-9a40-cba28bc87233"
 migrations_dir = "migrations"
 
 [[d1_databases]]
 binding = "PUBLISHED_DB"
 database_name = "cms-published"
-# Replace with the id from `wrangler d1 create cms-published`.
-database_id = "94cc01db-8028-48eb-923f-e440423aeb3f"
 migrations_dir = "migrations/published"
 
 [[r2_buckets]]
 binding = "MEDIA_BUCKET"
 bucket_name = "worker-cms-media"
-
-# ── Publish targets (optional) ────────────────────────────────────────────────
-# Publishing fans out to the targets in the PUBLISH_TARGETS var (see [vars]).
-# The "r2" target writes static JSON snapshots (pages/<uuid>.json + index.json)
-# to this bucket. Create it with `wrangler r2 bucket create worker-cms-published`.
-# [[r2_buckets]]
-# binding = "PUBLISH_BUCKET"
-# bucket_name = "worker-cms-published"
 
 # Submission ingest: pulls every published page without a draft counterpart
 # into the draft DB as a submission mirror, firing submission hooks. Bounded
@@ -68,8 +57,10 @@ new_sqlite_classes = ["FormOnceDO"]
 [[queues.producers]]
 binding = "ADMIN_JOBS_QUEUE"
 queue = "cms-admin-jobs"
+
 [[queues.consumers]]
 queue = "cms-admin-jobs"
+
 # One job-batch (<=100 pages) per invocation so each gets a fresh subrequest
 # budget; batching several messages together would reintroduce the cap blowout.
 max_batch_size = 1
@@ -100,28 +91,33 @@ simple = { limit = 30, period = 60 }
 # publish targets are discovered from plugin manifests (publishTarget: true)
 # and do not need to be listed here.
 # PUBLISH_TARGETS = "d1,r2"
-# Comma-separated list of enabled OAuth providers: "github", "google", "microsoft", "apple", "eventuai"
-ENABLED_PROVIDERS = "eventuai,github,google,microsoft"
-# Per-provider OAuth client IDs – add the ones you use
-EVENTUAI_CLIENT_ID = "RnFAoAkXz1JLwaKx"
-GITHUB_CLIENT_ID = "Ov23lis6jG7x2nBmbFM1"
-GOOGLE_CLIENT_ID = "314543822201-i1n5al6ddo2afmuait7d2hormpgv3pue.apps.googleusercontent.com"
-MICROSOFT_CLIENT_ID = "768c819f-4981-420d-a0d6-529fd0b8642f"
+# Comma-separated list of enabled OAuth providers: "github", "google",
+# "microsoft", "apple", "eventuai". Add the matching client IDs below.
+ENABLED_PROVIDERS = "github"
+
+# GITHUB_CLIENT_ID = "<client-id>"
+# GOOGLE_CLIENT_ID = "<client-id>"
+# MICROSOFT_CLIENT_ID = "<client-id>"
+# APPLE_CLIENT_ID = "<services-id>"
+# EVENTUAI_CLIENT_ID = "<client-id>"
 MICROSOFT_TENANT = "common"
-# APPLE_CLIENT_ID = ""
+
 # Shared redirect URI – registered with every enabled provider
-OAUTH_REDIRECT_URI = "https://cms.eventuai.com/auth/callback"
-CANONICAL_ORIGIN = "https://cms.eventuai.com"
+# OAUTH_REDIRECT_URI = "https://cms.example.com/auth/callback"
+# CANONICAL_ORIGIN = "https://cms.example.com"
 SITE_TITLE = "0xCMS"
+
 # Default timezone applied to a page's start/end window when none is set.
 # UTC offset (e.g. "+0800") or an IANA name (e.g. "Asia/Hong_Kong").
 DEFAULT_TIMEZONE = "+0800"
 # Optional: restrict new sign-ups to these email domains (comma-separated).
 # Existing users always keep access. Unset = open registration (viewer role).
-# ALLOWED_EMAIL_DOMAINS = "cowise.co"
+# ALLOWED_EMAIL_DOMAINS = "example.com"
 
 # Secrets – set via: wrangler secret put JWT_SECRET
 # wrangler secret put EVENTUAI_CLIENT_SECRET
 # wrangler secret put GITHUB_CLIENT_SECRET
 # wrangler secret put GOOGLE_CLIENT_SECRET
+# wrangler secret put MICROSOFT_CLIENT_SECRET
+# wrangler secret put APPLE_CLIENT_SECRET
 # wrangler secret put PLUGIN_SECRET   # optional outbound-only fallback for legacy plugin rows
