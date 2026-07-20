@@ -1,4 +1,4 @@
-name = "worker-cms"
+name = "cms"
 main = "src/index.ts"
 compatibility_date = "2026-07-14"
 compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
@@ -16,11 +16,13 @@ binding = "DB"
 database_name = "cms"
 migrations_dir = "migrations"
 
+database_id = "ad46f5e1-943e-4386-a90f-06cc7d4fb7ec"
 [[d1_databases]]
 binding = "PUBLISHED_DB"
 database_name = "cms-published"
 migrations_dir = "migrations/published"
 
+database_id = "e7788422-82a5-4531-8534-06d520a1bfde"
 [[r2_buckets]]
 binding = "MEDIA_BUCKET"
 bucket_name = "worker-cms-media"
@@ -93,18 +95,18 @@ simple = { limit = 30, period = 60 }
 # PUBLISH_TARGETS = "d1,r2"
 # Comma-separated list of enabled OAuth providers: "github", "google",
 # "microsoft", "apple", "eventuai". Add the matching client IDs below.
-ENABLED_PROVIDERS = "github"
+ENABLED_PROVIDERS = "github,google,microsoft"
 
-# GITHUB_CLIENT_ID = "<client-id>"
-# GOOGLE_CLIENT_ID = "<client-id>"
-# MICROSOFT_CLIENT_ID = "<client-id>"
+GITHUB_CLIENT_ID = "Ov23li8mglaXOLSlA5TB"
+GOOGLE_CLIENT_ID = "314543822201-np73pj9hq5biuaivquk39dhfqsffeuqb.apps.googleusercontent.com"
+MICROSOFT_CLIENT_ID = "bb5e0227-7506-4db2-bdb0-8e8c4fa218e2"
 # APPLE_CLIENT_ID = "<services-id>"
 # EVENTUAI_CLIENT_ID = "<client-id>"
-MICROSOFT_TENANT = "common"
+MICROSOFT_TENANT = "49b2bbef-148b-4a0f-972a-14506f047765"
 
 # Shared redirect URI – registered with every enabled provider
-# OAUTH_REDIRECT_URI = "https://cms.example.com/auth/callback"
-# CANONICAL_ORIGIN = "https://cms.example.com"
+OAUTH_REDIRECT_URI = "https://cms.eventuai.workers.dev/auth/callback"
+CANONICAL_ORIGIN = "https://cms.eventuai.workers.dev"
 SITE_TITLE = "0xCMS"
 
 # Default timezone applied to a page's start/end window when none is set.
