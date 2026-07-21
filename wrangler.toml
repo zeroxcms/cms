@@ -28,6 +28,11 @@ migrations_dir = "migrations/published"
 binding = "MEDIA_BUCKET"
 bucket_name = "worker-cms-media"
 
+# Powers the /media-preview/* thumbnails. Works on workers.dev - no zone or
+# custom domain needed. Remove the binding to serve full-size originals instead.
+[images]
+binding = "IMAGES"
+
 # ── Publish targets (optional) ────────────────────────────────────────────────
 # Publishing fans out to the targets in the PUBLISH_TARGETS var (see [vars]).
 # The "r2" target writes static JSON snapshots (pages/<uuid>.json + index.json)
