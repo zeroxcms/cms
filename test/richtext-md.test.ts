@@ -25,4 +25,16 @@ describe('rich-text Markdown pagefield', () => {
     expect(source).toContain('decodeEscapedHtml');
     expect(source).toContain('&lt;');
   });
+
+  it('preserves legacy style delimiters as the literal word-joiner entity', async () => {
+    const response = await env.VIEWS.fetch('https://views.local/assets/richtext-md.js');
+    const source = await response.text();
+
+    expect(source).toContain('eventuai-emphasis');
+    expect(source).toContain('&#8288;');
+    expect(source).toContain('encodeWordJoiners');
+    expect(source).toContain('stripWordJoiners');
+    expect(source).toContain('replace(/\\u2060/g,"&#8288;")');
+    expect(source).toContain('\\p{P}');
+  });
 });
