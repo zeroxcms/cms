@@ -2775,6 +2775,19 @@ describe('database page type with a scalar @name field', () => {
 });
 
 describe('structured editor weights', () => {
+  it('provides drag handles that reorder root and block item weights before saving', async () => {
+    const response = await env.VIEWS.fetch('https://views.local/assets/client-render.js');
+    expect(response.ok).toBe(true);
+    const source = await response.text();
+
+    expect(source).toContain('data-weight-sortable');
+    expect(source).toContain('data-weight-sortable-handle');
+    expect(source).toContain('data-weight-sortable-row');
+    expect(source).toContain('data-weight-sortable-input');
+    expect(source).toContain('function syncWeights(scope)');
+    expect(source).toContain("input.value = String(index)");
+  });
+
   it('renders item and block weights as compact header controls', async () => {
     const lect = JSON.parse(basePageLect) as Record<string, unknown>;
     const items = lect.items as Array<Record<string, unknown>>;

@@ -57,13 +57,7 @@
 
   function registerCustomFilters(target) {
     target.registerFilter('t', function (key, fallback) {
-      const normalized = String(key == null ? '' : key);
-      if (Object.prototype.hasOwnProperty.call(translations, normalized)) return translations[normalized];
-      if (!missingTranslations.has(normalized)) {
-        missingTranslations.add(normalized);
-        console.warn('Missing translation:', normalized);
-      }
-      return fallback == null ? normalized : String(fallback);
+      return translate(key, fallback);
     });
 
     target.registerFilter('l10n_number', function (value, options) {
@@ -97,6 +91,16 @@
       }
       return new Intl.DateTimeFormat(payload.layoutData && payload.layoutData.uiLocale || 'en', format).format(date);
     });
+  }
+
+  function translate(key, fallback) {
+    const normalized = String(key == null ? '' : key);
+    if (Object.prototype.hasOwnProperty.call(translations, normalized)) return translations[normalized];
+    if (!missingTranslations.has(normalized)) {
+      missingTranslations.add(normalized);
+      console.warn('Missing translation:', normalized);
+    }
+    return fallback == null ? normalized : String(fallback);
   }
 
   async function loadTranslations() {
@@ -449,7 +453,9 @@
       '        <button type="submit" name="action" value="' + escapeHtml(group.addAction) + '"\n' +
       '                class="w-full shrink-0 px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-xs font-semibold text-gray-700 sm:w-auto">Add Item</button>\n' +
       '      </div>\n' +
+      '      <div data-weight-sortable class="space-y-3">\n' +
       rows +
+      '      </div>\n' +
       '\n    </div>';
   }
 
@@ -465,9 +471,15 @@
         '           </button>'
       : '';
 
-    return '<div class="min-w-0 rounded-lg bg-white border border-gray-200 p-4 space-y-3">\n' +
+    const dragToReorder = translate('view_strings.sections_tags.drag_to_reorder', 'Drag to reorder');
+    return '<div data-weight-sortable-row class="min-w-0 rounded-lg bg-white border border-gray-200 p-4 space-y-3">\n' +
       '                <div class="flex items-center justify-between gap-3">\n' +
-      '                  <span class="min-w-0 text-xs text-gray-400">' + escapeHtml(row.label) + '</span>\n' +
+      '                  <div class="flex min-w-0 items-center gap-1.5">\n' +
+      '                    <button type="button" data-weight-sortable-handle title="' + escapeHtml(dragToReorder) + '" aria-label="' + escapeHtml(dragToReorder) + '" class="inline-flex h-7 w-7 shrink-0 cursor-grab items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 active:cursor-grabbing">\n' +
+      '                      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><use href="' + escapeHtml(renderGlobals(activeViewBasePath).iconHrefPrefix) + '#list"></use></svg>\n' +
+      '                    </button>\n' +
+      '                    <span class="min-w-0 text-xs text-gray-400">' + escapeHtml(row.label) + '</span>\n' +
+      '                  </div>\n' +
       '                  <div class="flex shrink-0 items-center gap-3">\n' +
       renderCompactWeightInput(row.weightInputName, row.weight, 'Weight for ' + row.label.toLowerCase()) +
       deleteButton +
@@ -488,10 +500,90 @@
     return '<div class="flex items-center gap-1 text-sm text-gray-500">\n' +
       '            <span aria-hidden="true">#</span>\n' +
       '            <label for="' + escapeHtml(id) + '" class="sr-only">' + escapeHtml(label) + '</label>\n' +
-      '            <input type="number" id="' + escapeHtml(id) + '" name="' + escapeHtml(name) + '"\n' +
+      '            <input data-weight-sortable-input type="number" id="' + escapeHtml(id) + '" name="' + escapeHtml(name) + '"\n' +
       '                   value="' + escapeHtml(String(value ?? '')) + '"\n' +
       '                   class="w-12 border-b border-transparent bg-transparent p-0 text-right text-lg font-bold focus:border-indigo-500 focus:outline-none">\n' +
       '          </div>';
+  }
+
+  // Item groups can appear at the page root, inside a block, and nested inside
+  // another item. Keep each group as an independent drag surface and update the
+  // ordinary _weight inputs so the existing form save persists the order.
+  function setupWeightSortables() {
+    let dragRow = null;
+    let dragScope = null;
+    let dragHandle = null;
+    let dragChanged = false;
+
+    function rows(scope) {
+      return Array.from(scope.querySelectorAll('[data-weight-sortable-row]'))
+        .filter((row) => row.parentElement === scope);
+    }
+
+    function markRows() {
+      document.querySelectorAll('[data-weight-sortable]').forEach((scope) => {
+        rows(scope).forEach((row) => row.setAttribute('draggable', 'true'));
+      });
+    }
+
+    function syncWeights(scope) {
+      rows(scope).forEach((row, index) => {
+        const input = row.querySelector('[data-weight-sortable-input]');
+        if (!input) return;
+        input.value = String(index);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    }
+
+    markRows();
+
+    document.addEventListener('mousedown', (event) => {
+      dragHandle = event.target.closest && event.target.closest('[data-weight-sortable-handle]');
+    });
+
+    document.addEventListener('dragstart', (event) => {
+      const row = event.target.closest && event.target.closest('[data-weight-sortable-row]');
+      const scope = row && row.parentElement;
+      if (!row || !scope || !scope.matches('[data-weight-sortable]')) return;
+      if (!dragHandle || !row.contains(dragHandle)) {
+        event.preventDefault();
+        return;
+      }
+      dragRow = row;
+      dragScope = scope;
+      dragChanged = false;
+      event.dataTransfer.effectAllowed = 'move';
+      row.classList.add('opacity-40');
+    });
+
+    document.addEventListener('dragover', (event) => {
+      if (!dragRow || !dragScope) return;
+      const row = event.target.closest && event.target.closest('[data-weight-sortable-row]');
+      if (!row || row === dragRow || row.parentElement !== dragScope) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      const rect = row.getBoundingClientRect();
+      const reference = event.clientY > rect.top + rect.height / 2 ? row.nextSibling : row;
+      if (reference !== dragRow && reference !== dragRow.nextSibling) {
+        dragScope.insertBefore(dragRow, reference);
+        dragChanged = true;
+      }
+    });
+
+    document.addEventListener('drop', (event) => {
+      if (dragRow) event.preventDefault();
+    });
+
+    document.addEventListener('dragend', () => {
+      if (!dragRow) return;
+      dragRow.classList.remove('opacity-40');
+      if (dragChanged) syncWeights(dragScope);
+      dragRow = null;
+      dragScope = null;
+      dragHandle = null;
+      dragChanged = false;
+    });
   }
 
   function renderInput(name, label, value, type, placeholder) {
@@ -693,6 +785,7 @@
       }
       const html = await renderLiquid(payload.layoutPath || '/layout/default.liquid', layoutData);
       replaceDocument(html);
+      setupWeightSortables();
     } catch (error) {
       console.error(error);
       const root = document.getElementById('cms-client-root') || document.body;
