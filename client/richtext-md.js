@@ -12,9 +12,35 @@ import TurndownService from 'turndown';
 
   const turndown = new TurndownService();
   turndown.keep(['u']);
+  // Match the legacy Eventuai Turndown customizations. Keep the literal
+  // `&#8288;` HTML entity in Markdown so inline delimiters are not absorbed by
+  // adjacent punctuation or CJK text when the value returns to rich text.
+  turndown.addRule('eventuai-emphasis', {
+    filter: ['em', 'i'],
+    replacement(content, _node, options) {
+      if (!content.trim()) return '';
+      return `&#8288;${options.emDelimiter}${content}${options.emDelimiter}&#8288;`;
+    },
+  });
+  turndown.addRule('eventuai-strong', {
+    filter: ['strong', 'b'],
+    replacement(content, _node, options) {
+      if (!content.trim()) return '';
+      const trailingWordJoiner = /[\p{P}\p{S}]$/u.test(content) ? '&#8288;' : '';
+      return `${options.strongDelimiter}${content}${options.strongDelimiter}${trailingWordJoiner}`;
+    },
+  });
+
+  function encodeWordJoiners(value) {
+    return String(value || '').replace(/\u2060/g, '&#8288;');
+  }
+
+  function stripWordJoiners(value) {
+    return String(value || '').replace(/\u2060|&#8288;/g, '');
+  }
 
   function markdownToHtml(markdown) {
-    const rendered = marked.parse(String(markdown || ''), { async: false }).trim();
+    const rendered = marked.parse(encodeWordJoiners(markdown), { async: false }).trim();
     const paragraphs = rendered.match(/<p(?:\s[^>]*)?>/g) || [];
     if (paragraphs.length === 1 && /^<p>[\s\S]*<\/p>$/.test(rendered)) {
       return rendered.replace(/^<p>/, '').replace(/<\/p>$/, '').trim();
@@ -23,11 +49,14 @@ import TurndownService from 'turndown';
   }
 
   function htmlToMarkdown(html) {
-    return turndown.turndown(String(html || '')).trim();
+    // contenteditable decodes `&#8288;` to U+2060. Remove any separator that
+    // was already rendered, then let the legacy Turndown rules add one back
+    // only where the Markdown delimiters require it.
+    return encodeWordJoiners(turndown.turndown(stripWordJoiners(html)).trim());
   }
 
   function decodeEscapedHtml(value) {
-    const source = String(value || '');
+    const source = encodeWordJoiners(value);
     if (source.includes('<')) return source;
     const encodedTags = source.match(/&lt;\/?(?:p|h[1-6]|div|span|strong|em|u|s|del|a|ul|ol|li|blockquote|pre|code|br|hr|img|table|thead|tbody|tr|th|td)(?:\s|&gt;)/gi);
     if (!encodedTags || encodedTags.length < 2) return source;
@@ -73,6 +102,7 @@ import TurndownService from 'turndown';
     }
 
     function syncFromSource() {
+      source.value = encodeWordJoiners(source.value);
       preview.innerHTML = source.value;
       markdown.value = htmlToMarkdown(source.value);
     }
@@ -123,6 +153,8 @@ import TurndownService from 'turndown';
   window.WorkerCmsRichtextMd = {
     htmlToMarkdown,
     markdownToHtml,
+    encodeWordJoiners,
+    stripWordJoiners,
     decodeEscapedHtml,
     scan,
   };
