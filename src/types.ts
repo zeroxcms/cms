@@ -492,6 +492,8 @@ export interface Env {
   /** Optional manual fallback for local/dev environments without version metadata. */
   VIEW_REVISION?: string;
   MEDIA_BUCKET?: R2Bucket;
+  /** Cloudflare Images binding used for media thumbnails; falls back to the original when unbound. */
+  IMAGES?: ImagesBinding;
   /** Comma-separated built-in publish targets ("d1", "r2"). Defaults to "d1".
    *  Plugin publish targets are discovered from manifests, not listed here. */
   PUBLISH_TARGETS?: string;
