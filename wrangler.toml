@@ -27,6 +27,19 @@ database_id = "e7788422-82a5-4531-8534-06d520a1bfde"
 binding = "MEDIA_BUCKET"
 bucket_name = "worker-cms-media"
 
+# Powers the /media-preview/* thumbnails. Works on workers.dev - no zone or
+# custom domain needed. Remove the binding to serve full-size originals instead.
+[images]
+binding = "IMAGES"
+
+# ── Publish targets (optional) ────────────────────────────────────────────────
+# Publishing fans out to the targets in the PUBLISH_TARGETS var (see [vars]).
+# The "r2" target writes static JSON snapshots (pages/<uuid>.json + index.json)
+# to this bucket. Create it with `wrangler r2 bucket create worker-cms-published`.
+# [[r2_buckets]]
+# binding = "PUBLISH_BUCKET"
+# bucket_name = "worker-cms-published"
+
 # Submission ingest: pulls every published page without a draft counterpart
 # into the draft DB as a submission mirror, firing submission hooks. Bounded
 # batch per tick; subscribed plugins can also trigger it on demand via
