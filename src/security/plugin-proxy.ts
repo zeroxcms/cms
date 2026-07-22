@@ -94,7 +94,7 @@ export function decodePluginTitle(raw: string | null): string {
   }
 }
 
-export function pluginDocumentResponse(upstreamResponse: Response): Response {
+export function pluginDocumentResponse(upstreamResponse: Response, documentUrl = ''): Response {
   const contentType = upstreamResponse.headers.get('content-type') ?? '';
   const response = contentType.includes('text/html')
     ? sanitizePluginHtmlResponse(upstreamResponse)
@@ -104,17 +104,26 @@ export function pluginDocumentResponse(upstreamResponse: Response): Response {
   response.headers.delete('x-cms-frame');
   if (allowFraming) response.headers.set('X-Frame-Options', 'SAMEORIGIN');
   if (!response.headers.has('Content-Security-Policy')) {
-    response.headers.set('Content-Security-Policy', buildPluginDocumentCsp(allowFraming));
+    response.headers.set('Content-Security-Policy', buildPluginDocumentCsp(allowFraming, documentUrl));
   }
   return response;
 }
 
-function buildPluginDocumentCsp(allowFraming: boolean): string {
+function buildPluginDocumentCsp(allowFraming: boolean, documentUrl: string): string {
+  const imageSources = ["'self'", 'data:', 'https:'];
+  try {
+    const hostname = new URL(documentUrl).hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      imageSources.push('http://localhost:*', 'http://127.0.0.1:*');
+    }
+  } catch {
+    // Callers without a document URL keep the production-safe default.
+  }
   return [
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: https:",
+    `img-src ${imageSources.join(' ')}`,
     "object-src 'none'",
     "base-uri 'none'",
     allowFraming ? "frame-ancestors 'self'" : "frame-ancestors 'none'",

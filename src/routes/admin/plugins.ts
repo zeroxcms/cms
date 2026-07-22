@@ -326,7 +326,7 @@ async function proxyToPlugin(c: AppContext): Promise<Response> {
   // scripts) and (b) plugin pages still get baseline hardening. This is NOT
   // origin isolation - see warnSharedPluginOrigin() - it only limits injection
   // into an otherwise-benign plugin.
-  return pluginDocumentResponse(upstreamResponse);
+  return pluginDocumentResponse(upstreamResponse, c.req.url);
 }
 
 function shouldQueuePluginAdminAction(c: AppContext, pluginId: string, rest: string): boolean {
