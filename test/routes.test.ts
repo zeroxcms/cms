@@ -2033,7 +2033,7 @@ describe('admin routes', () => {
     });
   });
 
-  it('GET /media-preview/* serves uploaded media for editor thumbnails', async () => {
+  it('GET /media-preview/* serves a resized thumbnail for editor previews', async () => {
     const body = new FormData();
     body.append('dir', 'pictures');
     body.append('file', new File([pngBytes()], 'avatar.png', { type: 'image/png' }));
@@ -2049,8 +2049,30 @@ describe('admin routes', () => {
     const response = await fetchWorker(previewPath);
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Type')).toBe('image/png');
-    expect(new Uint8Array(await response.arrayBuffer())).toEqual(pngBytes());
+    // The Images binding re-encodes to webp; the untransformed original is png.
+    expect(response.headers.get('Content-Type')).toBe('image/webp');
+    expect(new Uint8Array(await response.arrayBuffer())).not.toEqual(pngBytes());
+    expect(response.headers.get('Content-Security-Policy')).toBe("default-src 'none'; sandbox");
+  });
+
+  it('GET /media-preview/* falls back to the original for non-image objects', async () => {
+    const body = new FormData();
+    body.append('dir', 'docs');
+    body.append('file', new File(['id,name\n1,a\n'], 'guests.csv', { type: 'text/csv' }));
+
+    const upload = await fetchWorker('/admin/upload', {
+      method: 'POST',
+      body,
+      headers: { Cookie: await authCookie() },
+    });
+    const payload = await upload.json<{ files: string[] }>();
+    const previewPath = payload.files[0].replace(/^\/media\//, '/media-preview/');
+
+    const response = await fetchWorker(previewPath);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('text/csv');
+    expect(await response.text()).toBe('id,name\n1,a\n');
   });
 });
 
