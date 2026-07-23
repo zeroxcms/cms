@@ -39,6 +39,7 @@ interface RenderPayload {
     plugin?: boolean;
     viewBasePath?: string;
     viewRevision?: string;
+    i18n?: boolean;
   };
 }
 
@@ -715,10 +716,52 @@ describe('plugin admin proxy', () => {
       viewBasePath: '/admin/plugins/events/views',
       plugin: true,
       data: { marker: 'CLIENT_VIEW_MARKER' },
+      // EVENTS_MANIFEST does not declare `i18n`, so the client must not probe
+      // this plugin's locale catalogs (that request would 404 on every view).
+      i18n: false,
     });
     expect(payload.layoutData.body).toBe('');
     expect(body).toContain('Client View');
     expect(response.headers.get('Content-Security-Policy')).toContain("script-src 'self' 'nonce-");
+  });
+
+  it('flags plugin client views for locale loading only when the manifest opts into i18n', async () => {
+    testEnv.PLUGIN_SECRET = 'server-secret';
+    const url = 'https://plugin-client-view-i18n.local';
+    await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', url).run();
+    __injectPluginFetcher(url, {
+      fetch: async (input: RequestInfo | URL): Promise<Response> => {
+        const u = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (new URL(u).pathname === '/__plugin/manifest') return Response.json({ ...EVENTS_MANIFEST, i18n: true });
+        return Response.json(
+          { marker: 'CLIENT_VIEW_MARKER' },
+          {
+            headers: {
+              'x-cms-chrome': '1',
+              'x-cms-client-view': '1',
+              'x-cms-view-path': '/templates/plugin-dashboard.json',
+              'x-cms-title': encodeURIComponent('Client View'),
+            },
+          },
+        );
+      },
+    } as unknown as Fetcher);
+
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJWT({
+      sub: '1', email: 'admin@example.com', name: 'Admin User', role: 'admin',
+      type: 'access', exp: now + 900, iat: now,
+    }, env.JWT_SECRET);
+
+    const response = await worker.fetch(new Request('http://localhost/admin/plugins/events/dashboard', {
+      headers: { Cookie: `access_token=${token}`, 'Sec-Fetch-Site': 'same-origin' },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(renderPayload(await response.text()).bodyView).toMatchObject({
+      viewBasePath: '/admin/plugins/events/views',
+      i18n: true,
+    });
   });
 
   it('lets a plugin full-document response opt into same-origin framing', async () => {
