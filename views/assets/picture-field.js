@@ -76,7 +76,8 @@
       if (status) status.textContent = 'Uploading...';
 
       const form = new FormData();
-      form.append('dir', 'pictures');
+      // The file pagefield reuses this wiring with its own upload directory.
+      form.append('dir', root.dataset.uploadDir || 'pictures');
       form.append('file', file);
 
       try {

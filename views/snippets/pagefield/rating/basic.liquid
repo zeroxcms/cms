@@ -1,0 +1,25 @@
+{%- comment -%}
+  Star-rating pagefield: 1..field.max stars stored as a number. The stars are
+  emitted in DESCENDING order so the CSS-only fill rule in styles/admin.css
+  (`.rating-stars input:checked ~ label`) can colour the chosen star and every
+  lower one; `flex-direction: row-reverse` puts 1 back on the left visually.
+  `field.stars` (descending [{value,selected}]) is optional — without it the
+  snippet derives the scale from field.max, defaulting to 5.
+{%- endcomment -%}
+{%- assign star_max = field.max | default: 5 -%}
+<fieldset class="min-w-0 block">
+  <legend class="block text-sm font-medium text-gray-700 mb-1">{% if field.labelKey != blank %}{{ field.labelKey | t }}{% else %}{{ field.label }}{% endif %}{% if field.required %} *{% endif %}</legend>
+  <div class="rating-stars">
+    {% if field.stars %}
+      {% for star in field.stars %}
+        <input type="radio" id="{{ field.id }}_{{ star.value }}" name="{{ field.inputName }}" value="{{ star.value }}"{% if star.selected %} checked{% endif %}{% if field.required %} required{% endif %}>
+        <label for="{{ field.id }}_{{ star.value }}" title="{{ star.value }}" aria-label="{{ star.value }}">★</label>
+      {% endfor %}
+    {% else %}
+      {% for offset in (1..star_max) reversed %}
+        <input type="radio" id="{{ field.id }}_{{ offset }}" name="{{ field.inputName }}" value="{{ offset }}"{% if field.value == offset %} checked{% endif %}{% if field.required %} required{% endif %}>
+        <label for="{{ field.id }}_{{ offset }}" title="{{ offset }}" aria-label="{{ offset }}">★</label>
+      {% endfor %}
+    {% endif %}
+  </div>
+</fieldset>

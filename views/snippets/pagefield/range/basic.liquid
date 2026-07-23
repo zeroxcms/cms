@@ -1,0 +1,31 @@
+{%- comment -%}
+  Linear-scale pagefield: a discrete 1..N choice rendered as a labelled radio
+  row (a native <input type="range"> gives no visible value without JS, and a
+  scale answer must be readable at a glance). `field.points` is optional — when
+  absent the snippet derives the scale from field.min / field.max, so a bare
+  blueprint entry (`@score:range`) still works with the 0–10 default.
+{%- endcomment -%}
+{%- assign range_min = field.min | default: 0 -%}
+{%- assign range_max = field.max | default: 10 -%}
+<fieldset class="min-w-0 block">
+  <legend class="block text-sm font-medium text-gray-700 mb-1">{% if field.labelKey != blank %}{{ field.labelKey | t }}{% else %}{{ field.label }}{% endif %}{% if field.required %} *{% endif %}</legend>
+  <div class="flex flex-wrap items-end gap-3">
+    {% if field.minLabel != blank %}<span class="text-sm text-gray-500">{{ field.minLabel }}</span>{% endif %}
+    {% if field.points %}
+      {% for point in field.points %}
+        <label class="inline-flex flex-col items-center gap-1 text-sm text-gray-700">
+          <span>{{ point.label | default: point.value }}</span>
+          <input type="radio" name="{{ field.inputName }}" value="{{ point.value }}"{% if point.selected %} checked{% endif %}{% if field.required %} required{% endif %}>
+        </label>
+      {% endfor %}
+    {% else %}
+      {% for offset in (range_min..range_max) %}
+        <label class="inline-flex flex-col items-center gap-1 text-sm text-gray-700">
+          <span>{{ offset }}</span>
+          <input type="radio" name="{{ field.inputName }}" value="{{ offset }}"{% if field.value == offset %} checked{% endif %}{% if field.required %} required{% endif %}>
+        </label>
+      {% endfor %}
+    {% endif %}
+    {% if field.maxLabel != blank %}<span class="text-sm text-gray-500">{{ field.maxLabel }}</span>{% endif %}
+  </div>
+</fieldset>
