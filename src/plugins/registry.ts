@@ -176,7 +176,7 @@ export async function getPlugins(env: Env): Promise<ResolvedPlugin[]> {
 }
 
 /** Nav items contributed by all plugins, flattened with their plugin id. */
-export async function pluginNav(env: Env): Promise<Array<{ pluginId: string; label: string; href: string; roles?: string[]; group?: 'settings' }>> {
+export async function pluginNav(env: Env): Promise<Array<{ pluginId: string; label: string; href: string; roles?: string[]; group?: 'settings'; i18n: boolean }>> {
   const plugins = await getPlugins(env);
   return plugins.flatMap((plugin) => {
     const items = plugin.manifest.nav ?? [];
@@ -191,6 +191,10 @@ export async function pluginNav(env: Env): Promise<Array<{ pluginId: string; lab
       href: `/admin/plugins/${plugin.manifest.id}/${item.href.replace(/^\/+/, '')}`,
       roles: item.roles,
       group: item.group,
+      // Nav labels are only looked up in the translation catalog for plugins
+      // that ship one (manifest `i18n: true`); others render their manifest
+      // label directly instead of missing a key that can never resolve.
+      i18n: plugin.manifest.i18n === true,
     }));
   });
 }

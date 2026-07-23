@@ -792,8 +792,11 @@ describe('plugin admin proxy', () => {
     // the manifest label ('Events') — the plugin has a single nav item, so the
     // override is unambiguous. (The group:settings test below pins the
     // multi-item case, where manifest labels are kept.)
+    // EVENTS_MANIFEST does not declare `i18n`, so the entry carries no
+    // translation key: the client would only warn about a key the plugin can
+    // never supply.
     expect(payload.layoutData.pluginNav).toEqual(expect.arrayContaining([
-      { label: 'Ticketing', translationKey: 'plugins.events.nav.dashboard', href: '/admin/plugins/events/dashboard' },
+      { label: 'Ticketing', href: '/admin/plugins/events/dashboard' },
     ]));
   });
 
@@ -1378,7 +1381,7 @@ describe('plugin admin proxy', () => {
     const url = 'https://plugin-settings-nav.local';
     await env.DB.prepare('INSERT INTO plugins (label, url, enabled) VALUES (?, ?, 1)').bind('Test', url).run();
     const manifest = {
-      id: 'events', name: 'Events', version: '1.0.0',
+      id: 'events', name: 'Events', version: '1.0.0', i18n: true,
       nav: [
         { label: 'Events', href: 'dashboard', roles: ['admin', 'editor'] },
         { label: 'Mail Settings', href: 'mail-settings', group: 'settings', roles: ['admin', 'editor'] },
