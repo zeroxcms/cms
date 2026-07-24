@@ -7,6 +7,9 @@ export interface ClientView {
   plugin?: boolean;
   viewBasePath?: string;
   viewRevision?: string;
+  /** Mirrors the plugin manifest's `i18n` opt-in: the client only fetches
+   *  `<viewBasePath>/locales/*.json` for plugins that ship catalogs. */
+  i18n?: boolean;
 }
 
 export type RenderedView = string | ClientView;
@@ -32,6 +35,7 @@ export function pluginClientView(
   data: Record<string, unknown>,
   viewBasePath?: string,
   viewRevision?: string,
+  i18n?: boolean,
 ): ClientView {
   return {
     __cmsClientView: true,
@@ -40,6 +44,7 @@ export function pluginClientView(
     plugin: true,
     viewBasePath,
     viewRevision,
+    i18n: i18n === true,
   };
 }
 

@@ -107,7 +107,9 @@
     if (!payload.catalogHref) return;
     const pluginTranslations = {};
     const bodyView = payload.bodyView || {};
-    if (bodyView.plugin && bodyView.viewBasePath) {
+    // Locale catalogs are opt-in (manifest `i18n: true`): plugins that do not
+    // ship them are never probed, so their views cost no 404 round-trips.
+    if (bodyView.plugin && bodyView.i18n && bodyView.viewBasePath) {
       const locale = payload.layoutData && payload.layoutData.uiLocale || 'en';
       const localePaths = Array.from(new Set(['en', locale]));
       for (const code of localePaths) {

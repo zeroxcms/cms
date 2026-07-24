@@ -82,11 +82,15 @@ export async function buildBaseProps(c: AppContext): Promise<BaseTemplateProps> 
   const menuSettings = sidebarSettings.items;
   const visible = navItems
     .filter((item) => !item.roles?.length || item.roles.some((role) => userRoles.includes(role)));
-  const pluginTranslationKey = (item: { pluginId: string; href: string }): string => {
+  // Plugins that do not ship locale catalogs (manifest `i18n: true`) get no
+  // translation key at all: the sidebar renders their manifest label directly
+  // instead of asking the client for a key that can never resolve.
+  const pluginTranslationKey = (item: { pluginId: string; href: string; i18n: boolean }): string | undefined => {
+    if (!item.i18n) return undefined;
     const pluginPath = item.href.replace(`/admin/plugins/${item.pluginId}/`, '').replace(/[^a-z0-9]+/gi, '.').replace(/^\.|\.$/g, '');
     return `plugins.${item.pluginId}.nav.${pluginPath || 'index'}`;
   };
-  const toLink = (item: { pluginId: string; label: string; href: string }) => {
+  const toLink = (item: { pluginId: string; label: string; href: string; i18n: boolean }) => {
     return {
       label: item.label,
       translationKey: pluginTranslationKey(item),
